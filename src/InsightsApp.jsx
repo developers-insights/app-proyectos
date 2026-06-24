@@ -183,8 +183,33 @@ function seedClients() {
     { id: 'c3', name: 'Gregorio Neumayer', company: 'Green Roofing', email: 'greg@greenroofing.de', phone: '+49 30 9024 5512', onboarding: { businessDescription: 'Empresa de techos verdes y sostenibles en Berlín.', goals: 'Configurador 3D interactivo para que clientes diseñen su techo y reciban presupuesto.', existingTech: 'Sitio estático + Three.js POC interno', approvedBudget: 41000, notes: 'Muy detallista con el render; pidió WebGL performante en mobile.' } },
     { id: 'c4', name: 'Nelson Rodriguez', company: 'HiddenWire Security Group', email: 'nelson@hiddenwire.io', phone: '+1 305 720 1188', onboarding: { businessDescription: 'Integrador de seguridad física y cableado estructurado para corporativos.', goals: 'Portal de clientes con tickets, monitoreo de instalaciones y reportes SLA.', existingTech: 'Zoho Desk + Excel', approvedBudget: 47000, notes: 'Necesita roles granulares y auditoría (compliance).' } },
     { id: 'c5', name: 'Juan Pablo Obando', company: 'Shockwave Tennis Academy', email: 'jp@shockwavetennis.com', phone: '+57 310 555 8842', onboarding: { businessDescription: 'Academia de tenis de alto rendimiento con sedes en Bogotá y Medellín.', goals: 'Plataforma de reservas de canchas, gestión de alumnos, pagos y seguimiento de progreso.', existingTech: 'Calendly + WhatsApp + efectivo', approvedBudget: 44000, notes: 'Quiere app para coaches y panel para padres.' } },
+    { id: 'c6', name: 'Leonardo', company: 'iRowing', email: 'leonardo@irowing.app', phone: '+54 11 5555 0106', onboarding: { businessDescription: 'Ex remero de la selección argentina (15+ años). Coach de remo indoor con máquinas Concept2.', goals: 'App de análisis de rendimiento con datos de la API Concept2 y visualización motivacional tipo bolsa.', existingTech: 'Google Sheets manual', approvedBudget: 0, notes: 'Foco motivacional para gente común que empieza a remar.' } },
+    { id: 'c7', name: 'Mariano Sabbadin', company: 'Real Deal Exchange AI', email: 'mariano@realdealexchange.ai', phone: '+1 470 555 0107', onboarding: { businessDescription: 'Ecosistema PropTech de oportunidades inmobiliarias en EE.UU. (creative finance, Subject-To, Seller Finance).', goals: 'CRM + agentes IA + marketplace multi-tenant para captura, scoring y comunicaciones.', existingTech: 'Planillas + APIs externas de data inmobiliaria', approvedBudget: 15000, notes: 'Contacto clave: Jossueth Irigoyen. Escalable a Georgia, Texas y otros estados.' } },
+    { id: 'c8', name: 'José Anaya', company: 'MCS Cleaning Marketplace', email: 'jose@mcscleaning.com', phone: '+1 305 555 0108', onboarding: { businessDescription: 'Marketplace de servicios de limpieza del hogar en EE.UU. con trabajadores independientes ("asociados").', goals: 'Plataforma para cotizar/contratar online, gestión de asociados por zona y control de comisiones.', existingTech: 'Operación manual', approvedBudget: 0, notes: 'Lleva 15 años con la idea. Cobro automático Stripe con split de comisión.' } },
+    { id: 'c9', name: 'Marco', company: 'Kintsugi Roadside', email: 'marco@kintsugiroadside.com', phone: '+1 786 555 0109', onboarding: { businessDescription: 'Servicio de emergencias automotrices que conecta clientes con técnicos en campo.', goals: 'Plataforma estilo Uber para emergencias: solicitud, asignación, tracking GPS, cobro Zelle.', existingTech: 'Sin sistema centralizado', approvedBudget: 8000, notes: 'Incluye landing premium, apps cliente/técnico, panel admin y B2B/flotas.' } },
+    { id: 'c10', name: 'Agustín', company: 'MMD Jewelry', email: 'agustin@mmdjewelry.com', phone: '+54 11 5555 0110', onboarding: { businessDescription: 'Joyería con ~50 piezas para vender internacionalmente, hoy gestionadas en Excel.', goals: 'Sitio e-commerce headless de diseño editorial (Next.js) conectado a Shopify.', existingTech: 'Excel', approvedBudget: 0, notes: 'Estética tipo Concio Studio. Paleta: blanco roto, dorado arena, rosa palo, vino suave, verde salvia.' } },
   ]
 }
+
+/* team members — rol NO fijo (se define por proyecto en assignments) */
+function seedTeam() {
+  return [
+    { id: 'u1', name: 'Federico Garbarino', color: '#F97316', initials: 'FG' },
+    { id: 'u2', name: 'Lisandro', color: '#6366F1', initials: 'L' },
+    { id: 'u3', name: 'Manuel Navarro', color: '#10B981', initials: 'MN' },
+    { id: 'u4', name: 'Nicolas Arditi', color: '#EC4899', initials: 'NA' },
+    { id: 'u5', name: 'Juan Pamies', color: '#38BDF8', initials: 'JP' },
+  ]
+}
+/* default demo assignments for the original 5 projects (rol por proyecto) */
+const DEMO_ASSIGN = {
+  p1: { pm: { userId: 'u1', roleLabel: 'Project Manager' }, dev: { userId: 'u3', roleLabel: 'Developer' } },
+  p2: { pm: { userId: 'u2', roleLabel: 'Project Manager' }, dev: { userId: 'u4', roleLabel: 'Developer' } },
+  p3: { pm: { userId: 'u1', roleLabel: 'Project Manager' }, dev: { userId: 'u5', roleLabel: 'Developer' } },
+  p4: { pm: { userId: 'u4', roleLabel: 'Project Manager' }, dev: { userId: 'u3', roleLabel: 'Developer' } },
+  p5: { pm: { userId: 'u1', roleLabel: 'Project Manager' }, dev: { userId: 'u1', roleLabel: 'Lead Dev' } },
+}
+const TAG_NEW = () => ({ id: uid(), text: 'New', color: '#22C55E' })
 
 const mods = (arr) => arr.map((m) => ({ id: uid(), ...m }))
 
@@ -327,7 +352,106 @@ function seedProjects() {
       ],
       chats: [],
     },
-  ]
+    {
+      id: 'p6', clientId: 'c6', name: 'iRowing', status: 'active',
+      productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
+      githubRepo: 'insights-software/irowing', stack: 'React Native · Node.js · OAuth 2.0 Concept2',
+      kickoff: 'App de análisis de rendimiento para atletas de remo indoor con máquinas Concept2. El cliente es Leonardo, ex remero de la selección argentina con 15+ años entrenando, que hoy gestiona todo en Google Sheets manualmente. La app descarga los datos de cada remada vía OAuth 2.0 a la API de Concept2, los analiza y los presenta con visualización tipo bolsa de valores (verde/rojo según mejora o baja). Foco motivacional para gente común que empieza a remar. Incluye app móvil para el atleta + dashboard web admin para Leonardo como coach. Soporte post-lanzamiento: 30 días.',
+      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
+      paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: '2026-06-09',
+      tags: [TAG_NEW()],
+      sprints: [
+        { id: uid(), name: 'S1 · Onboarding & OAuth Concept2', status: 'pendiente', estimatedDate: '2026-06-18', actualDate: null, modules: mods([{ name: 'Onboarding', status: 'pendiente' }, { name: 'Setup', status: 'pendiente' }, { name: 'OAuth 2.0 Concept2', status: 'pendiente' }]) },
+        { id: uid(), name: 'S2 · MVP Logbook + gráficos', status: 'pendiente', estimatedDate: '2026-06-25', actualDate: null, modules: mods([{ name: 'Logbook sincronizado', status: 'pendiente' }, { name: 'Primeros gráficos', status: 'pendiente' }, { name: 'Revisión formal', status: 'pendiente' }]) },
+        { id: uid(), name: 'S3 · Visualización stock market', status: 'pendiente', estimatedDate: '2026-07-02', actualDate: null, modules: mods([{ name: 'Visualización tipo bolsa', status: 'pendiente' }, { name: 'Comparativos semana a semana', status: 'pendiente' }]) },
+        { id: uid(), name: 'S4 · Notificaciones & insights', status: 'pendiente', estimatedDate: '2026-07-09', actualDate: null, modules: mods([{ name: 'Push notifications', status: 'pendiente' }, { name: 'Motor de insights automáticos', status: 'pendiente' }]) },
+        { id: uid(), name: 'S5 · Dashboard admin coach', status: 'pendiente', estimatedDate: '2026-07-16', actualDate: null, modules: mods([{ name: 'Gestión de atletas', status: 'pendiente' }, { name: 'Importación masiva Excel/CSV/Sheets', status: 'pendiente' }]) },
+        { id: uid(), name: 'S6 · Lanzamiento & entrega', status: 'pendiente', estimatedDate: '2026-07-23', actualDate: null, modules: mods([{ name: 'Rankings mundiales Concept2', status: 'pendiente' }, { name: 'QA', status: 'pendiente' }, { name: 'Publicación App Store + Google Play', status: 'pendiente' }, { name: 'Entrega código fuente', status: 'pendiente' }]) },
+      ],
+      pendingAgency: [{ id: uid(), title: 'Registrar app developer en Concept2', priority: 'alta', description: 'Credenciales OAuth 2.0 para el entorno de producción.' }],
+      pendingClient: [{ id: uid(), title: 'Definir precio total del proyecto', priority: 'alta', description: 'Cerrar alcance y presupuesto con Leonardo.' }, { id: uid(), title: 'Exportar histórico de Google Sheets', priority: 'media', description: 'Para migrar datos iniciales de atletas.' }],
+      risks: [{ id: uid(), description: 'Rate limits / disponibilidad de la API Concept2', severity: 'media' }],
+      chats: [],
+    },
+    {
+      id: 'p7', clientId: 'c8', name: 'MCS Cleaning Marketplace', status: 'active',
+      productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
+      githubRepo: 'insights-software/mcs-cleaning', stack: 'React Native · Node.js · Stripe · Geolocalización',
+      kickoff: 'App marketplace de servicios de limpieza del hogar para conectar clientes con trabajadores independientes ("asociados") en EE.UU. José lleva 15 años con esta idea y hoy opera de forma manual. La plataforma permite cotizar/contratar servicios online, los asociados gestionan trabajos en su zona y José controla comisiones y métricas. Incluye calculadora de precios dinámica por tipo de servicio y cobro automático con Stripe (split de comisión). Soporte post-lanzamiento: 30 días.',
+      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
+      paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: '2026-06-08',
+      tags: [TAG_NEW()],
+      sprints: [
+        { id: uid(), name: 'S1 · Setup · Auth · Roles', status: 'pendiente', estimatedDate: '2026-06-18', actualDate: null, modules: mods([{ name: 'Arquitectura', status: 'pendiente' }, { name: 'Auth', status: 'pendiente' }, { name: 'Roles', status: 'pendiente' }]) },
+        { id: uid(), name: 'S2 · Calculadora & catálogo', status: 'pendiente', estimatedDate: '2026-06-25', actualDate: null, modules: mods([{ name: 'Calculadora de precios dinámica', status: 'pendiente' }, { name: 'Catálogo de servicios', status: 'pendiente' }, { name: 'Revisión formal', status: 'pendiente' }]) },
+        { id: uid(), name: 'S3 · Solicitud & matching', status: 'pendiente', estimatedDate: '2026-07-02', actualDate: null, modules: mods([{ name: 'Flujo de solicitud', status: 'pendiente' }, { name: 'Geolocalización', status: 'pendiente' }, { name: 'Matching con asociados', status: 'pendiente' }]) },
+        { id: uid(), name: 'S4 · Stripe & chat', status: 'pendiente', estimatedDate: '2026-07-09', actualDate: null, modules: mods([{ name: 'Integración Stripe', status: 'pendiente' }, { name: 'Split de comisión', status: 'pendiente' }, { name: 'Chat cliente-asociado', status: 'pendiente' }]) },
+        { id: uid(), name: 'S5 · Dashboard admin', status: 'pendiente', estimatedDate: '2026-07-16', actualDate: null, modules: mods([{ name: 'Dashboard admin', status: 'pendiente' }, { name: 'Métricas', status: 'pendiente' }, { name: 'Reportes', status: 'pendiente' }, { name: 'Sistema de ratings', status: 'pendiente' }]) },
+        { id: uid(), name: 'S6 · IA & lanzamiento', status: 'pendiente', estimatedDate: '2026-07-23', actualDate: null, modules: mods([{ name: 'Asistente IA', status: 'pendiente' }, { name: 'Notificaciones push', status: 'pendiente' }, { name: 'QA', status: 'pendiente' }, { name: 'Publicación App Store + Google Play', status: 'pendiente' }]) },
+      ],
+      pendingAgency: [{ id: uid(), title: 'Cuenta Stripe Connect', priority: 'alta', description: 'Para split de comisión entre plataforma y asociados.' }],
+      pendingClient: [{ id: uid(), title: 'Definir precio total del proyecto', priority: 'alta', description: 'Cerrar alcance y presupuesto con José.' }, { id: uid(), title: 'Tabla de precios por servicio', priority: 'media', description: 'Insumo para la calculadora dinámica.' }],
+      risks: [{ id: uid(), description: 'Compliance de pagos a contratistas en EE.UU.', severity: 'media' }],
+      chats: [],
+    },
+    {
+      id: 'p8', clientId: 'c7', name: 'Real Deal Exchange AI', status: 'active',
+      productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
+      githubRepo: 'insights-software/real-deal-exchange', stack: 'Next.js · TypeScript · Supabase/PostgreSQL · Twilio · Vercel',
+      kickoff: 'Ecosistema PropTech para captura, procesamiento, scoring, CRM, comunicaciones y marketplace de oportunidades inmobiliarias en EE.UU. Contacto clave: Jossueth Irigoyen (creative finance, Subject-To, Seller Finance). Importa ~3.000–3.500 registros cada 10–15 días, los enriquece vía APIs, los puntúa con lógica de scoring propia, genera propuestas preliminares con agentes IA y un Human Review Gate. CRM interno con trazabilidad completa y arquitectura multi-tenant lista para escalar a Georgia, Texas y otros estados. Estructura de pago 40/30/30 sobre USD 15.000 + soporte USD 5.000 (3 meses). Plazo: 90 días.',
+      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
+      paidAmount: 0, totalAmount: 15000, progress: 0, lastDeployDate: '2026-06-07',
+      tags: [TAG_NEW()],
+      sprints: [
+        { id: uid(), name: 'S1 · Discovery & documentación', status: 'pendiente', estimatedDate: '2026-06-26', actualDate: null, modules: mods([{ name: 'Auditoría', status: 'pendiente' }, { name: 'Backlog', status: 'pendiente' }, { name: 'Documentación funcional', status: 'pendiente' }]) },
+        { id: uid(), name: 'S2 · Infraestructura base (Milestone 1)', status: 'pendiente', estimatedDate: '2026-07-11', actualDate: null, modules: mods([{ name: 'DB multi-tenant', status: 'pendiente' }, { name: 'RLS (Row Level Security)', status: 'pendiente' }, { name: 'Repositorio', status: 'pendiente' }]) },
+        { id: uid(), name: 'S3 · CRM & scoring (Milestone 2 · USD 4.500)', status: 'pendiente', estimatedDate: '2026-08-10', actualDate: null, modules: mods([{ name: 'CRM', status: 'pendiente' }, { name: 'Enriquecimiento', status: 'pendiente' }, { name: 'Scoring', status: 'pendiente' }, { name: 'Twilio/WhatsApp', status: 'pendiente' }]) },
+        { id: uid(), name: 'S4 · Marketplace & handover (Milestone 3 · USD 4.500)', status: 'pendiente', estimatedDate: '2026-09-09', actualDate: null, modules: mods([{ name: 'Marketplace pasivo', status: 'pendiente' }, { name: 'Panel admin', status: 'pendiente' }, { name: 'Documentación', status: 'pendiente' }, { name: 'Handover', status: 'pendiente' }]) },
+      ],
+      pendingAgency: [{ id: uid(), title: 'Definir lógica de scoring', priority: 'alta', description: 'Reglas de puntuación de oportunidades con Jossueth.' }],
+      pendingClient: [{ id: uid(), title: 'Accesos a APIs de enriquecimiento', priority: 'alta', description: 'Credenciales de las fuentes de data inmobiliaria.' }, { id: uid(), title: 'Cuenta Twilio', priority: 'media', description: 'Para SMS/WhatsApp de comunicaciones.' }],
+      risks: [{ id: uid(), description: 'Volumen de importación (3k–3.5k cada 10–15 días) y costo de APIs', severity: 'alta' }, { id: uid(), description: 'Complejidad multi-tenant para escalar a otros estados', severity: 'media' }],
+      chats: [],
+    },
+    {
+      id: 'p9', clientId: 'c9', name: 'Kintsugi Roadside', status: 'active',
+      productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
+      githubRepo: 'insights-software/kintsugi-roadside', stack: 'Next.js · Node.js · Supabase · GPS nativo · Zelle · Vercel',
+      kickoff: 'Plataforma integral de emergencias automotrices para conectar clientes con técnicos en campo. Reemplaza una operación sin sistema centralizado. Los clientes solicitan emergencias desde la app, los técnicos reciben y gestionan órdenes como Uber, y Marco controla asignaciones, pagos y métricas. Incluye tracking GPS en tiempo real, asignación manual, cierre de orden con firma digital y fotos antes/después, landing web premium, apps iOS + Android para clientes y técnicos, panel admin, panel cliente B2B/flotas, panel técnico, integración Zelle e IA conversacional. Estructura de pago 50/25/25 sobre USD 8.000. Plazo: 4–5 semanas.',
+      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
+      paidAmount: 0, totalAmount: 8000, progress: 0, lastDeployDate: '2026-06-09',
+      tags: [TAG_NEW()],
+      sprints: [
+        { id: uid(), name: 'S1 · Onboarding & arquitectura', status: 'pendiente', estimatedDate: '2026-06-18', actualDate: null, modules: mods([{ name: 'Relevamiento', status: 'pendiente' }, { name: 'Arquitectura', status: 'pendiente' }]) },
+        { id: uid(), name: 'S2 · Landing · Auth · Panel admin', status: 'pendiente', estimatedDate: '2026-06-25', actualDate: null, modules: mods([{ name: 'Landing premium', status: 'pendiente' }, { name: 'Auth', status: 'pendiente' }, { name: 'Panel administrador', status: 'pendiente' }, { name: 'Gestión de órdenes', status: 'pendiente' }, { name: 'Revisión formal', status: 'pendiente' }]) },
+        { id: uid(), name: 'S3 · Apps · GPS · Zelle', status: 'pendiente', estimatedDate: '2026-07-06', actualDate: null, modules: mods([{ name: 'App iOS/Android', status: 'pendiente' }, { name: 'Panel cliente', status: 'pendiente' }, { name: 'Panel técnico', status: 'pendiente' }, { name: 'GPS en tiempo real', status: 'pendiente' }, { name: 'Integración Zelle', status: 'pendiente' }]) },
+        { id: uid(), name: 'S4 · IA · Reportes · Lanzamiento', status: 'pendiente', estimatedDate: '2026-07-13', actualDate: null, modules: mods([{ name: 'Chat IA', status: 'pendiente' }, { name: 'Dashboard operativo', status: 'pendiente' }, { name: 'Reportes', status: 'pendiente' }, { name: 'QA', status: 'pendiente' }, { name: 'Publicación', status: 'pendiente' }]) },
+      ],
+      pendingAgency: [{ id: uid(), title: 'Definir flujo de asignación manual', priority: 'media', description: 'Reglas de despacho de técnicos por zona.' }],
+      pendingClient: [{ id: uid(), title: 'Datos de cuenta Zelle', priority: 'alta', description: 'Para configurar el cobro a clientes.' }, { id: uid(), title: 'Listado de técnicos iniciales', priority: 'media', description: 'Para onboarding del panel técnico.' }],
+      risks: [{ id: uid(), description: 'Precisión del GPS nativo en campo', severity: 'media' }],
+      chats: [],
+    },
+    {
+      id: 'p10', clientId: 'c10', name: 'MMD Jewelry', status: 'active',
+      productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
+      githubRepo: 'insights-software/mmd-jewelry', stack: 'Next.js · GSAP · Shopify Storefront API · Tidio',
+      kickoff: 'Sitio web e-commerce de joyería con frontend personalizado de diseño editorial conectado a Shopify como backend. Replica una estética tipo Concio Studio: apertura cinematográfica con video, navegación minimalista, about inline, galería con scroll horizontal, tienda con grid infinito y filtros por tipo de joya. La clienta tiene ~50 joyas para vender internacionalmente y hoy maneja todo en Excel. Paleta: blanco roto, dorado arena, rosa palo, vino suave, verde salvia. Plazo: 2–3 semanas.',
+      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
+      paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: '2026-06-10',
+      tags: [TAG_NEW()],
+      sprints: [
+        { id: uid(), name: 'S1 · Marca & setup Shopify', status: 'pendiente', estimatedDate: '2026-06-18', actualDate: null, modules: mods([{ name: 'Definición de marca', status: 'pendiente' }, { name: 'Setup Shopify', status: 'pendiente' }, { name: 'Arquitectura', status: 'pendiente' }]) },
+        { id: uid(), name: 'S2 · Frontend & GSAP', status: 'pendiente', estimatedDate: '2026-06-25', actualDate: null, modules: mods([{ name: 'Home', status: 'pendiente' }, { name: 'About inline', status: 'pendiente' }, { name: 'Galería scroll horizontal', status: 'pendiente' }, { name: 'Animaciones GSAP', status: 'pendiente' }]) },
+        { id: uid(), name: 'S3 · Tienda headless', status: 'pendiente', estimatedDate: '2026-07-02', actualDate: null, modules: mods([{ name: 'Integración Shopify API', status: 'pendiente' }, { name: 'Grid infinito + filtros', status: 'pendiente' }, { name: 'Página de producto', status: 'pendiente' }]) },
+        { id: uid(), name: 'S4 · Contacto · QA · Deploy', status: 'pendiente', estimatedDate: '2026-07-09', actualDate: null, modules: mods([{ name: 'Contacto', status: 'pendiente' }, { name: 'Chat widget', status: 'pendiente' }, { name: 'QA', status: 'pendiente' }, { name: 'Deploy & entrega', status: 'pendiente' }]) },
+      ],
+      pendingAgency: [{ id: uid(), title: 'Definir grilla de galería y transiciones', priority: 'media', description: 'Choreography GSAP de la home y galería.' }],
+      pendingClient: [{ id: uid(), title: 'Nombre oficial de marca, dominio y cuenta Shopify', priority: 'alta', description: 'Datos base para arrancar el setup.' }, { id: uid(), title: 'Fotos de productos y logo/firma', priority: 'alta', description: 'Assets de las ~50 joyas + branding.' }, { id: uid(), title: 'Plataforma de chat y moneda principal', priority: 'media', description: 'Confirmar Tidio/WhatsApp y moneda de venta.' }],
+      risks: [{ id: uid(), description: 'Definiciones de marca pendientes pueden frenar el arranque', severity: 'media' }],
+      chats: [],
+    },
+  ].map((p) => ({ ...p, assignments: p.assignments || DEMO_ASSIGN[p.id] || { pm: null, dev: null }, tags: p.tags || [] }))
 }
 
 function seedCalls() {
@@ -344,12 +468,31 @@ function seedCalls() {
    5 · PERSISTED STATE HOOK
 ============================================================================ */
 const STORE_KEY = 'insights_os_v1'
+/* merge seeds into persisted state without wiping user edits */
+function migrate(state) {
+  if (!state.team || !state.team.length) state.team = seedTeam()
+  if (!state.clients) state.clients = seedClients()
+  if (!state.projects) state.projects = seedProjects()
+  if (!state.calls) state.calls = seedCalls()
+  // add new clients/projects that aren't present yet (by id)
+  const cIds = new Set(state.clients.map((c) => c.id))
+  seedClients().forEach((c) => { if (!cIds.has(c.id)) state.clients.push(c) })
+  const pIds = new Set(state.projects.map((p) => p.id))
+  seedProjects().forEach((p) => { if (!pIds.has(p.id)) state.projects.push(p) })
+  // ensure assignments + tags exist on every project
+  state.projects = state.projects.map((p) => ({
+    ...p,
+    assignments: p.assignments || DEMO_ASSIGN[p.id] || { pm: null, dev: null },
+    tags: p.tags || [],
+  }))
+  return state
+}
 function loadState() {
   try {
     const raw = localStorage.getItem(STORE_KEY)
-    if (raw) return JSON.parse(raw)
+    if (raw) return migrate(JSON.parse(raw))
   } catch (e) { /* ignore */ }
-  return { clients: seedClients(), projects: seedProjects(), calls: seedCalls() }
+  return migrate({ team: seedTeam(), clients: seedClients(), projects: seedProjects(), calls: seedCalls() })
 }
 function usePersisted() {
   const [data, setData] = useState(loadState)
@@ -650,7 +793,182 @@ function Modal({ open, onClose, title, sub, children, width = 720 }) {
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.045 } } }
 const rise = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } } }
 
-/* continúa en parte 2 ... */
+/* ============================================================================
+   9b · TEAM AVATARS + ASSIGNMENT  ·  TAGS
+============================================================================ */
+const TAG_COLORS = [
+  { key: 'verde', hex: '#22C55E' }, { key: 'azul', hex: '#3B82F6' }, { key: 'naranja', hex: '#F97316' },
+  { key: 'rojo', hex: '#EF4444' }, { key: 'gris', hex: '#6B7280' }, { key: 'violeta', hex: '#8B5CF6' },
+]
+
+function Avatar({ user, size = 28, ring = 'var(--card)', title, onClick, badge, empty }) {
+  const common = { width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: Math.round(size * 0.4), flexShrink: 0, position: 'relative', cursor: onClick ? 'pointer' : 'default', lineHeight: 1, padding: 0 }
+  const Tag = onClick ? 'button' : 'div'   // avoid <button> nested inside <button>
+  if (empty || !user) {
+    return (
+      <Tag title={title || 'Asignar'} onClick={onClick} style={{ ...common, background: 'var(--bg-elevated)', border: `2px dashed var(--border-strong)`, color: 'var(--text-faint)' }}>
+        <I.plus width={Math.round(size * 0.5)} height={Math.round(size * 0.5)} />
+      </Tag>
+    )
+  }
+  return (
+    <Tag title={title} onClick={onClick} style={{ ...common, background: user.color, border: `2px solid ${ring}`, color: '#fff' }}>
+      {user.initials}
+      {badge}
+    </Tag>
+  )
+}
+
+/* dropdown to assign a user to a slot (pm/dev) — shows ALL users, role label editable */
+function AssignMenu({ slot, assignment, team, onChange, onClose }) {
+  const [q, setQ] = useState('')
+  const dft = slot === 'pm' ? 'Project Manager' : 'Developer'
+  const [label, setLabel] = useState(assignment?.roleLabel || dft)
+  const filtered = team.filter((u) => u.name.toLowerCase().includes(q.toLowerCase().trim()))
+  const pick = (userId) => { onChange({ userId, roleLabel: (label || dft).trim() }); onClose() }
+  return (
+    <>
+      <div onClick={(e) => { e.stopPropagation(); onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
+      <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '120%', left: 0, zIndex: 70, width: 248, padding: 10, boxShadow: 'var(--shadow)' }}>
+        <div className="label" style={{ marginBottom: 8 }}>Asignar {slot === 'pm' ? 'PM' : 'Dev'}</div>
+        <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Rol (ej: Lead Dev, Tech Lead…)" style={{ padding: '7px 9px', fontSize: 12.5, marginBottom: 7 }} />
+        <div style={{ position: 'relative', marginBottom: 7 }}>
+          <I.search width={13} height={13} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-faint)' }} />
+          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona…" style={{ padding: '7px 9px 7px 28px', fontSize: 12.5 }} autoFocus />
+        </div>
+        <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {filtered.map((u) => (
+            <button key={u.id} className="row-hover" onClick={() => pick(u.id)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 7px', borderRadius: 8, width: '100%', textAlign: 'left' }}>
+              <Avatar user={u} size={24} ring="var(--card)" />
+              <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{u.name}</span>
+              {assignment?.userId === u.id && <I.check width={14} height={14} style={{ color: 'var(--accent)' }} />}
+            </button>
+          ))}
+          {filtered.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-faint)', padding: '6px 7px' }}>Sin resultados</div>}
+        </div>
+        {assignment && (
+          <button className="btn btn-sm btn-ghost" onClick={() => { onChange(null); onClose() }} style={{ marginTop: 8, color: 'var(--red)', width: '100%', justifyContent: 'center' }}>
+            <I.x width={13} height={13} /> Quitar asignación
+          </button>
+        )}
+      </div>
+    </>
+  )
+}
+
+/* overlapping PM + Dev avatars (GitHub-style). Same user in both slots → single avatar + PM·DEV badge */
+function TeamAvatars({ assignments, team, onChange, size = 28, ring = 'var(--card)' }) {
+  const [menu, setMenu] = useState(null)      // 'pm' | 'dev' | null
+  const [dual, setDual] = useState(false)     // mini chooser when same user fills both slots
+  const a = assignments || { pm: null, dev: null }
+  const userById = (id) => team.find((u) => u.id === id)
+  const pmU = a.pm ? userById(a.pm.userId) : null
+  const devU = a.dev ? userById(a.dev.userId) : null
+  const same = a.pm && a.dev && a.pm.userId === a.dev.userId
+  const setSlot = (slot, val) => onChange({ ...a, [slot]: val })
+  const dbadge = (
+    <span style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', fontSize: 7.5, fontWeight: 800, letterSpacing: '.02em', padding: '1px 4px', borderRadius: 6, background: 'var(--accent)', color: '#fff', border: '1.5px solid ' + ring, whiteSpace: 'nowrap', lineHeight: 1.3 }}>PM·DEV</span>
+  )
+  return (
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        {same ? (
+          <span style={{ position: 'relative' }}>
+            <Avatar user={pmU} size={size} ring={ring} title={`${a.pm.roleLabel} + ${a.dev.roleLabel}: ${pmU?.name}`} onClick={() => setDual((v) => !v)} badge={dbadge} />
+          </span>
+        ) : (
+          <>
+            <span style={{ position: 'relative', zIndex: 2 }}>
+              <Avatar user={pmU} size={size} ring={ring} empty={!pmU} title={pmU ? `${a.pm.roleLabel}: ${pmU.name}` : 'Asignar PM'} onClick={() => { setMenu(menu === 'pm' ? null : 'pm') }} />
+            </span>
+            <span style={{ position: 'relative', zIndex: 1, marginLeft: -size * 0.32 }}>
+              <Avatar user={devU} size={size} ring={ring} empty={!devU} title={devU ? `${a.dev.roleLabel}: ${devU.name}` : 'Asignar Dev'} onClick={() => { setMenu(menu === 'dev' ? null : 'dev') }} />
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* mini chooser for the same-user case */}
+      {dual && (
+        <>
+          <div onClick={(e) => { e.stopPropagation(); setDual(false) }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
+          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '120%', left: 0, zIndex: 70, padding: 6, minWidth: 180, boxShadow: 'var(--shadow)' }}>
+            {['pm', 'dev'].map((slot) => (
+              <button key={slot} className="row-hover" onClick={() => { setDual(false); setMenu(slot) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13 }}>
+                <span style={{ fontWeight: 700, color: 'var(--accent)', minWidth: 30 }}>{slot.toUpperCase()}</span>
+                <span style={{ color: 'var(--text-dim)' }}>{a[slot].roleLabel}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {menu && (
+        <AssignMenu slot={menu} assignment={a[menu]} team={team} onChange={(val) => setSlot(menu, val)} onClose={() => setMenu(null)} />
+      )}
+    </div>
+  )
+}
+
+/* editable project tags: hover ✕ to remove, + to add, click to edit (text + color) */
+function ProjectTags({ tags, onChange, size = 'sm' }) {
+  const list = tags || []
+  const [editId, setEditId] = useState(null)   // tag id being edited, or 'new'
+  const [hoverId, setHoverId] = useState(null)
+  const [text, setText] = useState('')
+  const [color, setColor] = useState(TAG_COLORS[0].hex)
+
+  const startNew = () => { setText(''); setColor(TAG_COLORS[0].hex); setEditId('new') }
+  const startEdit = (t) => { setText(t.text); setColor(t.color); setEditId(t.id) }
+  const close = () => setEditId(null)
+  const save = () => {
+    const v = text.trim()
+    if (!v) return close()
+    if (editId === 'new') onChange([...list, { id: uid(), text: v, color }])
+    else onChange(list.map((t) => (t.id === editId ? { ...t, text: v, color } : t)))
+    close()
+  }
+  const remove = (id) => onChange(list.filter((t) => t.id !== id))
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+      {list.map((t) => (
+        <span key={t.id} onMouseEnter={() => setHoverId(t.id)} onMouseLeave={() => setHoverId(null)}
+          onClick={() => startEdit(t)} title="Editar etiqueta"
+          className="tag" style={{ cursor: 'pointer', color: t.color, background: t.color + '22', borderColor: t.color + '55', paddingRight: hoverId === t.id ? 4 : 9 }}>
+          {t.text}
+          {hoverId === t.id && (
+            <span onClick={(e) => { e.stopPropagation(); remove(t.id) }} title="Eliminar" style={{ display: 'inline-flex', marginLeft: 1 }}>
+              <I.x width={11} height={11} />
+            </span>
+          )}
+        </span>
+      ))}
+      <button onClick={startNew} title="Agregar etiqueta" className="tag" style={{ cursor: 'pointer', color: 'var(--text-faint)', background: 'var(--bg-elevated)', borderColor: 'var(--border)', padding: '3px 6px' }}>
+        <I.plus width={11} height={11} />
+      </button>
+
+      {editId && (
+        <>
+          <div onClick={(e) => { e.stopPropagation(); close() }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
+          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '120%', left: 0, zIndex: 70, padding: 12, width: 230, boxShadow: 'var(--shadow)' }}>
+            <div className="label" style={{ marginBottom: 7 }}>{editId === 'new' ? 'Nueva etiqueta' : 'Editar etiqueta'}</div>
+            <input className="input" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save() } }} placeholder="Texto" autoFocus style={{ padding: '7px 9px', fontSize: 13, marginBottom: 9 }} />
+            <div style={{ display: 'flex', gap: 7, marginBottom: 11 }}>
+              {TAG_COLORS.map((c) => (
+                <button key={c.key} title={c.key} onClick={() => setColor(c.hex)} style={{ width: 22, height: 22, borderRadius: '50%', background: c.hex, border: color === c.hex ? '2px solid var(--text)' : '2px solid transparent', cursor: 'pointer' }} />
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end' }}>
+              <button className="btn btn-sm" onClick={close}>Cancelar</button>
+              <button className="btn btn-sm btn-accent" onClick={save}><I.check width={13} height={13} /> Guardar</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 /* ============================================================================
    10 · GITHUB COMMIT CHIP
@@ -725,6 +1043,10 @@ function Overview({ onOpenProject }) {
                 <StatusMenu status={p.status} onChange={(s) => updateProject(p.id, { status: s })} />
               </div>
               <Progress value={calcProgress(p)} showLabel />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <ProjectTags tags={p.tags} onChange={(tags) => updateProject(p.id, { tags })} />
+                <TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} />
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <CommitChip repo={p.githubRepo} compact />
                 <span style={{ fontSize: 11, color: dd > 7 ? 'var(--red)' : 'var(--text-faint)' }} className="mono">deploy {dd}d</span>
@@ -761,13 +1083,39 @@ function Overview({ onOpenProject }) {
 ============================================================================ */
 function Projects({ onOpenProject }) {
   const { data, setData } = useApp()
-  const [tab, setTab] = useState('active')
+  const qp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
+  const [tab, setTab] = useState(qp.get('tab') || 'active')
   const [view, setView] = useState('cards')
-  const [clientFilter, setClientFilter] = useState('all')
+  const [clientFilter, setClientFilter] = useState(qp.get('client') || 'all')
+  const [pmFilter, setPmFilter] = useState(qp.get('pm') || 'all')
+  const [devFilter, setDevFilter] = useState(qp.get('dev') || 'all')
+  const [tagFilter, setTagFilter] = useState(qp.get('tag') || 'all')
   const clientOf = (id) => data.clients.find((c) => c.id === id)
+  const userOf = (id) => data.team.find((u) => u.id === id)
   const updateProject = (id, fields) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, ...fields } : p)) }))
-  let list = data.projects.filter((p) => p.status === tab)
-  if (clientFilter !== 'all') list = list.filter((p) => p.clientId === clientFilter)
+
+  // keep filters URL-friendly
+  useEffect(() => {
+    const p = new URLSearchParams()
+    if (tab !== 'active') p.set('tab', tab)
+    if (clientFilter !== 'all') p.set('client', clientFilter)
+    if (pmFilter !== 'all') p.set('pm', pmFilter)
+    if (devFilter !== 'all') p.set('dev', devFilter)
+    if (tagFilter !== 'all') p.set('tag', tagFilter)
+    const qs = p.toString()
+    window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
+  }, [tab, clientFilter, pmFilter, devFilter, tagFilter])
+
+  const allTags = [...new Set(data.projects.flatMap((p) => (p.tags || []).map((t) => t.text)))]
+  const filtersActive = clientFilter !== 'all' || pmFilter !== 'all' || devFilter !== 'all' || tagFilter !== 'all'
+  const clearFilters = () => { setClientFilter('all'); setPmFilter('all'); setDevFilter('all'); setTagFilter('all') }
+  const matchesFilters = (p) =>
+    (clientFilter === 'all' || p.clientId === clientFilter) &&
+    (pmFilter === 'all' || p.assignments?.pm?.userId === pmFilter) &&
+    (devFilter === 'all' || p.assignments?.dev?.userId === devFilter) &&
+    (tagFilter === 'all' || (p.tags || []).some((t) => t.text === tagFilter))
+  const countFor = (status) => data.projects.filter((p) => p.status === status && matchesFilters(p)).length
+  const list = data.projects.filter((p) => p.status === tab && matchesFilters(p))
 
   return (
     <div style={{ padding: '28px 34px 60px' }}>
@@ -776,23 +1124,38 @@ function Projects({ onOpenProject }) {
           <div className="label" style={{ marginBottom: 6 }}>Cartera</div>
           <h1 style={{ fontSize: 32 }}>Proyectos</h1>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select className="input" style={{ width: 'auto', padding: '8px 10px' }} value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
-            <option value="all">Todos los clientes</option>
-            {data.clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
-          </select>
-          <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
-            <button className="btn btn-sm btn-ghost" onClick={() => setView('cards')} style={{ background: view === 'cards' ? 'var(--card-hover)' : 'transparent', color: view === 'cards' ? 'var(--accent)' : 'var(--text-dim)' }}><I.cards width={15} height={15} /></button>
-            <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
-          </div>
+        <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
+          <button className="btn btn-sm btn-ghost" onClick={() => setView('cards')} style={{ background: view === 'cards' ? 'var(--card-hover)' : 'transparent', color: view === 'cards' ? 'var(--accent)' : 'var(--text-dim)' }}><I.cards width={15} height={15} /></button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
         </div>
+      </div>
+
+      {/* filtros */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
+        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
+          <option value="all">Todos los clientes</option>
+          {data.clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
+        </select>
+        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={pmFilter} onChange={(e) => setPmFilter(e.target.value)}>
+          <option value="all">PM: todos</option>
+          {data.team.map((u) => <option key={u.id} value={u.id}>PM: {u.name}</option>)}
+        </select>
+        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={devFilter} onChange={(e) => setDevFilter(e.target.value)}>
+          <option value="all">Dev: todos</option>
+          {data.team.map((u) => <option key={u.id} value={u.id}>Dev: {u.name}</option>)}
+        </select>
+        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
+          <option value="all">Etiqueta: todas</option>
+          {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        {filtersActive && <button className="btn btn-sm btn-ghost" onClick={clearFilters} style={{ color: 'var(--text-dim)' }}><I.x width={13} height={13} /> Limpiar</button>}
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 22, borderBottom: '1px solid var(--border)' }}>
         {[['active', 'Activos'], ['paused', 'Pausados'], ['delivered', 'Entregados']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             style={{ padding: '10px 16px', fontWeight: 600, fontSize: 14, color: tab === k ? 'var(--text)' : 'var(--text-faint)', borderBottom: tab === k ? '2px solid var(--accent)' : '2px solid transparent', marginBottom: -1 }}>
-            {l} <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>{data.projects.filter((p) => p.status === k).length}</span>
+            {l} <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>({countFor(k)})</span>
           </button>
         ))}
       </div>
@@ -825,6 +1188,10 @@ function Projects({ onOpenProject }) {
                     <div className="mono" style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: dd > 7 ? 'var(--red)' : 'var(--text)' }}>{dd}d {dd > 7 && '⚠'}</div>
                   </div>
                 </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <ProjectTags tags={p.tags} onChange={(tags) => updateProject(p.id, { tags })} />
+                  <TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} />
+                </div>
                 <CardLinks project={p} onSave={(f) => updateProject(p.id, f)} />
               </motion.div>
             )
@@ -835,7 +1202,7 @@ function Projects({ onOpenProject }) {
           <table>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Proyecto', 'Cliente', 'Estado', 'Avance', 'Sprint actual', 'Deploy', 'Cobrado'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+                {['Proyecto', 'Cliente', 'Equipo', 'Estado', 'Avance', 'Sprint actual', 'Deploy', 'Cobrado'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -847,6 +1214,7 @@ function Projects({ onOpenProject }) {
                   <tr key={p.id} className="row-hover click" onClick={() => onOpenProject(p.id)} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '13px 16px', fontWeight: 600 }}>{p.name}</td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)' }}>{cl?.company}</td>
+                    <td style={{ padding: '13px 16px' }}><TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} size={26} ring="var(--card)" /></td>
                     <td style={{ padding: '13px 16px' }}><StatusMenu status={p.status} onChange={(s) => updateProject(p.id, { status: s })} /></td>
                     <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={calcProgress(p)} showLabel /></td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)', fontSize: 13 }}>{cs?.name || '—'}</td>
@@ -1122,7 +1490,11 @@ function ProjectDetail({ projectId, onBack }) {
           <StatusMenu status={project.status} onChange={(s) => patch((p) => ({ ...p, status: s }))} />
           <button className="btn btn-sm" onClick={() => setEditOpen(true)} style={{ marginLeft: 'auto' }}><I.pencil width={14} height={14} /> Editar proyecto</button>
         </div>
-        <div style={{ color: 'var(--text-dim)', marginBottom: 16, fontSize: 14 }}>{client?.company} · {client?.name} · {project.stack}</div>
+        <div style={{ color: 'var(--text-dim)', marginBottom: 14, fontSize: 14 }}>{client?.company} · {client?.name} · {project.stack}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+          <TeamAvatars assignments={project.assignments} team={data.team} onChange={(assignments) => patch((p) => ({ ...p, assignments }))} size={32} ring="var(--bg)" />
+          <ProjectTags tags={project.tags} onChange={(tags) => patch((p) => ({ ...p, tags }))} />
+        </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 26 }}>
           <a href={project.testingUrl || project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm btn-accent" onClick={(e) => { if (!(project.testingUrl || project.productionUrl)) e.preventDefault() }}><I.ext width={14} height={14} /> Testing</a>
           <a href={project.whatsappUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm" onClick={(e) => { if (!project.whatsappUrl) e.preventDefault() }} style={{ color: project.whatsappUrl ? 'var(--green)' : undefined, opacity: project.whatsappUrl ? 1 : 0.55 }}><I.whatsapp width={15} height={15} /> WhatsApp</a>
