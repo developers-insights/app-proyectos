@@ -152,6 +152,10 @@ const I = {
   search: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>,
   refresh: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></svg>,
   doc: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4M9 13h6M9 17h6M9 9h2"/></svg>,
+  pencil: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg>,
+  whatsapp: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M12 3a9 9 0 0 0-7.7 13.7L3 21l4.5-1.2A9 9 0 1 0 12 3z"/><path d="M8.6 8.4c-.2.2-.4.6-.4 1.1 0 .6.2 1.4 1.1 2.6.9 1.2 2.3 2.2 3.4 2.5.9.3 1.6.1 1.9-.4.2-.3.2-.7.1-.9l-.3-.7c-.1-.2-.4-.3-.6-.2l-.9.3-1.6-1.6.3-.9c.1-.2 0-.5-.2-.6l-.7-.3c-.2-.1-.6-.1-.9.1z"/></svg>,
+  pause: (p) => <svg viewBox="0 0 24 24" fill="currentColor" {...p}><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>,
+  trash: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg>,
 }
 
 /* ============================================================================
@@ -444,6 +448,162 @@ const statusTone = (s) => (s === 'completado' || s === 'delivered' ? 'green' : s
 const prioTone = (p) => (p === 'alta' ? 'red' : p === 'media' ? 'yellow' : 'neutral')
 const sevTone = (s) => (s === 'alta' ? 'red' : s === 'media' ? 'yellow' : 'neutral')
 
+/* project status (activo / pausado / entregado) */
+const PROJECT_STATUS = [
+  { key: 'active', label: 'Activo', tone: 'accent', dot: 'var(--accent)' },
+  { key: 'paused', label: 'Pausado', tone: 'yellow', dot: 'var(--yellow)' },
+  { key: 'delivered', label: 'Entregado', tone: 'green', dot: 'var(--green)' },
+]
+const projStatusMeta = (s) => PROJECT_STATUS.find((x) => x.key === s) || PROJECT_STATUS[0]
+
+/* progress derived live from sprints (keeps overview/detail in sync) */
+function calcProgress(project) {
+  const sprints = project.sprints || []
+  if (!sprints.length) return project.progress ?? 0
+  const done = sprints.filter((s) => s.status === 'completado').length
+  const inProg = sprints.filter((s) => s.status === 'en progreso').length * 0.5
+  return Math.round(((done + inProg) / sprints.length) * 100)
+}
+/* module counts derived live from sprint tasks */
+function moduleCounts(project) {
+  const mods = (project.sprints || []).flatMap((s) => s.modules || [])
+  return {
+    total: mods.length,
+    delivered: mods.filter((m) => m.status === 'completado').length,
+    partial: mods.filter((m) => m.status === 'en progreso').length,
+    pending: mods.filter((m) => m.status === 'pendiente').length,
+  }
+}
+const MODULE_STATES = ['pendiente', 'en progreso', 'completado']
+const nextModuleStatus = (s) => MODULE_STATES[(MODULE_STATES.indexOf(s) + 1) % MODULE_STATES.length]
+
+/* clickable status badge with a dropdown (activo/pausado/entregado) */
+function StatusMenu({ status, onChange }) {
+  const [open, setOpen] = useState(false)
+  const meta = projStatusMeta(status)
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
+      <button onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }} title="Cambiar estado">
+        <span className="tag" style={{ color: `var(--${meta.tone === 'accent' ? 'accent' : meta.tone})`, background: `var(--${meta.tone === 'accent' ? 'accent-soft' : meta.tone + '-soft'})`, borderColor: meta.tone === 'accent' ? 'var(--accent-line)' : 'transparent', cursor: 'pointer' }}>
+          {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1 }} />
+        </span>
+      </button>
+      {open && (
+        <>
+          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
+          <div className="surface" style={{ position: 'absolute', top: '120%', right: 0, zIndex: 70, padding: 5, minWidth: 138, boxShadow: 'var(--shadow)' }}>
+            {PROJECT_STATUS.map((o) => (
+              <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: o.key === status ? 'var(--accent)' : 'var(--text)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: 99, background: o.dot, flexShrink: 0 }} />{o.label}
+                {o.key === status && <I.check width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </span>
+  )
+}
+
+/* Testing + WhatsApp links on a card, with an inline pencil editor */
+function CardLinks({ project, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [t, setT] = useState('')
+  const [w, setW] = useState('')
+  const testing = project.testingUrl || project.productionUrl || ''
+  const wa = project.whatsappUrl || ''
+  const openEdit = (e) => { e.stopPropagation(); setT(project.testingUrl || project.productionUrl || ''); setW(project.whatsappUrl || ''); setEditing(true) }
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+      <a href={testing || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!testing) e.preventDefault() }}
+        className="btn btn-sm" style={{ flex: 1, justifyContent: 'center', opacity: testing ? 1 : 0.45 }}><I.ext width={13} height={13} /> Testing</a>
+      <a href={wa || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!wa) e.preventDefault() }}
+        className="btn btn-sm" style={{ flex: 1, justifyContent: 'center', color: wa ? 'var(--green)' : undefined, opacity: wa ? 1 : 0.45 }}><I.whatsapp width={14} height={14} /> WhatsApp</a>
+      <button className="btn btn-sm btn-ghost" onClick={openEdit} title="Editar links" style={{ padding: 7 }}><I.pencil width={14} height={14} /></button>
+      <Modal open={editing} onClose={() => setEditing(false)} title="Editar links del proyecto" sub={project.name} width={460}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Field label="Testing / Deploy URL (Render, Vercel…)"><input className="input" value={t} onChange={(e) => setT(e.target.value)} placeholder="https://mi-app.onrender.com" /></Field>
+          <Field label="Grupo de WhatsApp"><input className="input" value={w} onChange={(e) => setW(e.target.value)} placeholder="https://chat.whatsapp.com/..." /></Field>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button className="btn" onClick={() => setEditing(false)}>Cancelar</button>
+            <button className="btn btn-accent" onClick={() => { onSave({ testingUrl: t, whatsappUrl: w }); setEditing(false) }}><I.check width={15} height={15} /> Guardar</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
+/* inline "add task" input used inside expanded sprints */
+function AddTaskInput({ onAdd }) {
+  const [v, setV] = useState('')
+  const submit = () => { const t = v.trim(); if (!t) return; onAdd(t); setV('') }
+  return (
+    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+      <input className="input" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }} placeholder="Agregar tarea…" style={{ padding: '7px 10px', fontSize: 13 }} />
+      <button className="btn btn-sm" onClick={submit}><I.plus width={13} height={13} /> Agregar</button>
+    </div>
+  )
+}
+
+/* full project editor (meta · URLs · financials · sprints) */
+function EditProjectModal({ open, project, onClose, onSave }) {
+  const [d, setD] = useState(null)
+  useEffect(() => { if (open && project) setD(JSON.parse(JSON.stringify(project))) }, [open, project && project.id])
+  const set = (k, v) => setD((s) => ({ ...s, [k]: v }))
+  const setSprint = (sid, k, v) => setD((s) => ({ ...s, sprints: s.sprints.map((sp) => sp.id === sid ? { ...sp, [k]: v } : sp) }))
+  const delSprint = (sid) => setD((s) => ({ ...s, sprints: s.sprints.filter((sp) => sp.id !== sid) }))
+  const addSprint = () => setD((s) => ({ ...s, sprints: [...s.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', estimatedDate: NOW.toISOString(), actualDate: null, modules: [] }] }))
+  return (
+    <Modal open={open} onClose={onClose} title="Editar proyecto" sub={d ? d.name : ''} width={780}>
+      {d && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="Nombre"><input className="input" value={d.name} onChange={(e) => set('name', e.target.value)} /></Field>
+            <Field label="Stack"><input className="input" value={d.stack || ''} onChange={(e) => set('stack', e.target.value)} /></Field>
+            <Field label="Estado">
+              <select className="input" value={d.status} onChange={(e) => set('status', e.target.value)}>
+                {PROJECT_STATUS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+            </Field>
+            <Field label="GitHub repo (org/repo)"><input className="input mono" value={d.githubRepo || ''} onChange={(e) => set('githubRepo', e.target.value)} /></Field>
+            <Field label="URL Producción"><input className="input" value={d.productionUrl || ''} onChange={(e) => set('productionUrl', e.target.value)} /></Field>
+            <Field label="URL Dev env"><input className="input" value={d.devUrl || ''} onChange={(e) => set('devUrl', e.target.value)} /></Field>
+            <Field label="Testing / Deploy URL"><input className="input" value={d.testingUrl || ''} onChange={(e) => set('testingUrl', e.target.value)} /></Field>
+            <Field label="Grupo de WhatsApp"><input className="input" value={d.whatsappUrl || ''} onChange={(e) => set('whatsappUrl', e.target.value)} /></Field>
+            <Field label="Contrato total (USD)"><input className="input mono" type="number" value={d.totalAmount} onChange={(e) => set('totalAmount', Number(e.target.value))} /></Field>
+            <Field label="Cobrado / pagado (USD)"><input className="input mono" type="number" value={d.paidAmount} onChange={(e) => set('paidAmount', Number(e.target.value))} /></Field>
+          </div>
+          <Field label="Kick-off"><textarea className="input" rows={3} value={d.kickoff || ''} onChange={(e) => set('kickoff', e.target.value)} /></Field>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <span className="label">Sprints</span>
+              <button className="btn btn-sm" onClick={addSprint}><I.plus width={13} height={13} /> Agregar sprint</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {d.sprints.map((sp) => (
+                <div key={sp.id} className="surface" style={{ padding: 9, background: 'var(--bg-elevated)', display: 'grid', gridTemplateColumns: '1fr 130px 140px 34px', gap: 8, alignItems: 'center' }}>
+                  <input className="input" value={sp.name} onChange={(e) => setSprint(sp.id, 'name', e.target.value)} style={{ padding: '7px 9px', fontSize: 13 }} />
+                  <select className="input" value={sp.status} onChange={(e) => setSprint(sp.id, 'status', e.target.value)} style={{ padding: '7px 9px', fontSize: 13 }}>
+                    <option value="pendiente">pendiente</option><option value="en progreso">en progreso</option><option value="completado">completado</option>
+                  </select>
+                  <input className="input mono" type="date" value={(sp.estimatedDate || '').slice(0, 10)} onChange={(e) => setSprint(sp.id, 'estimatedDate', e.target.value ? new Date(e.target.value).toISOString() : null)} style={{ padding: '7px 9px', fontSize: 12 }} />
+                  <button className="btn btn-sm btn-ghost" onClick={() => delSprint(sp.id)} title="Eliminar sprint" style={{ color: 'var(--red)', padding: 7 }}><I.trash width={14} height={14} /></button>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 8 }}>Las tareas de cada sprint se editan desde la tabla de Sprints (clic en un sprint para expandir y agregar/renombrar/cambiar estado).</div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button className="btn" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-accent" onClick={() => { onSave(d); onClose() }}><I.check width={15} height={15} /> Guardar cambios</button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
 function Progress({ value, height = 8, showLabel = false }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
@@ -517,14 +677,15 @@ function CommitChip({ repo, compact }) {
    11 · OVERVIEW
 ============================================================================ */
 function Overview({ onOpenProject }) {
-  const { data } = useApp()
+  const { data, setData } = useApp()
   const active = data.projects.filter((p) => p.status === 'active')
   const clientOf = (id) => data.clients.find((c) => c.id === id)
+  const updateProject = (id, fields) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, ...fields } : p)) }))
   const lastCall = [...data.calls].sort((a, b) => new Date(b.date) - new Date(a.date))[0]
   const lastDeployProj = [...data.projects].sort((a, b) => new Date(b.lastDeployDate) - new Date(a.lastDeployDate))[0]
   const totalBilled = data.projects.reduce((s, p) => s + p.paidAmount, 0)
   const totalContract = data.projects.reduce((s, p) => s + p.totalAmount, 0)
-  const avgProgress = Math.round(active.reduce((s, p) => s + p.progress, 0) / (active.length || 1))
+  const avgProgress = Math.round(active.reduce((s, p) => s + calcProgress(p), 0) / (active.length || 1))
 
   return (
     <div style={{ padding: '28px 34px 60px' }}>
@@ -561,17 +722,14 @@ function Overview({ onOpenProject }) {
                   <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cl?.company} · {cl?.name}</div>
                 </div>
-                <Badge tone={statusTone(p.status)}>{p.status === 'active' ? 'Activo' : 'Entregado'}</Badge>
+                <StatusMenu status={p.status} onChange={(s) => updateProject(p.id, { status: s })} />
               </div>
-              <Progress value={p.progress} showLabel />
+              <Progress value={calcProgress(p)} showLabel />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <CommitChip repo={p.githubRepo} compact />
                 <span style={{ fontSize: 11, color: dd > 7 ? 'var(--red)' : 'var(--text-faint)' }} className="mono">deploy {dd}d</span>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <a href={p.productionUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="btn btn-sm" style={{ flex: 1, justifyContent: 'center' }}><I.rocket width={13} height={13} /> Producción</a>
-                <a href={p.devUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="btn btn-sm" style={{ flex: 1, justifyContent: 'center' }}><I.ext width={13} height={13} /> Dev env</a>
-              </div>
+              <CardLinks project={p} onSave={(f) => updateProject(p.id, f)} />
             </motion.div>
           )
         })}
@@ -602,11 +760,12 @@ function Overview({ onOpenProject }) {
    12 · PROJECTS LIST
 ============================================================================ */
 function Projects({ onOpenProject }) {
-  const { data } = useApp()
+  const { data, setData } = useApp()
   const [tab, setTab] = useState('active')
   const [view, setView] = useState('cards')
   const [clientFilter, setClientFilter] = useState('all')
   const clientOf = (id) => data.clients.find((c) => c.id === id)
+  const updateProject = (id, fields) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, ...fields } : p)) }))
   let list = data.projects.filter((p) => p.status === tab)
   if (clientFilter !== 'all') list = list.filter((p) => p.clientId === clientFilter)
 
@@ -653,10 +812,10 @@ function Projects({ onOpenProject }) {
                     <div style={{ fontWeight: 600, fontSize: 16 }}>{p.name}</div>
                     <div style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>{cl?.company}</div>
                   </div>
-                  <Badge tone={statusTone(p.status)}>{p.status === 'active' ? 'Activo' : 'Entregado'}</Badge>
+                  <StatusMenu status={p.status} onChange={(s) => updateProject(p.id, { status: s })} />
                 </div>
-                <div style={{ marginBottom: 14 }}><Progress value={p.progress} showLabel /></div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ marginBottom: 14 }}><Progress value={calcProgress(p)} showLabel /></div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
                   <div className="surface" style={{ padding: '8px 11px', background: 'var(--bg-elevated)' }}>
                     <div className="label">Sprint actual</div>
                     <div style={{ fontSize: 13, fontWeight: 600, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentSprint?.name || '—'}</div>
@@ -666,6 +825,7 @@ function Projects({ onOpenProject }) {
                     <div className="mono" style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: dd > 7 ? 'var(--red)' : 'var(--text)' }}>{dd}d {dd > 7 && '⚠'}</div>
                   </div>
                 </div>
+                <CardLinks project={p} onSave={(f) => updateProject(p.id, f)} />
               </motion.div>
             )
           })}
@@ -675,7 +835,7 @@ function Projects({ onOpenProject }) {
           <table>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Proyecto', 'Cliente', 'Avance', 'Sprint actual', 'Deploy', 'Cobrado'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+                {['Proyecto', 'Cliente', 'Estado', 'Avance', 'Sprint actual', 'Deploy', 'Cobrado'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -687,7 +847,8 @@ function Projects({ onOpenProject }) {
                   <tr key={p.id} className="row-hover click" onClick={() => onOpenProject(p.id)} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '13px 16px', fontWeight: 600 }}>{p.name}</td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)' }}>{cl?.company}</td>
-                    <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={p.progress} showLabel /></td>
+                    <td style={{ padding: '13px 16px' }}><StatusMenu status={p.status} onChange={(s) => updateProject(p.id, { status: s })} /></td>
+                    <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={calcProgress(p)} showLabel /></td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)', fontSize: 13 }}>{cs?.name || '—'}</td>
                     <td style={{ padding: '13px 16px' }} className="mono"><span style={{ color: dd > 7 ? 'var(--red)' : 'var(--text-dim)' }}>{dd}d</span></td>
                     <td style={{ padding: '13px 16px' }} className="mono">{money(p.paidAmount)}</td>
@@ -918,22 +1079,24 @@ function ProjectDetail({ projectId, onBack }) {
   const [kickoffOpen, setKickoffOpen] = useState(true)
   const [editKickoff, setEditKickoff] = useState(false)
   const [expandedSprint, setExpandedSprint] = useState(null)
+  const [editOpen, setEditOpen] = useState(false)
 
   if (!project) return null
   const patch = (fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === projectId ? fn(p) : p)) }))
+  const saveProject = (draft) => patch((p) => ({ ...draft, chats: p.chats }))
 
-  // Sprint-driven progress
-  const sprintProgress = useMemo(() => {
-    const total = project.sprints.length || 1
-    const done = project.sprints.filter((s) => s.status === 'completado').length
-    const inProg = project.sprints.filter((s) => s.status === 'en progreso').length * 0.5
-    return Math.round(((done + inProg) / total) * 100)
-  }, [project.sprints])
+  const sprintProgress = calcProgress(project)
+  const counts = moduleCounts(project)
 
   const toggleSprint = (sid) => patch((p) => ({
     ...p,
     sprints: p.sprints.map((s) => s.id === sid ? { ...s, status: s.status === 'completado' ? 'pendiente' : 'completado', actualDate: s.status === 'completado' ? null : NOW.toISOString() } : s),
   }))
+  // task (module) management inside a sprint
+  const setModule = (sid, mid, fields) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, modules: s.modules.map((m) => m.id === mid ? { ...m, ...fields } : m) } : s) }))
+  const addModule = (sid, name) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, modules: [...s.modules, { id: uid(), name, status: 'pendiente' }] } : s) }))
+  const delModule = (sid, mid) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, modules: s.modules.filter((m) => m.id !== mid) } : s) }))
+  const addSprint = () => patch((p) => ({ ...p, sprints: [...p.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', estimatedDate: NOW.toISOString(), actualDate: null, modules: [] }] }))
 
   const allModules = project.sprints.flatMap((s) => s.modules.map((m) => ({ ...m, sprint: s.name })))
   const kpiDetails = {
@@ -956,22 +1119,25 @@ function ProjectDetail({ projectId, onBack }) {
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 4 }}>
           <h1 style={{ fontSize: 30 }}>{project.name}</h1>
-          <Badge tone={statusTone(project.status)}>{project.status === 'active' ? 'Activo' : 'Entregado'}</Badge>
+          <StatusMenu status={project.status} onChange={(s) => patch((p) => ({ ...p, status: s }))} />
+          <button className="btn btn-sm" onClick={() => setEditOpen(true)} style={{ marginLeft: 'auto' }}><I.pencil width={14} height={14} /> Editar proyecto</button>
         </div>
         <div style={{ color: 'var(--text-dim)', marginBottom: 16, fontSize: 14 }}>{client?.company} · {client?.name} · {project.stack}</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 26 }}>
-          <a href={project.productionUrl} target="_blank" rel="noreferrer" className="btn btn-sm btn-accent"><I.rocket width={14} height={14} /> Producción</a>
-          <a href={project.devUrl} target="_blank" rel="noreferrer" className="btn btn-sm"><I.ext width={14} height={14} /> Dev env</a>
+          <a href={project.testingUrl || project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm btn-accent" onClick={(e) => { if (!(project.testingUrl || project.productionUrl)) e.preventDefault() }}><I.ext width={14} height={14} /> Testing</a>
+          <a href={project.whatsappUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm" onClick={(e) => { if (!project.whatsappUrl) e.preventDefault() }} style={{ color: project.whatsappUrl ? 'var(--green)' : undefined, opacity: project.whatsappUrl ? 1 : 0.55 }}><I.whatsapp width={15} height={15} /> WhatsApp</a>
+          <a href={project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm"><I.rocket width={14} height={14} /> Producción</a>
+          <a href={project.devUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm"><I.ext width={14} height={14} /> Dev env</a>
           <a href={`https://github.com/${project.githubRepo}`} target="_blank" rel="noreferrer" className="btn btn-sm"><I.github width={14} height={14} /> GitHub repo</a>
           <div className="btn btn-sm" style={{ cursor: 'default', borderColor: 'var(--border)' }}><CommitChip repo={project.githubRepo} compact /></div>
         </div>
 
         {/* KPI GRID */}
         <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 30 }}>
-          <KpiCard label="Módulos scope" value={project.totalModules} sub="ver desglose" onClick={() => setKpiModal('scope')} />
-          <KpiCard label="Entregados" value={project.deliveredModules} tone="var(--green)" sub="ver desglose" onClick={() => setKpiModal('delivered')} />
-          <KpiCard label="Parciales" value={project.partialModules} tone="var(--accent)" sub="ver desglose" onClick={() => setKpiModal('partial')} />
-          <KpiCard label="Pendientes" value={project.pendingModules} tone="var(--text-dim)" sub="ver desglose" onClick={() => setKpiModal('pending')} />
+          <KpiCard label="Módulos scope" value={counts.total} sub="ver desglose" onClick={() => setKpiModal('scope')} />
+          <KpiCard label="Entregados" value={counts.delivered} tone="var(--green)" sub="ver desglose" onClick={() => setKpiModal('delivered')} />
+          <KpiCard label="Parciales" value={counts.partial} tone="var(--accent)" sub="ver desglose" onClick={() => setKpiModal('partial')} />
+          <KpiCard label="Pendientes" value={counts.pending} tone="var(--text-dim)" sub="ver desglose" onClick={() => setKpiModal('pending')} />
           <KpiCard label="Pagado" value={money(project.paidAmount)} tone="var(--green)" sub={`${billedPct}% del total`} onClick={() => setKpiModal('paid')} />
           <KpiCard label="Por cobrar" value={money(project.totalAmount - project.paidAmount)} tone="var(--red)" sub="ver desglose" onClick={() => setKpiModal('due')} />
           <KpiCard label="Last deploy" value={`${dd}d`} tone={dd > 7 ? 'var(--red)' : 'var(--text)'} sub={fmtDate(project.lastDeployDate)} onClick={() => setKpiModal('deploy')} />
@@ -1045,12 +1211,18 @@ function ProjectDetail({ projectId, onBack }) {
                     {expandedSprint === s.id && (
                       <tr><td colSpan={7} style={{ padding: 0 }}>
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden', background: 'var(--bg-elevated)' }}>
-                          <div style={{ padding: '12px 22px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ padding: '12px 22px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {s.modules.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)', padding: '4px 0' }}>Sin tareas. Agregá la primera abajo.</div>}
                             {s.modules.map((m) => (
-                              <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
-                                <span style={{ fontSize: 13.5 }}>{m.name}</span><Badge tone={statusTone(m.status)}>{m.status}</Badge>
+                              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
+                                <input className="input" value={m.name} onChange={(e) => setModule(s.id, m.id, { name: e.target.value })} style={{ flex: 1, padding: '6px 9px', fontSize: 13, background: 'transparent', border: '1px solid transparent' }} onFocus={(e) => (e.target.style.borderColor = 'var(--border)')} onBlur={(e) => (e.target.style.borderColor = 'transparent')} />
+                                <button onClick={() => setModule(s.id, m.id, { status: nextModuleStatus(m.status) })} title="Cambiar estado" style={{ flexShrink: 0 }}>
+                                  <span className="tag" style={{ cursor: 'pointer', color: `var(--${statusTone(m.status) === 'green' ? 'green' : statusTone(m.status) === 'accent' ? 'accent' : 'text-dim'})`, background: statusTone(m.status) === 'green' ? 'var(--green-soft)' : statusTone(m.status) === 'accent' ? 'var(--accent-soft)' : 'var(--bg-elevated)', borderColor: statusTone(m.status) === 'accent' ? 'var(--accent-line)' : statusTone(m.status) === 'neutral' ? 'var(--border)' : 'transparent', minWidth: 96, justifyContent: 'center' }}>{m.status}</span>
+                                </button>
+                                <button className="btn btn-sm btn-ghost" onClick={() => delModule(s.id, m.id)} title="Eliminar tarea" style={{ padding: 6, color: 'var(--text-faint)', flexShrink: 0 }}><I.trash width={14} height={14} /></button>
                               </div>
                             ))}
+                            <AddTaskInput onAdd={(name) => addModule(s.id, name)} />
                           </div>
                         </motion.div>
                       </td></tr>
@@ -1061,6 +1233,7 @@ function ProjectDetail({ projectId, onBack }) {
             </tbody>
           </table>
         </div>
+        <button className="btn btn-sm" onClick={addSprint} style={{ marginTop: -14, marginBottom: 26 }}><I.plus width={13} height={13} /> Agregar sprint</button>
 
         {/* PENDING ITEMS */}
         <h2 style={{ fontSize: 19, marginBottom: 12 }}>Pendientes</h2>
@@ -1133,6 +1306,8 @@ function ProjectDetail({ projectId, onBack }) {
           </table>
         )}
       </Modal>
+
+      <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} />
     </div>
   )
 }
@@ -1150,7 +1325,7 @@ KICK-OFF:
 ${project.kickoff}
 
 STACK: ${project.stack}
-AVANCE: ${project.progress}% · ${project.deliveredModules}/${project.totalModules} módulos entregados
+AVANCE: ${calcProgress(project)}% · ${moduleCounts(project).delivered}/${moduleCounts(project).total} módulos entregados
 
 SPRINTS:
 ${sprintTxt}
@@ -1384,16 +1559,14 @@ export default function InsightsApp() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-            <AnimatePresence mode="wait">
-              <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
-                style={{ height: '100%', overflow: route.view === 'project' ? 'hidden' : 'auto' }}>
-                {route.view === 'overview' && <Overview onOpenProject={openProject} />}
-                {route.view === 'projects' && <Projects onOpenProject={openProject} />}
-                {route.view === 'clients' && <Clients />}
-                {route.view === 'calls' && <Calls />}
-                {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
-              </motion.div>
-            </AnimatePresence>
+            <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
+              style={{ height: '100%', overflow: route.view === 'project' ? 'hidden' : 'auto' }}>
+              {route.view === 'overview' && <Overview onOpenProject={openProject} />}
+              {route.view === 'projects' && <Projects onOpenProject={openProject} />}
+              {route.view === 'clients' && <Clients />}
+              {route.view === 'calls' && <Calls />}
+              {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
+            </motion.div>
           </main>
         </div>
         <Settings open={settings} onClose={() => setSettings(false)} />
