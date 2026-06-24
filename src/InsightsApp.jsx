@@ -41,6 +41,7 @@ const THEMES = {
     '--yellow': '#FBBF24',
     '--yellow-soft': 'rgba(251,191,36,0.14)',
     '--blue': '#60A5FA',
+    '--blue-soft': 'rgba(96,165,250,0.14)',
     '--shadow': '0 1px 0 rgba(255,255,255,0.03), 0 18px 40px -20px rgba(0,0,0,0.8)',
     '--grid': 'rgba(255,255,255,0.025)',
   },
@@ -64,6 +65,7 @@ const THEMES = {
     '--yellow': '#B45309',
     '--yellow-soft': 'rgba(180,83,9,0.10)',
     '--blue': '#2563EB',
+    '--blue-soft': 'rgba(37,99,235,0.10)',
     '--shadow': '0 1px 2px rgba(16,15,12,0.04), 0 12px 30px -18px rgba(16,15,12,0.18)',
     '--grid': 'rgba(10,10,10,0.022)',
   },
@@ -609,6 +611,7 @@ function Badge({ children, tone = 'neutral' }) {
     green: { color: 'var(--green)', bg: 'var(--green-soft)', bd: 'transparent' },
     red: { color: 'var(--red)', bg: 'var(--red-soft)', bd: 'transparent' },
     yellow: { color: 'var(--yellow)', bg: 'var(--yellow-soft)', bd: 'transparent' },
+    blue: { color: 'var(--blue)', bg: 'var(--blue-soft)', bd: 'transparent' },
   }
   const s = map[tone] || map.neutral
   return <span className="tag" style={{ color: s.color, background: s.bg, borderColor: s.bd }}>{children}</span>
@@ -620,6 +623,7 @@ const sevTone = (s) => (s === 'alta' ? 'red' : s === 'media' ? 'yellow' : 'neutr
 /* project status (activo / pausado / entregado) */
 const PROJECT_STATUS = [
   { key: 'active', label: 'Activo', tone: 'accent', dot: 'var(--accent)' },
+  { key: 'pending', label: 'Pendiente', tone: 'blue', dot: 'var(--blue)' },
   { key: 'paused', label: 'Pausado', tone: 'yellow', dot: 'var(--yellow)' },
   { key: 'delivered', label: 'Entregado', tone: 'green', dot: 'var(--green)' },
 ]
@@ -1304,7 +1308,7 @@ function Projects({ onOpenProject }) {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 22, borderBottom: '1px solid var(--border)' }}>
-        {[['active', 'Activos'], ['paused', 'Pausados'], ['delivered', 'Entregados']].map(([k, l]) => (
+        {[['active', 'Activos'], ['pending', 'Pendiente'], ['paused', 'Pausados'], ['delivered', 'Entregados']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             style={{ padding: '10px 16px', fontWeight: 600, fontSize: 14, color: tab === k ? 'var(--text)' : 'var(--text-faint)', borderBottom: tab === k ? '2px solid var(--accent)' : '2px solid transparent', marginBottom: -1 }}>
             {l} <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>({countFor(k)})</span>
