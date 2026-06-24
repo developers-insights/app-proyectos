@@ -156,6 +156,10 @@ const I = {
   whatsapp: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M12 3a9 9 0 0 0-7.7 13.7L3 21l4.5-1.2A9 9 0 1 0 12 3z"/><path d="M8.6 8.4c-.2.2-.4.6-.4 1.1 0 .6.2 1.4 1.1 2.6.9 1.2 2.3 2.2 3.4 2.5.9.3 1.6.1 1.9-.4.2-.3.2-.7.1-.9l-.3-.7c-.1-.2-.4-.3-.6-.2l-.9.3-1.6-1.6.3-.9c.1-.2 0-.5-.2-.6l-.7-.3c-.2-.1-.6-.1-.9.1z"/></svg>,
   pause: (p) => <svg viewBox="0 0 24 24" fill="currentColor" {...p}><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>,
   trash: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg>,
+  grip: (p) => <svg viewBox="0 0 24 24" fill="currentColor" {...p}><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>,
+  calendar: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>,
+  comment: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z"/></svg>,
+  kanban: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><rect x="3" y="4" width="5" height="16" rx="1.3"/><rect x="9.5" y="4" width="5" height="11" rx="1.3"/><rect x="16" y="4" width="5" height="14" rx="1.3"/></svg>,
 }
 
 /* ============================================================================
@@ -483,11 +487,17 @@ function migrate(state) {
   seedClients().forEach((c) => { if (!cIds.has(c.id)) state.clients.push(c) })
   const pIds = new Set(state.projects.map((p) => p.id))
   seedProjects().forEach((p) => { if (!pIds.has(p.id)) state.projects.push(p) })
-  // ensure assignments + tags exist on every project
+  // ensure assignments + tags exist, normalize sprint statuses, add description/comments
   state.projects = state.projects.map((p) => ({
     ...p,
     assignments: p.assignments || DEMO_ASSIGN[p.id] || { pm: null, dev: null },
     tags: p.tags || [],
+    sprints: (p.sprints || []).map((s) => ({
+      ...s,
+      status: normSprint(s.status),
+      description: s.description || '',
+      comments: s.comments || [],
+    })),
   }))
   return state
 }
@@ -603,12 +613,23 @@ const PROJECT_STATUS = [
 ]
 const projStatusMeta = (s) => PROJECT_STATUS.find((x) => x.key === s) || PROJECT_STATUS[0]
 
+/* sprint statuses: pendiente (default) · en proceso · pausado · terminado */
+const SPRINT_STATUS = [
+  { key: 'pendiente', label: 'Pendiente', tone: 'neutral', dot: 'var(--text-faint)' },
+  { key: 'en proceso', label: 'En proceso', tone: 'accent', dot: 'var(--accent)' },
+  { key: 'pausado', label: 'Pausado', tone: 'yellow', dot: 'var(--yellow)' },
+  { key: 'terminado', label: 'Terminado', tone: 'green', dot: 'var(--green)' },
+]
+/* normalize legacy values (completado/en progreso) to the new vocabulary */
+const normSprint = (s) => (s === 'completado' ? 'terminado' : s === 'en progreso' ? 'en proceso' : (s || 'pendiente'))
+const sprintMeta = (s) => SPRINT_STATUS.find((x) => x.key === normSprint(s)) || SPRINT_STATUS[0]
+
 /* progress derived live from sprints (keeps overview/detail in sync) */
 function calcProgress(project) {
   const sprints = project.sprints || []
   if (!sprints.length) return project.progress ?? 0
-  const done = sprints.filter((s) => s.status === 'completado').length
-  const inProg = sprints.filter((s) => s.status === 'en progreso').length * 0.5
+  const done = sprints.filter((s) => normSprint(s.status) === 'terminado').length
+  const inProg = sprints.filter((s) => normSprint(s.status) === 'en proceso').length * 0.5
   return Math.round(((done + inProg) / sprints.length) * 100)
 }
 /* module counts derived live from sprint tasks */
@@ -732,8 +753,8 @@ function EditProjectModal({ open, project, onClose, onSave }) {
               {d.sprints.map((sp) => (
                 <div key={sp.id} className="surface" style={{ padding: 9, background: 'var(--bg-elevated)', display: 'grid', gridTemplateColumns: '1fr 130px 140px 34px', gap: 8, alignItems: 'center' }}>
                   <input className="input" value={sp.name} onChange={(e) => setSprint(sp.id, 'name', e.target.value)} style={{ padding: '7px 9px', fontSize: 13 }} />
-                  <select className="input" value={sp.status} onChange={(e) => setSprint(sp.id, 'status', e.target.value)} style={{ padding: '7px 9px', fontSize: 13 }}>
-                    <option value="pendiente">pendiente</option><option value="en progreso">en progreso</option><option value="completado">completado</option>
+                  <select className="input" value={normSprint(sp.status)} onChange={(e) => setSprint(sp.id, 'status', e.target.value)} style={{ padding: '7px 9px', fontSize: 13 }}>
+                    {SPRINT_STATUS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                   </select>
                   <input className="input mono" type="date" value={(sp.estimatedDate || '').slice(0, 10)} onChange={(e) => setSprint(sp.id, 'estimatedDate', e.target.value ? new Date(e.target.value).toISOString() : null)} style={{ padding: '7px 9px', fontSize: 12 }} />
                   <button className="btn btn-sm btn-ghost" onClick={() => delSprint(sp.id)} title="Eliminar sprint" style={{ color: 'var(--red)', padding: 7 }}><I.trash width={14} height={14} /></button>
@@ -975,6 +996,208 @@ function ProjectTags({ tags, onChange, size = 'sm' }) {
 }
 
 /* ============================================================================
+   9c · SPRINTS — status dropdown · detail modal · table/kanban board
+============================================================================ */
+/* clickable sprint-status badge with dropdown (pendiente/en proceso/pausado/terminado) */
+function SprintStatusBadge({ status, onChange, full }) {
+  const [open, setOpen] = useState(false)
+  const meta = sprintMeta(status)
+  const tint = (tone) => ({ color: `var(--${tone === 'neutral' ? 'text-dim' : tone})`, bg: tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${tone}-soft)`, bd: tone === 'accent' ? 'var(--accent-line)' : tone === 'neutral' ? 'var(--border)' : 'transparent' })
+  const s = tint(meta.tone)
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
+      <button onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }} title="Cambiar estado">
+        <span className="tag" style={{ cursor: 'pointer', color: s.color, background: s.bg, borderColor: s.bd, minWidth: full ? 96 : 0, justifyContent: 'center' }}>
+          {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1 }} />
+        </span>
+      </button>
+      {open && (
+        <>
+          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
+          <div className="surface" style={{ position: 'absolute', top: '120%', left: 0, zIndex: 70, padding: 5, minWidth: 150, boxShadow: 'var(--shadow)' }}>
+            {SPRINT_STATUS.map((o) => (
+              <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: normSprint(status) === o.key ? 'var(--accent)' : 'var(--text)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: 99, background: o.dot, flexShrink: 0 }} />{o.label}
+                {normSprint(status) === o.key && <I.check width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </span>
+  )
+}
+
+/* sprint detail card: descripción + comentarios + tareas */
+function SprintDetailModal({ open, sprint, onClose, onPatch }) {
+  const [comment, setComment] = useState('')
+  if (!sprint) return <Modal open={open} onClose={onClose} title="Sprint" />
+  const addComment = () => { const t = comment.trim(); if (!t) return; onPatch({ comments: [...(sprint.comments || []), { id: uid(), text: t, date: NOW.toISOString() }] }); setComment('') }
+  const delComment = (id) => onPatch({ comments: (sprint.comments || []).filter((c) => c.id !== id) })
+  const setMod = (mid, fields) => onPatch({ modules: sprint.modules.map((m) => m.id === mid ? { ...m, ...fields } : m) })
+  const addMod = (name) => onPatch({ modules: [...sprint.modules, { id: uid(), name, status: 'pendiente' }] })
+  const delMod = (mid) => onPatch({ modules: sprint.modules.filter((m) => m.id !== mid) })
+  return (
+    <Modal open={open} onClose={onClose} title={sprint.name} sub="Detalle del sprint" width={640}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="label">Estado</span><SprintStatusBadge status={sprint.status} onChange={(v) => onPatch({ status: v })} /></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="label">Fecha estimada</span>
+            <input type="date" className="input mono" value={(sprint.estimatedDate || '').slice(0, 10)} onChange={(e) => onPatch({ estimatedDate: e.target.value ? new Date(e.target.value).toISOString() : null })} style={{ width: 'auto', padding: '6px 9px', fontSize: 12.5 }} />
+          </div>
+        </div>
+        <Field label="Nombre del sprint"><input className="input" value={sprint.name} onChange={(e) => onPatch({ name: e.target.value })} /></Field>
+        <Field label="Explicación detallada"><textarea className="input" rows={4} value={sprint.description || ''} onChange={(e) => onPatch({ description: e.target.value })} placeholder="Describí el alcance, objetivos y notas del sprint…" /></Field>
+
+        <div>
+          <div className="label" style={{ marginBottom: 8 }}>Tareas ({sprint.modules.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {sprint.modules.map((m) => (
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input className="input" value={m.name} onChange={(e) => setMod(m.id, { name: e.target.value })} style={{ flex: 1, padding: '6px 9px', fontSize: 13 }} />
+                <button onClick={() => setMod(m.id, { status: nextModuleStatus(m.status) })} title="Cambiar estado" style={{ flexShrink: 0 }}>
+                  <span className="tag" style={{ cursor: 'pointer', color: `var(--${statusTone(m.status) === 'green' ? 'green' : statusTone(m.status) === 'accent' ? 'accent' : 'text-dim'})`, background: statusTone(m.status) === 'green' ? 'var(--green-soft)' : statusTone(m.status) === 'accent' ? 'var(--accent-soft)' : 'var(--bg-elevated)', borderColor: statusTone(m.status) === 'accent' ? 'var(--accent-line)' : statusTone(m.status) === 'neutral' ? 'var(--border)' : 'transparent', minWidth: 96, justifyContent: 'center' }}>{m.status}</span>
+                </button>
+                <button className="btn btn-sm btn-ghost" onClick={() => delMod(m.id)} title="Eliminar tarea" style={{ padding: 6, color: 'var(--text-faint)', flexShrink: 0 }}><I.trash width={14} height={14} /></button>
+              </div>
+            ))}
+            <AddTaskInput onAdd={addMod} />
+          </div>
+        </div>
+
+        <div>
+          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.comment width={14} height={14} /> Comentarios ({(sprint.comments || []).length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+            {(sprint.comments || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin comentarios todavía.</div>}
+            {(sprint.comments || []).map((c) => (
+              <div key={c.id} className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{fmtDate(c.date)}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => delComment(c.id)} style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
+                </div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.text}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment() } }} placeholder="Dejá un comentario… (Enter envía)" style={{ resize: 'none' }} />
+            <button className="btn btn-accent" onClick={addComment} style={{ alignSelf: 'stretch' }}><I.send width={15} height={15} /></button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* sprint board: table (drag to reorder) or kanban (drag between status columns) */
+function SprintBoard({ project, patch, onOpenSprint }) {
+  const [boardView, setBoardView] = useState('table')
+  const [dragId, setDragId] = useState(null)
+  const [overId, setOverId] = useState(null)
+  const sprints = project.sprints || []
+  const setSprint = (sid, fields) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
+  const addSprint = () => patch((p) => ({ ...p, sprints: [...p.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', estimatedDate: NOW.toISOString(), actualDate: null, modules: [], description: '', comments: [] }] }))
+
+  const reorder = (fromId, toId) => {
+    if (fromId === toId) return
+    patch((p) => {
+      const arr = [...p.sprints]
+      const from = arr.findIndex((s) => s.id === fromId)
+      const to = arr.findIndex((s) => s.id === toId)
+      if (from < 0 || to < 0) return p
+      const [moved] = arr.splice(from, 1)
+      arr.splice(to, 0, moved)
+      return { ...p, sprints: arr }
+    })
+  }
+
+  return (
+    <div style={{ marginBottom: 26 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <h2 style={{ fontSize: 19 }}>Sprints</h2>
+        <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
+          <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('table')} title="Tabla" style={{ background: boardView === 'table' ? 'var(--card-hover)' : 'transparent', color: boardView === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('kanban')} title="Kanban" style={{ background: boardView === 'kanban' ? 'var(--card-hover)' : 'transparent', color: boardView === 'kanban' ? 'var(--accent)' : 'var(--text-dim)' }}><I.kanban width={15} height={15} /></button>
+        </div>
+      </div>
+
+      {boardView === 'table' ? (
+        <>
+          <div className="surface" style={{ overflow: 'hidden' }}>
+            <table>
+              <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
+                {['', '#', 'Nombre', 'Módulos', 'Estado', 'Estimada'].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {sprints.map((s, i) => (
+                  <tr key={s.id} draggable
+                    onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragId(s.id) }}
+                    onDragOver={(e) => { e.preventDefault(); setOverId(s.id) }}
+                    onDragEnd={() => { setDragId(null); setOverId(null) }}
+                    onDrop={(e) => { e.preventDefault(); reorder(e.dataTransfer.getData('text/plain') || dragId, s.id); setDragId(null); setOverId(null) }}
+                    style={{ borderBottom: '1px solid var(--border)', background: overId === s.id && dragId !== s.id ? 'var(--card-hover)' : dragId === s.id ? 'var(--bg-elevated)' : 'transparent', opacity: dragId === s.id ? 0.5 : 1 }}>
+                    <td style={{ padding: '12px 8px 12px 14px', width: 28, cursor: 'grab', color: 'var(--text-faint)' }} title="Arrastrá para reordenar"><I.grip width={16} height={16} /></td>
+                    <td style={{ padding: '12px 14px' }} className="mono">{i + 1}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <button className="click" onClick={() => onOpenSprint(s.id)} title="Ver detalle" style={{ fontWeight: 600, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, color: 'var(--text)' }}>
+                        {s.name}{(s.comments || []).length > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{s.comments.length}</span>}
+                      </button>
+                    </td>
+                    <td style={{ padding: '12px 14px', color: 'var(--text-dim)' }} className="mono">{s.modules.length}</td>
+                    <td style={{ padding: '12px 14px' }}><SprintStatusBadge status={s.status} onChange={(v) => setSprint(s.id, { status: v })} /></td>
+                    <td style={{ padding: '8px 14px' }}>
+                      <input type="date" className="input mono" value={(s.estimatedDate || '').slice(0, 10)} onChange={(e) => setSprint(s.id, { estimatedDate: e.target.value ? new Date(e.target.value).toISOString() : null })} onClick={(e) => e.stopPropagation()} style={{ width: 'auto', padding: '5px 8px', fontSize: 12, background: 'transparent', border: '1px solid transparent' }} onFocus={(e) => (e.target.style.borderColor = 'var(--border)')} onBlur={(e) => (e.target.style.borderColor = 'transparent')} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button className="btn btn-sm" onClick={addSprint} style={{ marginTop: 12 }}><I.plus width={13} height={13} /> Agregar sprint</button>
+        </>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, alignItems: 'start' }}>
+          {SPRINT_STATUS.map((col) => {
+            const colSprints = sprints.filter((s) => normSprint(s.status) === col.key)
+            return (
+              <div key={col.key}
+                onDragOver={(e) => { e.preventDefault(); setOverId(col.key) }}
+                onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain') || dragId; if (id) setSprint(id, { status: col.key }); setDragId(null); setOverId(null) }}
+                className="surface" style={{ padding: 10, background: overId === col.key ? 'var(--card-hover)' : 'var(--bg-elevated)', minHeight: 120, borderColor: overId === col.key ? 'var(--accent-line)' : 'var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10, padding: '0 2px' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 99, background: col.dot }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.02em' }}>{col.label}</span>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 'auto' }}>{colSprints.length}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {colSprints.map((s) => (
+                    <div key={s.id} draggable
+                      onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragId(s.id) }}
+                      onDragEnd={() => { setDragId(null); setOverId(null) }}
+                      onClick={() => onOpenSprint(s.id)}
+                      className="surface click" style={{ padding: 11, background: 'var(--card)', cursor: 'grab', opacity: dragId === s.id ? 0.5 : 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, lineHeight: 1.3 }}>{s.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-faint)' }} className="mono">
+                        <span>{s.modules.length} tareas</span>
+                        <span>{fmtDate(s.estimatedDate)}</span>
+                      </div>
+                      {(s.comments || []).length > 0 && <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{s.comments.length}</div>}
+                    </div>
+                  ))}
+                  {colSprints.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-faint)', padding: '6px 2px' }}>—</div>}
+                </div>
+              </div>
+            )
+          })}
+          <div style={{ gridColumn: '1 / -1' }}><button className="btn btn-sm" onClick={addSprint}><I.plus width={13} height={13} /> Agregar sprint</button></div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ============================================================================
    10 · GITHUB COMMIT CHIP
 ============================================================================ */
 function CommitChip({ repo, compact }) {
@@ -1171,7 +1394,7 @@ function Projects({ onOpenProject }) {
           {list.map((p) => {
             const cl = clientOf(p.clientId)
             const dd = daysAgo(p.lastDeployDate)
-            const currentSprint = p.sprints.find((s) => s.status === 'en progreso')
+            const currentSprint = p.sprints.find((s) => normSprint(s.status) === 'en proceso')
             return (
               <motion.div key={p.id} variants={rise} whileHover={{ y: -3 }} onClick={() => onOpenProject(p.id)} className="surface surface-hover click" style={{ padding: 18 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
@@ -1213,7 +1436,7 @@ function Projects({ onOpenProject }) {
               {list.map((p) => {
                 const cl = clientOf(p.clientId)
                 const dd = daysAgo(p.lastDeployDate)
-                const cs = p.sprints.find((s) => s.status === 'en progreso')
+                const cs = p.sprints.find((s) => normSprint(s.status) === 'en proceso')
                 return (
                   <tr key={p.id} className="row-hover click" onClick={() => onOpenProject(p.id)} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '13px 16px', fontWeight: 600 }}>{p.name}</td>
@@ -1450,25 +1673,17 @@ function ProjectDetail({ projectId, onBack }) {
   const [kpiModal, setKpiModal] = useState(null)
   const [kickoffOpen, setKickoffOpen] = useState(true)
   const [editKickoff, setEditKickoff] = useState(false)
-  const [expandedSprint, setExpandedSprint] = useState(null)
+  const [openSprintId, setOpenSprintId] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
 
   if (!project) return null
   const patch = (fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === projectId ? fn(p) : p)) }))
   const saveProject = (draft) => patch((p) => ({ ...draft, chats: p.chats }))
+  const patchSprint = (sid, fields) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
+  const openSprint = project.sprints.find((s) => s.id === openSprintId)
 
   const sprintProgress = calcProgress(project)
   const counts = moduleCounts(project)
-
-  const toggleSprint = (sid) => patch((p) => ({
-    ...p,
-    sprints: p.sprints.map((s) => s.id === sid ? { ...s, status: s.status === 'completado' ? 'pendiente' : 'completado', actualDate: s.status === 'completado' ? null : NOW.toISOString() } : s),
-  }))
-  // task (module) management inside a sprint
-  const setModule = (sid, mid, fields) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, modules: s.modules.map((m) => m.id === mid ? { ...m, ...fields } : m) } : s) }))
-  const addModule = (sid, name) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, modules: [...s.modules, { id: uid(), name, status: 'pendiente' }] } : s) }))
-  const delModule = (sid, mid) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, modules: s.modules.filter((m) => m.id !== mid) } : s) }))
-  const addSprint = () => patch((p) => ({ ...p, sprints: [...p.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', estimatedDate: NOW.toISOString(), actualDate: null, modules: [] }] }))
 
   const allModules = project.sprints.flatMap((s) => s.modules.map((m) => ({ ...m, sprint: s.name })))
   const kpiDetails = {
@@ -1548,7 +1763,7 @@ function ProjectDetail({ projectId, onBack }) {
                     {project.sprints.map((s, i) => (
                       <div key={s.id} style={{ flex: 1, minWidth: 120, position: 'relative', paddingTop: 22 }}>
                         <div style={{ position: 'absolute', top: 8, left: 0, right: 0, height: 2, background: 'var(--border)' }} />
-                        <div style={{ position: 'absolute', top: 3, left: '50%', transform: 'translateX(-50%)', width: 12, height: 12, borderRadius: 999, background: s.status === 'completado' ? 'var(--green)' : s.status === 'en progreso' ? 'var(--accent)' : 'var(--bg-elevated)', border: '2px solid var(--border-strong)' }} />
+                        <div style={{ position: 'absolute', top: 3, left: '50%', transform: 'translateX(-50%)', width: 12, height: 12, borderRadius: 999, background: normSprint(s.status) === 'terminado' ? 'var(--green)' : normSprint(s.status) === 'en proceso' ? 'var(--accent)' : normSprint(s.status) === 'pausado' ? 'var(--yellow)' : 'var(--bg-elevated)', border: '2px solid var(--border-strong)' }} />
                         <div style={{ textAlign: 'center', padding: '0 6px' }}>
                           <div style={{ fontSize: 12, fontWeight: 600 }}>{s.name}</div>
                           <div style={{ fontSize: 10.5, color: 'var(--text-faint)' }} className="mono">{fmtDate(s.estimatedDate)}</div>
@@ -1562,54 +1777,8 @@ function ProjectDetail({ projectId, onBack }) {
           </AnimatePresence>
         </div>
 
-        {/* SPRINT TABLE */}
-        <h2 style={{ fontSize: 19, marginBottom: 12 }}>Sprints</h2>
-        <div className="surface" style={{ overflow: 'hidden', marginBottom: 26 }}>
-          <table>
-            <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['#', 'Nombre', 'Módulos', 'Estado', 'Estimada', 'Real', ''].map((h) => <th key={h} style={{ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {project.sprints.map((s, i) => (
-                <React.Fragment key={s.id}>
-                  <tr className="row-hover click" onClick={() => setExpandedSprint(expandedSprint === s.id ? null : s.id)} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '12px 14px' }} className="mono">{i + 1}</td>
-                    <td style={{ padding: '12px 14px', fontWeight: 600 }}>{s.name}</td>
-                    <td style={{ padding: '12px 14px', color: 'var(--text-dim)' }} className="mono">{s.modules.length}</td>
-                    <td style={{ padding: '12px 14px' }}><Badge tone={statusTone(s.status)}>{s.status}</Badge></td>
-                    <td style={{ padding: '12px 14px', color: 'var(--text-dim)' }} className="mono">{fmtDate(s.estimatedDate)}</td>
-                    <td style={{ padding: '12px 14px', color: s.actualDate ? 'var(--green)' : 'var(--text-faint)' }} className="mono">{s.actualDate ? fmtDate(s.actualDate) : '—'}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); toggleSprint(s.id) }} title="Marcar completado" style={{ color: s.status === 'completado' ? 'var(--green)' : 'var(--text-faint)' }}><I.check width={15} height={15} /></button>
-                    </td>
-                  </tr>
-                  <AnimatePresence>
-                    {expandedSprint === s.id && (
-                      <tr><td colSpan={7} style={{ padding: 0 }}>
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden', background: 'var(--bg-elevated)' }}>
-                          <div style={{ padding: '12px 22px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            {s.modules.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)', padding: '4px 0' }}>Sin tareas. Agregá la primera abajo.</div>}
-                            {s.modules.map((m) => (
-                              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
-                                <input className="input" value={m.name} onChange={(e) => setModule(s.id, m.id, { name: e.target.value })} style={{ flex: 1, padding: '6px 9px', fontSize: 13, background: 'transparent', border: '1px solid transparent' }} onFocus={(e) => (e.target.style.borderColor = 'var(--border)')} onBlur={(e) => (e.target.style.borderColor = 'transparent')} />
-                                <button onClick={() => setModule(s.id, m.id, { status: nextModuleStatus(m.status) })} title="Cambiar estado" style={{ flexShrink: 0 }}>
-                                  <span className="tag" style={{ cursor: 'pointer', color: `var(--${statusTone(m.status) === 'green' ? 'green' : statusTone(m.status) === 'accent' ? 'accent' : 'text-dim'})`, background: statusTone(m.status) === 'green' ? 'var(--green-soft)' : statusTone(m.status) === 'accent' ? 'var(--accent-soft)' : 'var(--bg-elevated)', borderColor: statusTone(m.status) === 'accent' ? 'var(--accent-line)' : statusTone(m.status) === 'neutral' ? 'var(--border)' : 'transparent', minWidth: 96, justifyContent: 'center' }}>{m.status}</span>
-                                </button>
-                                <button className="btn btn-sm btn-ghost" onClick={() => delModule(s.id, m.id)} title="Eliminar tarea" style={{ padding: 6, color: 'var(--text-faint)', flexShrink: 0 }}><I.trash width={14} height={14} /></button>
-                              </div>
-                            ))}
-                            <AddTaskInput onAdd={(name) => addModule(s.id, name)} />
-                          </div>
-                        </motion.div>
-                      </td></tr>
-                    )}
-                  </AnimatePresence>
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <button className="btn btn-sm" onClick={addSprint} style={{ marginTop: -14, marginBottom: 26 }}><I.plus width={13} height={13} /> Agregar sprint</button>
+        {/* SPRINTS — tabla (drag para reordenar) o kanban */}
+        <SprintBoard project={project} patch={patch} onOpenSprint={(id) => setOpenSprintId(id)} />
 
         {/* PENDING ITEMS */}
         <h2 style={{ fontSize: 19, marginBottom: 12 }}>Pendientes</h2>
@@ -1664,7 +1833,7 @@ function ProjectDetail({ projectId, onBack }) {
             <Progress value={sprintProgress} showLabel height={12} />
             {project.sprints.map((s) => (
               <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 14 }}>{s.name}</span><Badge tone={statusTone(s.status)}>{s.status}</Badge>
+                <span style={{ fontSize: 14 }}>{s.name}</span><Badge tone={sprintMeta(s.status).tone}>{sprintMeta(s.status).label}</Badge>
               </div>
             ))}
           </div>
@@ -1684,6 +1853,7 @@ function ProjectDetail({ projectId, onBack }) {
       </Modal>
 
       <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} />
+      <SprintDetailModal open={!!openSprint} sprint={openSprint} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprint(openSprintId, fields)} />
     </div>
   )
 }
