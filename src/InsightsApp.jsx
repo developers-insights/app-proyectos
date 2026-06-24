@@ -215,6 +215,7 @@ const DEMO_ASSIGN = {
   p5: { pm: { userId: 'u1', roleLabel: 'Project Manager' }, dev: { userId: 'u1', roleLabel: 'Lead Dev' } },
 }
 const TAG_NEW = () => ({ id: uid(), text: 'New', color: '#22C55E' })
+const TAG_NEXT = () => ({ id: uid(), text: 'Next', color: '#3B82F6' })
 
 const mods = (arr) => arr.map((m) => ({ id: uid(), ...m }))
 
@@ -455,6 +456,17 @@ function seedProjects() {
       pendingClient: [{ id: uid(), title: 'Nombre oficial de marca, dominio y cuenta Shopify', priority: 'alta', description: 'Datos base para arrancar el setup.' }, { id: uid(), title: 'Fotos de productos y logo/firma', priority: 'alta', description: 'Assets de las ~50 joyas + branding.' }, { id: uid(), title: 'Plataforma de chat y moneda principal', priority: 'media', description: 'Confirmar Tidio/WhatsApp y moneda de venta.' }],
       risks: [{ id: uid(), description: 'Definiciones de marca pendientes pueden frenar el arranque', severity: 'media' }],
       chats: [],
+    },
+    {
+      id: 'p11', clientId: 'c4', name: 'HiddenWare App', status: 'active',
+      productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
+      githubRepo: '', stack: 'Por definir',
+      kickoff: 'Proyecto planificado para el próximo mes — aún no iniciado. Tenerlo en cuenta para el arranque del siguiente sprint de cartera.',
+      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
+      paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: null,
+      tags: [TAG_NEXT()],
+      sprints: [],
+      pendingAgency: [], pendingClient: [], risks: [], chats: [],
     },
   ].map((p) => ({ ...p, assignments: p.assignments || DEMO_ASSIGN[p.id] || { pm: null, dev: null }, tags: p.tags || [] }))
 }
@@ -1219,93 +1231,6 @@ function CommitChip({ repo, compact }) {
 }
 
 /* ============================================================================
-   11 · OVERVIEW
-============================================================================ */
-function Overview({ onOpenProject }) {
-  const { data, setData } = useApp()
-  const active = data.projects.filter((p) => p.status === 'active')
-  const clientOf = (id) => data.clients.find((c) => c.id === id)
-  const updateProject = (id, fields) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, ...fields } : p)) }))
-  const lastCall = [...data.calls].sort((a, b) => new Date(b.date) - new Date(a.date))[0]
-  const lastDeployProj = [...data.projects].sort((a, b) => new Date(b.lastDeployDate) - new Date(a.lastDeployDate))[0]
-  const totalBilled = data.projects.reduce((s, p) => s + p.paidAmount, 0)
-  const totalContract = data.projects.reduce((s, p) => s + p.totalAmount, 0)
-  const avgProgress = Math.round(active.reduce((s, p) => s + calcProgress(p), 0) / (active.length || 1))
-
-  return (
-    <div style={{ padding: '28px 34px 60px' }}>
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-        style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
-        <div>
-          <div className="label" style={{ marginBottom: 6 }}>Insights Software · Project OS</div>
-          <h1 style={{ fontSize: 34, lineHeight: 1.02 }}>Overview</h1>
-        </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {[['Proyectos activos', active.length], ['Avance promedio', avgProgress + '%'], ['Facturado', money(totalBilled)], ['Cartera total', money(totalContract)]].map(([k, v]) => (
-            <div key={k} className="surface" style={{ padding: '12px 16px', minWidth: 128 }}>
-              <div className="label">{k}</div>
-              <div className="mono" style={{ fontSize: 22, fontWeight: 600, marginTop: 4 }}>{v}</div>
-            </div>
-          ))}
-        </div>
-      </motion.div>
-
-      <motion.div variants={stagger} initial="hidden" animate="show"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 16, marginBottom: 36 }}>
-        {active.map((p) => {
-          const cl = clientOf(p.clientId)
-          const dd = daysAgo(p.lastDeployDate)
-          return (
-            <motion.div key={p.id} variants={rise} onClick={() => onOpenProject(p.id)}
-              whileHover={{ y: -3 }} className="surface surface-hover click"
-              style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
-                  {cl?.company?.[0] || '?'}
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cl?.company} · {cl?.name}</div>
-                </div>
-                <StatusMenu status={p.status} onChange={(s) => updateProject(p.id, { status: s })} />
-              </div>
-              <Progress value={calcProgress(p)} showLabel />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                <ProjectTags tags={p.tags} onChange={(tags) => updateProject(p.id, { tags })} />
-                <TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <CommitChip repo={p.githubRepo} compact />
-                <span style={{ fontSize: 11, color: dd > 7 ? 'var(--red)' : 'var(--text-faint)' }} className="mono">deploy {dd}d</span>
-              </div>
-              <CardLinks project={p} onSave={(f) => updateProject(p.id, f)} />
-            </motion.div>
-          )
-        })}
-      </motion.div>
-
-      <h2 style={{ fontSize: 20, marginBottom: 14 }}>Actividad reciente</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 16 }}>
-        <div className="surface" style={{ padding: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, color: 'var(--accent)' }}><I.phone width={15} height={15} /><span className="label" style={{ color: 'var(--accent)' }}>Última call registrada</span></div>
-          {lastCall ? (<>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>{clientOf(lastCall.clientId)?.company} · {fmtDate(lastCall.date)}</div>
-            <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.55 }}>{lastCall.summary}</div>
-            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-faint)' }}>Asesor: {lastCall.advisor}</div>
-          </>) : <div style={{ color: 'var(--text-faint)' }}>Sin calls</div>}
-        </div>
-        <div className="surface" style={{ padding: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, color: 'var(--green)' }}><I.rocket width={15} height={15} /><span className="label" style={{ color: 'var(--green)' }}>Último deploy</span></div>
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>{lastDeployProj.name} · {fmtDate(lastDeployProj.lastDeployDate)}</div>
-          <CommitChip repo={lastDeployProj.githubRepo} />
-          <div style={{ marginTop: 10 }}><a href={lastDeployProj.productionUrl} target="_blank" rel="noreferrer" className="btn btn-sm"><I.ext width={13} height={13} /> Ver en producción</a></div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ============================================================================
    12 · PROJECTS LIST
 ============================================================================ */
 function Projects({ onOpenProject }) {
@@ -1412,7 +1337,7 @@ function Projects({ onOpenProject }) {
                   </div>
                   <div className="surface" style={{ padding: '8px 11px', background: 'var(--bg-elevated)' }}>
                     <div className="label">Días sin deploy</div>
-                    <div className="mono" style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: dd > 7 ? 'var(--red)' : 'var(--text)' }}>{dd}d {dd > 7 && '⚠'}</div>
+                    <div className="mono" style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: dd > 7 ? 'var(--red)' : 'var(--text)' }}>{dd == null ? '—' : `${dd}d`} {dd > 7 && '⚠'}</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14 }}>
@@ -1445,7 +1370,7 @@ function Projects({ onOpenProject }) {
                     <td style={{ padding: '13px 16px' }}><StatusMenu status={p.status} onChange={(s) => updateProject(p.id, { status: s })} /></td>
                     <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={calcProgress(p)} showLabel /></td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)', fontSize: 13 }}>{cs?.name || '—'}</td>
-                    <td style={{ padding: '13px 16px' }} className="mono"><span style={{ color: dd > 7 ? 'var(--red)' : 'var(--text-dim)' }}>{dd}d</span></td>
+                    <td style={{ padding: '13px 16px' }} className="mono"><span style={{ color: dd > 7 ? 'var(--red)' : 'var(--text-dim)' }}>{dd == null ? '—' : `${dd}d`}</span></td>
                     <td style={{ padding: '13px 16px' }} className="mono">{money(p.paidAmount)}</td>
                   </tr>
                 )
@@ -1993,7 +1918,6 @@ function ProjectChat({ project, client, patch }) {
 ============================================================================ */
 function Sidebar({ route, setRoute, collapsed, setCollapsed }) {
   const items = [
-    { key: 'overview', label: 'Overview', icon: I.grid },
     { key: 'projects', label: 'Projects', icon: I.folder },
     { key: 'clients', label: 'Clients', icon: I.users },
     { key: 'calls', label: 'Calls', icon: I.phone },
@@ -2075,7 +1999,7 @@ function Settings({ open, onClose }) {
 export default function InsightsApp() {
   const [data, setData] = usePersisted()
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
-  const [route, setRoute] = useState({ view: 'overview' })
+  const [route, setRoute] = useState({ view: 'projects' })
   const [collapsed, setCollapsed] = useState(false)
   const [settings, setSettings] = useState(false)
 
@@ -2107,7 +2031,6 @@ export default function InsightsApp() {
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
               style={{ height: '100%', overflow: route.view === 'project' ? 'hidden' : 'auto' }}>
-              {route.view === 'overview' && <Overview onOpenProject={openProject} />}
               {route.view === 'projects' && <Projects onOpenProject={openProject} />}
               {route.view === 'clients' && <Clients />}
               {route.view === 'calls' && <Calls />}
