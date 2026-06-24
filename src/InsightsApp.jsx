@@ -199,6 +199,7 @@ function seedTeam() {
     { id: 'u3', name: 'Manuel Navarro', color: '#10B981', initials: 'MN' },
     { id: 'u4', name: 'Nicolas Arditi', color: '#EC4899', initials: 'NA' },
     { id: 'u5', name: 'Juan Pamies', color: '#38BDF8', initials: 'JP' },
+    { id: 'u6', name: 'Valentin Toledo', color: '#A855F7', initials: 'VT' },
   ]
 }
 /* default demo assignments for the original 5 projects (rol por proyecto) */
@@ -471,6 +472,9 @@ const STORE_KEY = 'insights_os_v1'
 /* merge seeds into persisted state without wiping user edits */
 function migrate(state) {
   if (!state.team || !state.team.length) state.team = seedTeam()
+  // add any new team members that aren't present yet (by id)
+  const uIds = new Set(state.team.map((u) => u.id))
+  seedTeam().forEach((u) => { if (!uIds.has(u.id)) state.team.push(u) })
   if (!state.clients) state.clients = seedClients()
   if (!state.projects) state.projects = seedProjects()
   if (!state.calls) state.calls = seedCalls()
