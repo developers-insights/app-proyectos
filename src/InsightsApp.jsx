@@ -16,6 +16,16 @@ import React, {
   useContext,
 } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { createClient } from '@supabase/supabase-js'
+
+/* ============================================================================
+   0 · SUPABASE (cloud persistence + auth) — optional, enabled via env vars
+   VITE_SUPABASE_URL · VITE_SUPABASE_ANON_KEY (set locally in .env and in Render)
+============================================================================ */
+const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY) : null
+const cloudEnabled = !!supabase
 
 /* ============================================================================
    1 · THEME TOKENS + GLOBAL STYLE INJECTION
@@ -522,12 +532,76 @@ function loadState() {
   } catch (e) { /* ignore */ }
   return migrate({ team: seedTeam(), clients: seedClients(), projects: seedProjects(), calls: seedCalls() })
 }
-function usePersisted() {
+const CLOUD_ROW = 'main'   // single shared document
+/* data hook: localStorage cache (instant/offline) + Supabase cloud sync (shared) */
+function useAppData() {
   const [data, setData] = useState(loadState)
+  const [sync, setSync] = useState(cloudEnabled ? 'loading' : 'local') // loading|saving|saved|error|local
+  const lastSaved = useRef(null)     // last JSON we know is in the cloud (avoid echo loops)
+  const loaded = useRef(!cloudEnabled)
+  const timer = useRef(null)
+
+  // initial cloud load + realtime subscription
+  useEffect(() => {
+    if (!cloudEnabled) return
+    let alive = true
+    ;(async () => {
+      try {
+        const { data: row, error } = await supabase.from('app_state').select('data').eq('id', CLOUD_ROW).maybeSingle()
+        if (!alive) return
+        if (error) throw error
+        if (row && row.data) {
+          const merged = migrate(row.data)
+          lastSaved.current = JSON.stringify(merged)
+          setData(merged)
+        } else {
+          // first run: seed the cloud with the current (local) state
+          const seed = loadState()
+          await supabase.from('app_state').upsert({ id: CLOUD_ROW, data: seed })
+          lastSaved.current = JSON.stringify(seed)
+          setData(seed)
+        }
+        setSync('saved')
+      } catch (e) {
+        if (alive) setSync('error')
+      } finally {
+        loaded.current = true
+      }
+    })()
+    const channel = supabase
+      .channel('app_state_main')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state', filter: `id=eq.${CLOUD_ROW}` }, (payload) => {
+        const incoming = payload.new && payload.new.data
+        if (!incoming) return
+        const js = JSON.stringify(incoming)
+        if (js === lastSaved.current) return     // our own write echoed back
+        lastSaved.current = js
+        setData(migrate(incoming))
+      })
+      .subscribe()
+    return () => { alive = false; supabase.removeChannel(channel) }
+  }, [])
+
+  // persist: localStorage always + cloud (debounced) when something actually changed
   useEffect(() => {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(data)) } catch (e) { /* quota */ }
+    if (!cloudEnabled || !loaded.current) return
+    const js = JSON.stringify(data)
+    if (js === lastSaved.current) return
+    setSync('saving')
+    clearTimeout(timer.current)
+    timer.current = setTimeout(async () => {
+      try {
+        const { error } = await supabase.from('app_state').upsert({ id: CLOUD_ROW, data, updated_at: new Date().toISOString() })
+        if (error) throw error
+        lastSaved.current = js
+        setSync('saved')
+      } catch (e) { setSync('error') }
+    }, 700)
+    return () => clearTimeout(timer.current)
   }, [data])
-  return [data, setData]
+
+  return [data, setData, sync]
 }
 
 /* ============================================================================
@@ -1958,7 +2032,24 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed }) {
 /* ============================================================================
    18 · HEADER + SETTINGS
 ============================================================================ */
-function Header({ theme, setTheme, onSettings, route }) {
+function SyncBadge({ sync }) {
+  const map = {
+    loading: { c: 'var(--text-faint)', t: 'Cargando…' },
+    saving: { c: 'var(--yellow)', t: 'Guardando…' },
+    saved: { c: 'var(--green)', t: 'Sincronizado' },
+    error: { c: 'var(--red)', t: 'Error de sync' },
+    local: { c: 'var(--text-faint)', t: 'Solo local' },
+  }
+  const s = map[sync] || map.local
+  return (
+    <span title={cloudEnabled ? 'Estado de sincronización con Supabase' : 'Sin Supabase configurado — guardando solo en este navegador'}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-dim)', padding: '0 4px' }}>
+      <span style={{ width: 7, height: 7, borderRadius: 99, background: s.c, animation: sync === 'saving' || sync === 'loading' ? 'pulse 1s infinite' : 'none' }} />
+      {s.t}
+    </span>
+  )
+}
+function Header({ theme, setTheme, onSettings, route, sync, onLogout }) {
   const crumb = { overview: 'Overview', projects: 'Projects', clients: 'Clients', calls: 'Calls', project: 'Projects / Detalle' }[route.view]
   return (
     <header style={{ height: 64, flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', background: 'var(--bg-elevated)' }}>
@@ -1966,10 +2057,12 @@ function Header({ theme, setTheme, onSettings, route }) {
         <span className="mono" style={{ color: 'var(--text-faint)' }}>insights-os</span><I.chevR width={14} height={14} style={{ color: 'var(--text-faint)' }} /><strong style={{ color: 'var(--text)' }}>{crumb}</strong>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <SyncBadge sync={sync} />
         <button className="btn btn-sm btn-ghost" onClick={onSettings} title="Ajustes & API keys">⚙ <span style={{ marginLeft: 2 }}>Ajustes</span></button>
         <button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Cambiar tema" style={{ padding: 8 }}>
           {theme === 'dark' ? <I.sun width={16} height={16} /> : <I.moon width={16} height={16} />}
         </button>
+        {cloudEnabled && onLogout && <button className="btn btn-sm btn-ghost" onClick={onLogout} title="Cerrar sesión" style={{ padding: 8 }}><I.ext width={16} height={16} /></button>}
       </div>
     </header>
   )
@@ -2000,23 +2093,64 @@ function Settings({ open, onClose }) {
 /* ============================================================================
    19 · ROOT APP
 ============================================================================ */
-export default function InsightsApp() {
-  const [data, setData] = usePersisted()
+/* login screen (Supabase Auth) */
+function Login() {
+  const [mode, setMode] = useState('signin')
+  const [email, setEmail] = useState('')
+  const [pw, setPw] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const [msg, setMsg] = useState(null)
+  const submit = async (e) => {
+    e?.preventDefault()
+    if (!email || !pw) return
+    setBusy(true); setErr(null); setMsg(null)
+    try {
+      if (mode === 'signin') {
+        const { error } = await supabase.auth.signInWithPassword({ email, password: pw })
+        if (error) throw error
+      } else {
+        const { data, error } = await supabase.auth.signUp({ email, password: pw })
+        if (error) throw error
+        if (!data.session) setMsg('Cuenta creada. Si Supabase pide confirmación, revisá tu email para activarla.')
+      }
+    } catch (e2) { setErr(e2.message) } finally { setBusy(false) }
+  }
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+      <motion.form onSubmit={submit} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+        className="surface" style={{ width: '100%', maxWidth: 380, padding: 28, boxShadow: 'var(--shadow)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: 18 }}>I</div>
+          <div><div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 17, lineHeight: 1 }}>Insights · Project OS</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{mode === 'signin' ? 'Iniciá sesión para continuar' : 'Creá tu cuenta'}</div></div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Field label="Email"><input className="input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vos@insights.software" /></Field>
+          <Field label="Contraseña"><input className="input" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" /></Field>
+          {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8 }}>{err}</div>}
+          {msg && <div style={{ fontSize: 12.5, color: 'var(--green)', background: 'var(--green-soft)', padding: '8px 10px', borderRadius: 8 }}>{msg}</div>}
+          <button type="submit" className="btn btn-accent" disabled={busy} style={{ justifyContent: 'center', padding: 11 }}>{busy ? 'Un momento…' : mode === 'signin' ? 'Iniciar sesión' : 'Crear cuenta'}</button>
+          <button type="button" className="btn btn-ghost" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setErr(null); setMsg(null) }} style={{ justifyContent: 'center', fontSize: 12.5, color: 'var(--text-dim)' }}>
+            {mode === 'signin' ? '¿No tenés cuenta? Crear una' : '¿Ya tenés cuenta? Iniciar sesión'}
+          </button>
+        </div>
+      </motion.form>
+    </div>
+  )
+}
+
+function CenterScreen({ children }) {
+  return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-faint)', fontSize: 14 }}>{children}</div>
+}
+
+/* the authenticated app */
+function AppShell({ onLogout }) {
+  const [data, setData, sync] = useAppData()
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [route, setRoute] = useState({ view: 'projects' })
   const [collapsed, setCollapsed] = useState(false)
   const [settings, setSettings] = useState(false)
 
-  // inject global css once
-  useEffect(() => {
-    if (document.getElementById('insights-css')) return
-    const el = document.createElement('style')
-    el.id = 'insights-css'
-    el.textContent = GLOBAL_CSS + '\n@keyframes spin{to{transform:rotate(360deg)}}'
-    document.head.appendChild(el)
-  }, [])
-
-  // apply theme vars
   useEffect(() => {
     const vars = THEMES[theme]
     Object.entries(vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v))
@@ -2031,7 +2165,7 @@ export default function InsightsApp() {
       <div className="app-shell">
         <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} />
+          <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
               style={{ height: '100%', overflow: route.view === 'project' ? 'hidden' : 'auto' }}>
@@ -2046,4 +2180,37 @@ export default function InsightsApp() {
       </div>
     </AppCtx.Provider>
   )
+}
+
+export default function InsightsApp() {
+  const [session, setSession] = useState(cloudEnabled ? undefined : null) // undefined=loading
+
+  // inject global css once
+  useEffect(() => {
+    if (document.getElementById('insights-css')) return
+    const el = document.createElement('style')
+    el.id = 'insights-css'
+    el.textContent = GLOBAL_CSS + '\n@keyframes spin{to{transform:rotate(360deg)}}\n@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}'
+    document.head.appendChild(el)
+  }, [])
+
+  // apply a default theme to <html> on the auth screens too
+  useEffect(() => {
+    const theme = localStorage.getItem('theme') || 'dark'
+    const vars = THEMES[theme]
+    Object.entries(vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v))
+    document.documentElement.style.colorScheme = theme
+  }, [])
+
+  // auth session (only when cloud configured)
+  useEffect(() => {
+    if (!cloudEnabled) return
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
+  if (cloudEnabled && !session) return <Login />
+  return <AppShell onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
 }
