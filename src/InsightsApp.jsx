@@ -789,7 +789,7 @@ function Projects({ onOpenProject }) {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 22, borderBottom: '1px solid var(--border)' }}>
-        {[['active', 'Activos'], ['delivered', 'Entregados']].map(([k, l]) => (
+        {[['active', 'Activos'], ['paused', 'Pausados'], ['delivered', 'Entregados']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             style={{ padding: '10px 16px', fontWeight: 600, fontSize: 14, color: tab === k ? 'var(--text)' : 'var(--text-faint)', borderBottom: tab === k ? '2px solid var(--accent)' : '2px solid transparent', marginBottom: -1 }}>
             {l} <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>{data.projects.filter((p) => p.status === k).length}</span>
