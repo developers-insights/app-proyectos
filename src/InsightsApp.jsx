@@ -654,6 +654,7 @@ function useGithubCommit(repo) {
 /* ============================================================================
    8 · ANTHROPIC CHAT
 ============================================================================ */
+const CHAT_MODEL = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 async function anthropicChat({ system, messages }) {
   // tu propia key (Ajustes) tiene prioridad; si no, la global de Render (env var)
   const key = localStorage.getItem('anthropic_key') || import.meta.env.VITE_ANTHROPIC_API_KEY
@@ -667,7 +668,7 @@ async function anthropicChat({ system, messages }) {
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: CHAT_MODEL,
       max_tokens: 1200,
       system,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
@@ -2039,7 +2040,7 @@ function ProjectChat({ project, client, patch }) {
             placeholder="Pegá una transcripción, preguntá sobre el proyecto…" style={{ resize: 'none', paddingRight: 44 }} />
           <button onClick={send} disabled={sending || !input.trim()} className="btn-accent" style={{ position: 'absolute', right: 8, bottom: 8, width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', opacity: input.trim() ? 1 : 0.5 }}><I.send width={15} height={15} /></button>
         </div>
-        <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 6, textAlign: 'center' }} className="mono">claude-sonnet-4 · Enter envía · Shift+Enter salto</div>
+        <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 6, textAlign: 'center' }} className="mono">{CHAT_MODEL} · Enter envía · Shift+Enter salto</div>
       </div>
     </div>
   )
@@ -2170,7 +2171,7 @@ function AssistantView() {
               placeholder="Preguntá sobre los proyectos, avances, reuniones…" style={{ resize: 'none', paddingRight: 48 }} />
             <button onClick={() => sendText(input)} disabled={sending || !input.trim()} className="btn-accent" style={{ position: 'absolute', right: 8, bottom: 8, width: 32, height: 32, borderRadius: 8, display: 'grid', placeItems: 'center', opacity: input.trim() ? 1 : 0.5 }}><I.send width={15} height={15} /></button>
           </div>
-          <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 8, textAlign: 'center' }} className="mono">claude-sonnet-4 · lee proyectos + reuniones · Enter envía</div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 8, textAlign: 'center' }} className="mono">{CHAT_MODEL} · lee proyectos + reuniones · Enter envía</div>
         </div>
       </div>
     </div>
