@@ -177,6 +177,7 @@ const I = {
   pdf: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3.2h1a1.1 1.1 0 0 1 0 2.2h-1M12.6 17v-3.2h.9a1.6 1.6 0 0 1 0 3.2h-.9M16.2 13.8h1.6M16.2 15.4h1.2" strokeWidth="1.3"/></svg>,
   paperclip: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.3 3.3 0 0 1 4.7 4.7l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.3-7.3"/></svg>,
   download: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>,
+  tasks: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M4 6h2l1 1 2-2M4 12h2l1 1 2-2M4 18h2l1 1 2-2M13 6h7M13 12h7M13 18h7"/></svg>,
 }
 
 /* ============================================================================
@@ -498,6 +499,15 @@ function seedCalls() {
   ]
 }
 
+function seedTasks() {
+  const plus = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10) }
+  return [
+    { id: uid(), name: 'Preparar demo para el board de Chamber', assigneeId: 'u1', dueDate: plus(3), status: 'en proceso', notes: 'Mostrar el directorio de miembros y el flujo de búsqueda. Tener datos cargados de ejemplo.', comments: [] },
+    { id: uid(), name: 'Optimizar render 3D en mobile (Green Roofing)', assigneeId: 'u3', dueDate: plus(8), status: 'pendiente', notes: 'Usar instancing para la vegetación. Objetivo 60fps en gama media de Android.', comments: [] },
+    { id: uid(), name: 'Cerrar pago drop-in de clases sueltas (Shockwave)', assigneeId: 'u5', dueDate: plus(-1), status: 'pendiente', notes: '', comments: [] },
+  ]
+}
+
 /* ============================================================================
    5 · PERSISTED STATE HOOK
 ============================================================================ */
@@ -513,6 +523,7 @@ function migrate(state) {
   if (!state.calls) state.calls = seedCalls()
   state.calls = state.calls.map((c) => ({ ...c, priority: c.priority || 'normal', type: c.type || 'soporte', summary: c.summary || '', transcript: c.transcript || '' }))
   if (!state.assistantChats) state.assistantChats = []
+  if (!state.tasks) state.tasks = seedTasks()
   // add new clients/projects that aren't present yet (by id)
   const cIds = new Set(state.clients.map((c) => c.id))
   seedClients().forEach((c) => { if (!cIds.has(c.id)) state.clients.push(c) })
@@ -736,6 +747,14 @@ const CALL_TYPES = [
   { key: 'entrega', label: 'Entrega', color: '#22C55E' },
 ]
 const callTypeMeta = (t) => CALL_TYPES.find((x) => x.key === t) || CALL_TYPES[1]
+
+/* estados de tarea (sección Tareas) */
+const TASK_STATUS = [
+  { key: 'pendiente', label: 'Pendiente', tone: 'neutral', dot: 'var(--text-faint)' },
+  { key: 'en proceso', label: 'En proceso', tone: 'accent', dot: 'var(--accent)' },
+  { key: 'terminado', label: 'Terminado', tone: 'green', dot: 'var(--green)' },
+]
+const taskStatusMeta = (s) => TASK_STATUS.find((x) => x.key === s) || TASK_STATUS[0]
 
 /* fecha estimada de ingreso de proyecto pendiente: chip con color por proximidad */
 const parseLocalDate = (iso) => { if (!iso) return null; const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d) }
@@ -2440,6 +2459,170 @@ function AssistantView() {
 }
 
 /* ============================================================================
+   16c · TAREAS — tabla / kanban, simple: asignado · tarea · entrega · notas · comentarios
+============================================================================ */
+function TaskDetailModal({ open, task, team, onClose, onPatch, onDelete }) {
+  const [comment, setComment] = useState('')
+  if (!task) return <Modal open={open} onClose={onClose} title="Tarea" />
+  const addComment = () => { const t = comment.trim(); if (!t) return; onPatch({ comments: [...(task.comments || []), { id: uid(), text: t, date: NOW.toISOString() }] }); setComment('') }
+  const delComment = (id) => onPatch({ comments: (task.comments || []).filter((c) => c.id !== id) })
+  return (
+    <Modal open={open} onClose={onClose} title={task.name || 'Tarea'} sub="Tarea" width={560}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Field label="Tarea"><input className="input" value={task.name} onChange={(e) => onPatch({ name: e.target.value })} /></Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <Field label="Asignado">
+            <select className="input" value={task.assigneeId || ''} onChange={(e) => onPatch({ assigneeId: e.target.value })}>
+              <option value="">— Sin asignar —</option>
+              {team.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Entrega"><input className="input mono" type="date" value={(task.dueDate || '').slice(0, 10)} onChange={(e) => onPatch({ dueDate: e.target.value })} /></Field>
+          <Field label="Estado">
+            <select className="input" value={task.status || 'pendiente'} onChange={(e) => onPatch({ status: e.target.value })}>
+              {TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </Field>
+        </div>
+        <Field label="Notas / info para hacer la tarea mejor"><textarea className="input" rows={4} value={task.notes || ''} onChange={(e) => onPatch({ notes: e.target.value })} placeholder="Contexto, links, detalles…" /></Field>
+
+        <div>
+          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.comment width={14} height={14} /> Comentarios ({(task.comments || []).length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+            {(task.comments || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin comentarios todavía.</div>}
+            {(task.comments || []).map((c) => (
+              <div key={c.id} className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{fmtDate(c.date)}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => delComment(c.id)} style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
+                </div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.text}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment() } }} placeholder="Dejá un comentario… (Enter envía)" style={{ resize: 'none' }} />
+            <button className="btn btn-accent" onClick={addComment} style={{ alignSelf: 'stretch' }}><I.send width={15} height={15} /></button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <button className="btn" onClick={() => { onDelete(task.id); onClose() }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I.trash width={15} height={15} /> Eliminar tarea</button>
+          <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function TasksView() {
+  const { data, setData } = useApp()
+  const [view, setView] = useState('table')
+  const [openId, setOpenId] = useState(null)
+  const [dragId, setDragId] = useState(null)
+  const [overCol, setOverCol] = useState(null)
+  const tasks = data.tasks || []
+  const team = data.team || []
+  const userOf = (id) => team.find((u) => u.id === id)
+  const setTasks = (fn) => setData((d) => ({ ...d, tasks: fn(d.tasks || []) }))
+  const addTask = () => { const id = uid(); setTasks((ts) => [{ id, name: 'Nueva tarea', assigneeId: '', dueDate: '', status: 'pendiente', notes: '', comments: [] }, ...ts]); setOpenId(id) }
+  const updateTask = (id, fields) => setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...fields } : t)))
+  const delTask = (id) => setTasks((ts) => ts.filter((t) => t.id !== id))
+  const openTask = tasks.find((t) => t.id === openId)
+
+  const DueChip = ({ date }) => {
+    if (!date) return <span style={{ color: 'var(--text-faint)' }}>—</span>
+    const col = pendingDateColor(date)
+    return <span className="tag" style={{ color: col, background: 'transparent', borderColor: col, fontWeight: 700 }}><I.calendar width={12} height={12} /> {fmtShortDate(date)}</span>
+  }
+  const Assignee = ({ id, size = 26 }) => {
+    const u = userOf(id)
+    return u ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar user={u} size={size} ring="var(--card)" /><span style={{ fontSize: 13.5, fontWeight: 600 }}>{u.name}</span></span>
+      : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--text-faint)' }}><Avatar empty size={size} ring="var(--card)" /><span style={{ fontSize: 13 }}>Sin asignar</span></span>
+  }
+
+  return (
+    <div style={{ padding: '28px 34px 60px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+        <div><div className="label" style={{ marginBottom: 6 }}>Equipo</div><h1 style={{ fontSize: 32 }}>Tareas</h1></div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
+            <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} title="Tabla" style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setView('kanban')} title="Kanban" style={{ background: view === 'kanban' ? 'var(--card-hover)' : 'transparent', color: view === 'kanban' ? 'var(--accent)' : 'var(--text-dim)' }}><I.kanban width={15} height={15} /></button>
+          </div>
+          <button className="btn btn-accent" onClick={addTask}><I.plus width={15} height={15} /> Agregar tarea</button>
+        </div>
+      </div>
+
+      {tasks.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Sin tareas. Agregá la primera con “Agregar tarea”.</div>}
+
+      {tasks.length > 0 && view === 'table' && (
+        <div className="surface" style={{ overflow: 'hidden' }}>
+          <table>
+            <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
+              {['Asignado', 'Tarea', 'Entrega', 'Estado', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {tasks.map((t) => (
+                <tr key={t.id} className="row-hover click" onClick={() => setOpenId(t.id)} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Assignee id={t.assigneeId} /></td>
+                  <td style={{ padding: '12px 16px', fontWeight: 600 }}>{t.name}{(t.comments || []).length > 0 && <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{t.comments.length}</span>}</td>
+                  <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><DueChip date={t.dueDate} /></td>
+                  <td style={{ padding: '8px 16px' }} onClick={(e) => e.stopPropagation()}>
+                    <select className="input" value={t.status} onChange={(e) => updateTask(t.id, { status: e.target.value })} style={{ width: 'auto', padding: '6px 8px', fontSize: 13 }}>
+                      {TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: '12px 16px 12px 0', width: 44 }}><button className="btn btn-sm btn-ghost" title="Eliminar" onClick={(e) => { e.stopPropagation(); if (window.confirm('¿Eliminar esta tarea?')) delTask(t.id) }} style={{ padding: 6, color: 'var(--text-faint)' }}><I.x width={15} height={15} /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tasks.length > 0 && view === 'kanban' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, alignItems: 'start' }}>
+          {TASK_STATUS.map((col) => {
+            const colTasks = tasks.filter((t) => (t.status || 'pendiente') === col.key)
+            return (
+              <div key={col.key}
+                onDragOver={(e) => { e.preventDefault(); setOverCol(col.key) }}
+                onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain') || dragId; if (id) updateTask(id, { status: col.key }); setDragId(null); setOverCol(null) }}
+                className="surface" style={{ padding: 10, background: overCol === col.key ? 'var(--card-hover)' : 'var(--bg-elevated)', minHeight: 140, borderColor: overCol === col.key ? 'var(--accent-line)' : 'var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10, padding: '0 2px' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 99, background: col.dot }} />
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>{col.label}</span>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 'auto' }}>{colTasks.length}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {colTasks.map((t) => (
+                    <div key={t.id} draggable
+                      onDragStart={(e) => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; setDragId(t.id) }}
+                      onDragEnd={() => { setDragId(null); setOverCol(null) }}
+                      onClick={() => setOpenId(t.id)}
+                      className="surface click" style={{ padding: 11, background: 'var(--card)', cursor: 'grab', opacity: dragId === t.id ? 0.5 : 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>{t.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        {t.assigneeId ? <Avatar user={userOf(t.assigneeId)} size={24} ring="var(--card)" /> : <Avatar empty size={24} ring="var(--card)" />}
+                        <DueChip date={t.dueDate} />
+                      </div>
+                    </div>
+                  ))}
+                  {colTasks.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-faint)', padding: '6px 2px' }}>—</div>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <TaskDetailModal open={!!openTask} task={openTask} team={team} onClose={() => setOpenId(null)} onPatch={(fields) => updateTask(openId, fields)} onDelete={delTask} />
+    </div>
+  )
+}
+
+/* ============================================================================
    17 · SIDEBAR + USER PROFILE
 ============================================================================ */
 /* floating profile avatar (bottom-right): solo foto + a quién representa */
@@ -2504,6 +2687,7 @@ function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
 function Sidebar({ route, setRoute, collapsed, setCollapsed }) {
   const items = [
     { key: 'projects', label: 'Projects', icon: I.folder },
+    { key: 'tasks', label: 'Tareas', icon: I.tasks },
     { key: 'clients', label: 'Clients', icon: I.users },
     { key: 'calls', label: 'Calls', icon: I.phone },
     { key: 'assistant', label: 'IA Assistant', icon: I.spark },
@@ -2558,7 +2742,7 @@ function SyncBadge({ sync }) {
   )
 }
 function Header({ theme, setTheme, onSettings, route, sync, onLogout }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', clients: 'Clients', calls: 'Calls', assistant: 'IA Assistant', project: 'Projects / Detalle' }[route.view]
+  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', assistant: 'IA Assistant', project: 'Projects / Detalle' }[route.view]
   return (
     <header style={{ height: 64, flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', background: 'var(--bg-elevated)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-dim)', fontSize: 13 }}>
@@ -2687,6 +2871,7 @@ function AppShell({ session, onLogout }) {
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
               style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' ? 'hidden' : 'auto' }}>
               {route.view === 'projects' && <Projects onOpenProject={openProject} />}
+              {route.view === 'tasks' && <TasksView />}
               {route.view === 'clients' && <Clients />}
               {route.view === 'calls' && <Calls />}
               {route.view === 'assistant' && <AssistantView />}
