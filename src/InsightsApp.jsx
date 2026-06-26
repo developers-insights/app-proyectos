@@ -174,6 +174,9 @@ const I = {
   calendar: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>,
   comment: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z"/></svg>,
   kanban: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><rect x="3" y="4" width="5" height="16" rx="1.3"/><rect x="9.5" y="4" width="5" height="11" rx="1.3"/><rect x="16" y="4" width="5" height="14" rx="1.3"/></svg>,
+  pdf: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3.2h1a1.1 1.1 0 0 1 0 2.2h-1M12.6 17v-3.2h.9a1.6 1.6 0 0 1 0 3.2h-.9M16.2 13.8h1.6M16.2 15.4h1.2" strokeWidth="1.3"/></svg>,
+  paperclip: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.3 3.3 0 0 1 4.7 4.7l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.3-7.3"/></svg>,
+  download: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>,
 }
 
 /* ============================================================================
@@ -522,6 +525,9 @@ function migrate(state) {
       ...rest,
       assignments: rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null },
       tags: rest.tags || [],
+      scopeFiles: rest.scopeFiles || [],
+      salesLinks: rest.salesLinks || [],
+      scopeNotes: rest.scopeNotes || [],
       sprints: (rest.sprints || []).map((s) => ({
         ...s,
         status: normSprint(s.status),
@@ -1591,6 +1597,113 @@ function PendingDatePrompt({ open, project, onClose, onSave }) {
   )
 }
 
+/* añadir un link (nombre + url) — reutilizable para docs y llamadas de venta */
+function LinkAdder({ onAdd, cta = 'Agregar link' }) {
+  const [name, setName] = useState('')
+  const [url, setUrl] = useState('')
+  const submit = () => { const u = url.trim(); if (!u) return; onAdd({ id: uid(), kind: 'link', name: name.trim() || u, url: u, date: NOW.toISOString() }); setName(''); setUrl('') }
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+      <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre (opcional)" style={{ flex: '1 1 110px', padding: '7px 10px', fontSize: 13 }} />
+      <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }} placeholder="https://…" style={{ flex: '2 1 200px', padding: '7px 10px', fontSize: 13 }} />
+      <button className="btn btn-sm" onClick={submit}><I.plus width={13} height={13} /> {cta}</button>
+    </div>
+  )
+}
+
+/* ALCANCE del proyecto: archivos/PDFs + links + llamadas de venta + notas */
+function ScopeModal({ open, project, onClose, patch }) {
+  const fileRef = useRef(null)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState('')
+  if (!project) return <Modal open={open} onClose={onClose} title="Alcance" />
+  const files = project.scopeFiles || []
+  const sales = project.salesLinks || []
+  const notes = project.scopeNotes || []
+  const addFile = (item) => patch((p) => ({ ...p, scopeFiles: [item, ...(p.scopeFiles || [])] }))
+  const delFile = (id) => patch((p) => ({ ...p, scopeFiles: (p.scopeFiles || []).filter((x) => x.id !== id) }))
+  const addSale = (item) => patch((p) => ({ ...p, salesLinks: [item, ...(p.salesLinks || [])] }))
+  const delSale = (id) => patch((p) => ({ ...p, salesLinks: (p.salesLinks || []).filter((x) => x.id !== id) }))
+  const addNote = () => { const t = note.trim(); if (!t) return; patch((p) => ({ ...p, scopeNotes: [...(p.scopeNotes || []), { id: uid(), text: t, date: NOW.toISOString() }] })); setNote('') }
+  const delNote = (id) => patch((p) => ({ ...p, scopeNotes: (p.scopeNotes || []).filter((x) => x.id !== id) }))
+  const onFile = (e) => {
+    const f = e.target.files && e.target.files[0]
+    if (!f) return
+    if (f.size > 1.6 * 1024 * 1024) { alert('El archivo supera 1.6 MB. Para archivos grandes, mejor agregalo como link (Google Drive, Dropbox, etc.).'); e.target.value = ''; return }
+    setBusy(true)
+    const reader = new FileReader()
+    reader.onload = () => { addFile({ id: uid(), kind: 'file', name: f.name, data: reader.result, ext: (f.name.split('.').pop() || '').toLowerCase(), size: f.size, date: NOW.toISOString() }); setBusy(false) }
+    reader.onerror = () => setBusy(false)
+    reader.readAsDataURL(f)
+    e.target.value = ''
+  }
+
+  const ResourceRow = ({ it, onDelete }) => (
+    <div className="surface" style={{ padding: '9px 11px', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ color: it.kind === 'file' ? 'var(--red)' : 'var(--accent)', flexShrink: 0 }}>{it.kind === 'file' ? <I.pdf width={17} height={17} /> : <I.link width={16} height={16} />}</span>
+      <a href={it.kind === 'file' ? it.data : it.url} target="_blank" rel="noreferrer" download={it.kind === 'file' ? it.name : undefined} style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</a>
+      <a href={it.kind === 'file' ? it.data : it.url} target="_blank" rel="noreferrer" download={it.kind === 'file' ? it.name : undefined} title={it.kind === 'file' ? 'Descargar' : 'Abrir'} className="btn btn-sm btn-ghost" style={{ padding: 6, color: 'var(--text-dim)' }}>{it.kind === 'file' ? <I.download width={15} height={15} /> : <I.ext width={15} height={15} />}</a>
+      <button onClick={() => onDelete(it.id)} title="Eliminar" className="btn btn-sm btn-ghost" style={{ padding: 6, color: 'var(--text-faint)' }}><I.x width={14} height={14} /></button>
+    </div>
+  )
+
+  return (
+    <Modal open={open} onClose={onClose} title="Alcance del proyecto" sub={project.name} width={640}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+        {/* Documentos / archivos */}
+        <div>
+          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.pdf width={14} height={14} /> Documentos del alcance ({files.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {files.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Subí los PDFs/archivos del alcance o pegá un link.</div>}
+            {files.map((it) => <ResourceRow key={it.id} it={it} onDelete={delFile} />)}
+          </div>
+          <input ref={fileRef} type="file" onChange={onFile} style={{ display: 'none' }} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+            <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}><I.paperclip width={14} height={14} /> {busy ? 'Subiendo…' : 'Subir archivo / PDF'}</button>
+            <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>hasta 1.6 MB — más grande, usá link</span>
+          </div>
+          <LinkAdder onAdd={addFile} cta="Agregar link" />
+        </div>
+
+        <hr className="divider" />
+
+        {/* Llamadas de venta Fathom */}
+        <div>
+          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.phone width={14} height={14} /> Llamadas de venta (Fathom) ({sales.length})</div>
+          <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 8 }}>Pegá el link de la call de venta para que el equipo vea qué se le vendió al cliente.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {sales.map((it) => <ResourceRow key={it.id} it={it} onDelete={delSale} />)}
+          </div>
+          <LinkAdder onAdd={addSale} cta="Agregar call de venta" />
+        </div>
+
+        <hr className="divider" />
+
+        {/* Notas y comentarios */}
+        <div>
+          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.comment width={14} height={14} /> Notas y comentarios ({notes.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+            {notes.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin notas todavía.</div>}
+            {notes.map((c) => (
+              <div key={c.id} className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{fmtDate(c.date)}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => delNote(c.id)} style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
+                </div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.text}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote() } }} placeholder="Dejá una nota o comentario… (Enter envía)" style={{ resize: 'none' }} />
+            <button className="btn btn-accent" onClick={addNote} style={{ alignSelf: 'stretch' }}><I.send width={15} height={15} /></button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 /* ============================================================================
    13 · CLIENTS
 ============================================================================ */
@@ -1876,6 +1989,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [openSprintId, setOpenSprintId] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
   const [pendingPrompt, setPendingPrompt] = useState(false)
+  const [scopeOpen, setScopeOpen] = useState(false)
 
   if (!project) return null
   const patch = (fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === projectId ? fn(p) : p)) }))
@@ -1923,13 +2037,11 @@ function ProjectDetail({ projectId, onBack }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 26 }}>
           <a href={project.testingUrl || project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm btn-accent" onClick={(e) => { if (!(project.testingUrl || project.productionUrl)) e.preventDefault() }}><I.ext width={14} height={14} /> Testing</a>
-          <a href={project.whatsappUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm" onClick={(e) => { if (!project.whatsappUrl) e.preventDefault() }} style={{ color: project.whatsappUrl ? 'var(--green)' : undefined, opacity: project.whatsappUrl ? 1 : 0.55 }}><I.whatsapp width={15} height={15} /> WhatsApp</a>
-          <a href={project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm"><I.rocket width={14} height={14} /> Producción</a>
+          <a href={project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm" onClick={(e) => { if (!project.productionUrl) e.preventDefault() }}><I.rocket width={14} height={14} /> Producción</a>
+          <button className="btn btn-sm" onClick={() => setScopeOpen(true)}><I.pdf width={14} height={14} /> Alcance{(() => { const n = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0); return n ? ` · ${n}` : '' })()}</button>
           <div className="btn btn-sm" style={{ cursor: 'default', color: 'var(--red)', borderColor: 'var(--red)', background: 'var(--red-soft)', fontWeight: 700 }}>
             <I.rocket width={14} height={14} /> Último deploy{project.lastDeployDate ? ` · ${fmtDate(project.lastDeployDate)} (${dd}d)` : ' · —'}
           </div>
-          <a href={`https://github.com/${project.githubRepo}`} target="_blank" rel="noreferrer" className="btn btn-sm"><I.github width={14} height={14} /> GitHub repo</a>
-          <div className="btn btn-sm" style={{ cursor: 'default', borderColor: 'var(--border)' }}><CommitChip repo={project.githubRepo} compact /></div>
         </div>
 
         {/* KPI GRID — solo sprints */}
@@ -2060,6 +2172,7 @@ function ProjectDetail({ projectId, onBack }) {
       <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} />
       <SprintDetailModal open={!!openSprint} sprint={openSprint} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprint(openSprintId, fields)} />
       <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
+      <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
     </div>
   )
 }
