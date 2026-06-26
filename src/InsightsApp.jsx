@@ -916,8 +916,31 @@ const TAG_COLORS = [
   { key: 'rojo', hex: '#EF4444' }, { key: 'gris', hex: '#6B7280' }, { key: 'violeta', hex: '#8B5CF6' },
 ]
 
+/* resize/crop an image file to a small square JPEG data URL (keeps the JSON doc light) */
+function fileToAvatarDataURL(file, max = 160) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const side = Math.min(img.width, img.height)
+        const sx = (img.width - side) / 2, sy = (img.height - side) / 2
+        const out = Math.min(side, max)
+        const canvas = document.createElement('canvas')
+        canvas.width = out; canvas.height = out
+        canvas.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, out, out)
+        resolve(canvas.toDataURL('image/jpeg', 0.82))
+      }
+      img.onerror = reject
+      img.src = reader.result
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 function Avatar({ user, size = 28, ring = 'var(--card)', title, onClick, badge, empty }) {
-  const common = { width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: Math.round(size * 0.4), flexShrink: 0, position: 'relative', cursor: onClick ? 'pointer' : 'default', lineHeight: 1, padding: 0 }
+  const common = { width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: Math.round(size * 0.4), flexShrink: 0, position: 'relative', cursor: onClick ? 'pointer' : 'default', lineHeight: 1, padding: 0, overflow: 'hidden' }
   const Tag = onClick ? 'button' : 'div'   // avoid <button> nested inside <button>
   if (empty || !user) {
     return (
@@ -926,9 +949,10 @@ function Avatar({ user, size = 28, ring = 'var(--card)', title, onClick, badge, 
       </Tag>
     )
   }
+  const bg = user.photo ? `center / cover no-repeat url(${user.photo})` : user.color
   return (
-    <Tag title={title} onClick={onClick} style={{ ...common, background: user.color, border: `2px solid ${ring}`, color: '#fff' }}>
-      {user.initials}
+    <Tag title={title} onClick={onClick} style={{ ...common, background: bg, border: `2px solid ${ring}`, color: '#fff' }}>
+      {!user.photo && user.initials}
       {badge}
     </Tag>
   )
@@ -1992,9 +2016,76 @@ function ProjectChat({ project, client, patch }) {
 }
 
 /* ============================================================================
-   17 · SIDEBAR
+   17 · SIDEBAR + USER PROFILE
 ============================================================================ */
-function Sidebar({ route, setRoute, collapsed, setCollapsed }) {
+/* current-user profile chip (bottom of sidebar) + editor: name · email · foto */
+function UserProfile({ collapsed, session, myId, setMyId, onLogout }) {
+  const { data, setData } = useApp()
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef(null)
+  const team = data.team || []
+  const me = team.find((u) => u.id === myId)
+  const updateMember = (id, fields) => setData((d) => ({ ...d, team: d.team.map((u) => (u.id === id ? { ...u, ...fields } : u)) }))
+  const onPick = async (e) => {
+    const f = e.target.files && e.target.files[0]
+    if (!f || !me) return
+    setBusy(true)
+    try { const url = await fileToAvatarDataURL(f); updateMember(me.id, { photo: url }) } catch (err) { /* ignore */ }
+    setBusy(false)
+    e.target.value = ''
+  }
+  const email = session?.user?.email || ''
+
+  return (
+    <div style={{ padding: 10, borderTop: '1px solid var(--border)' }}>
+      <button onClick={() => setOpen(true)} className="row-hover" title="Mi perfil"
+        style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: 8, borderRadius: 10, textAlign: 'left' }}>
+        {me ? <Avatar user={me} size={collapsed ? 30 : 34} ring="var(--bg-elevated)" />
+          : <div style={{ width: collapsed ? 30 : 34, height: collapsed ? 30 : 34, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: 'var(--bg)', border: '2px dashed var(--border-strong)', color: 'var(--text-faint)' }}><I.users width={15} height={15} /></div>}
+        {!collapsed && (
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{me ? me.name : 'Configurar perfil'}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email || (cloudEnabled ? '' : 'modo local')}</div>
+          </div>
+        )}
+      </button>
+
+      <Modal open={open} onClose={() => setOpen(false)} title="Mi perfil" sub={email || undefined} width={460}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {me ? <Avatar user={me} size={72} ring="var(--card)" /> : <div style={{ width: 72, height: 72, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '2px dashed var(--border-strong)', color: 'var(--text-faint)' }}><I.users width={24} height={24} /></div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <input ref={fileRef} type="file" accept="image/*" onChange={onPick} style={{ display: 'none' }} />
+              <button className="btn btn-sm" disabled={!me || busy} onClick={() => fileRef.current && fileRef.current.click()}><I.pencil width={13} height={13} /> {busy ? 'Procesando…' : 'Cambiar foto'}</button>
+              {me && me.photo && <button className="btn btn-sm btn-ghost" onClick={() => updateMember(me.id, { photo: '' })} style={{ color: 'var(--text-dim)' }}><I.x width={13} height={13} /> Quitar foto</button>}
+            </div>
+          </div>
+
+          <Field label="¿Quién sos? (te vincula a un miembro del equipo)">
+            <select className="input" value={myId || ''} onChange={(e) => setMyId(e.target.value)}>
+              <option value="">— Elegí tu nombre —</option>
+              {team.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </Field>
+          {me && <Field label="Nombre"><input className="input" value={me.name} onChange={(e) => updateMember(me.id, { name: e.target.value })} /></Field>}
+          <Field label="Email">
+            <input className="input mono" value={me ? (me.email || email) : email} placeholder="tu@email.com"
+              onChange={(e) => me && updateMember(me.id, { email: e.target.value })} readOnly={!me} />
+          </Field>
+          <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5 }}>Tu foto se muestra en las tarjetas de los proyectos donde estés asignado como PM o Dev.</div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            {cloudEnabled && onLogout ? <button className="btn" onClick={onLogout} style={{ color: 'var(--red)' }}><I.ext width={14} height={14} /> Cerrar sesión</button> : <span />}
+            <button className="btn btn-accent" onClick={() => setOpen(false)}><I.check width={15} height={15} /> Listo</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
+function Sidebar({ route, setRoute, collapsed, setCollapsed, session, myId, setMyId, onLogout }) {
   const items = [
     { key: 'projects', label: 'Projects', icon: I.folder },
     { key: 'clients', label: 'Clients', icon: I.users },
@@ -2021,6 +2112,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed }) {
           )
         })}
       </nav>
+      <UserProfile collapsed={collapsed} session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} />
       <hr className="divider" />
       <button onClick={() => setCollapsed((v) => !v)} className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', color: 'var(--text-faint)', fontSize: 13 }}>
         <I.panelLeft width={17} height={17} style={{ transform: collapsed ? 'scaleX(-1)' : 'none' }} />{!collapsed && 'Colapsar'}
@@ -2144,12 +2236,13 @@ function CenterScreen({ children }) {
 }
 
 /* the authenticated app */
-function AppShell({ onLogout }) {
+function AppShell({ session, onLogout }) {
   const [data, setData, sync] = useAppData()
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [route, setRoute] = useState({ view: 'projects' })
   const [collapsed, setCollapsed] = useState(false)
   const [settings, setSettings] = useState(false)
+  const [myId, setMyId] = useState(() => localStorage.getItem('my_team_id') || '')
 
   useEffect(() => {
     const vars = THEMES[theme]
@@ -2158,12 +2251,20 @@ function AppShell({ onLogout }) {
     localStorage.setItem('theme', theme)
   }, [theme])
 
+  // remember "who am I"; auto-link by matching email the first time
+  useEffect(() => { if (myId) localStorage.setItem('my_team_id', myId) }, [myId])
+  useEffect(() => {
+    if (myId || !session?.user?.email) return
+    const m = (data.team || []).find((u) => u.email && u.email.toLowerCase() === session.user.email.toLowerCase())
+    if (m) setMyId(m.id)
+  }, [session, data.team, myId])
+
   const openProject = (id) => setRoute({ view: 'project', projectId: id })
 
   return (
     <AppCtx.Provider value={{ data, setData }}>
       <div className="app-shell">
-        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} />
+        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
@@ -2212,5 +2313,5 @@ export default function InsightsApp() {
 
   if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
   if (cloudEnabled && !session) return <Login />
-  return <AppShell onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
+  return <AppShell session={session} onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
 }
