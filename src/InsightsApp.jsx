@@ -507,6 +507,7 @@ function migrate(state) {
   if (!state.clients) state.clients = seedClients()
   if (!state.projects) state.projects = seedProjects()
   if (!state.calls) state.calls = seedCalls()
+  if (!state.assistantChats) state.assistantChats = []
   // add new clients/projects that aren't present yet (by id)
   const cIds = new Set(state.clients.map((c) => c.id))
   seedClients().forEach((c) => { if (!cIds.has(c.id)) state.clients.push(c) })
@@ -742,18 +743,30 @@ const nextModuleStatus = (s) => MODULE_STATES[(MODULE_STATES.indexOf(s) + 1) % M
 /* clickable status badge with a dropdown (activo/pausado/entregado) */
 function StatusMenu({ status, onChange }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
   const meta = projStatusMeta(status)
+  const menuW = 150, menuH = PROJECT_STATUS.length * 38 + 12
+  const toggle = (e) => {
+    e.stopPropagation()
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      const down = r.bottom + menuH <= window.innerHeight
+      setPos({ left: Math.max(8, r.right - menuW), top: down ? r.bottom + 4 : Math.max(8, r.top - menuH - 4) })
+    }
+    setOpen((v) => !v)
+  }
   return (
-    <span style={{ position: 'relative', display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
-      <button onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }} title="Cambiar estado">
+    <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} onClick={toggle} title="Cambiar estado">
         <span className="tag" style={{ color: `var(--${meta.tone === 'accent' ? 'accent' : meta.tone})`, background: `var(--${meta.tone === 'accent' ? 'accent-soft' : meta.tone + '-soft'})`, borderColor: meta.tone === 'accent' ? 'var(--accent-line)' : 'transparent', cursor: 'pointer' }}>
           {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1 }} />
         </span>
       </button>
-      {open && (
+      {open && pos && (
         <>
-          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
-          <div className="surface" style={{ position: 'absolute', top: '120%', right: 0, zIndex: 70, padding: 5, minWidth: 138, boxShadow: 'var(--shadow)' }}>
+          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
+          <div className="surface" style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, minWidth: menuW, boxShadow: 'var(--shadow)' }}>
             {PROJECT_STATUS.map((o) => (
               <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: o.key === status ? 'var(--accent)' : 'var(--text)' }}>
@@ -1118,20 +1131,32 @@ function ProjectTags({ tags, onChange, size = 'sm' }) {
 /* clickable sprint-status badge with dropdown (pendiente/en proceso/pausado/terminado) */
 function SprintStatusBadge({ status, onChange, full }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
   const meta = sprintMeta(status)
   const tint = (tone) => ({ color: `var(--${tone === 'neutral' ? 'text-dim' : tone})`, bg: tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${tone}-soft)`, bd: tone === 'accent' ? 'var(--accent-line)' : tone === 'neutral' ? 'var(--border)' : 'transparent' })
   const s = tint(meta.tone)
+  const menuH = SPRINT_STATUS.length * 38 + 12
+  const toggle = (e) => {
+    e.stopPropagation()
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      const down = r.bottom + menuH <= window.innerHeight
+      setPos({ left: r.left, top: down ? r.bottom + 4 : Math.max(8, r.top - menuH - 4) })
+    }
+    setOpen((v) => !v)
+  }
   return (
-    <span style={{ position: 'relative', display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
-      <button onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }} title="Cambiar estado">
+    <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} onClick={toggle} title="Cambiar estado">
         <span className="tag" style={{ cursor: 'pointer', color: s.color, background: s.bg, borderColor: s.bd, minWidth: full ? 96 : 0, justifyContent: 'center' }}>
           {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1 }} />
         </span>
       </button>
-      {open && (
+      {open && pos && (
         <>
-          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
-          <div className="surface" style={{ position: 'absolute', top: '120%', left: 0, zIndex: 70, padding: 5, minWidth: 150, boxShadow: 'var(--shadow)' }}>
+          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
+          <div className="surface" style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, minWidth: 150, boxShadow: 'var(--shadow)' }}>
             {SPRINT_STATUS.map((o) => (
               <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: normSprint(status) === o.key ? 'var(--accent)' : 'var(--text)' }}>
@@ -2020,6 +2045,138 @@ function ProjectChat({ project, client, patch }) {
 }
 
 /* ============================================================================
+   16b · IA ASSISTANT — chat global sobre todos los proyectos y reuniones
+============================================================================ */
+function buildGlobalSystemPrompt(data) {
+  const clientName = (id) => data.clients.find((c) => c.id === id)?.company || '—'
+  const projects = (data.projects || []).map((p) => {
+    const sprints = (p.sprints || []).map((s) => `    · ${s.name} [${sprintMeta(s.status).label}] est. ${fmtDate(s.estimatedDate)}${s.description ? ` — ${s.description}` : ''}${(s.comments || []).length ? ` (comentarios: ${s.comments.map((c) => c.text).join(' | ')})` : ''}`).join('\n')
+    const pa = (p.pendingAgency || []).map((x) => `${x.title} [${x.priority}]`).join('; ') || 'ninguno'
+    const pc = (p.pendingClient || []).map((x) => `${x.title} [${x.priority}]`).join('; ') || 'ninguno'
+    const risks = (p.risks || []).map((r) => `${r.description} (${r.severity})`).join('; ') || 'ninguno'
+    return `### ${p.name} — ${clientName(p.clientId)} · estado ${projStatusMeta(p.status).label} · avance ${calcProgress(p)}%
+Stack: ${p.stack || '—'}
+Kick-off: ${p.kickoff || '—'}
+Sprints:
+${sprints || '    (sin sprints)'}
+Pendiente agencia: ${pa}
+Pendiente cliente: ${pc}
+Riesgos: ${risks}`
+  }).join('\n\n')
+  const calls = (data.calls || []).map((c) => `- [${fmtDate(c.date)}] ${clientName(c.clientId)} · asesor ${c.advisor}
+  Resumen: ${c.summary}
+  Transcript: ${c.transcript || '(sin transcript)'}`).join('\n\n') || '(sin reuniones cargadas)'
+  const team = (data.team || []).map((u) => u.name).join(', ')
+  return `Sos el asistente IA de Insights Software, una agencia de desarrollo de software. Tenés acceso COMPLETO a todos los proyectos, sus sprints, pendientes, riesgos y a las reuniones (calls) con transcripciones. Respondé SIEMPRE en español, de forma concisa, clara y accionable. Usá viñetas y datos concretos (estados, %, fechas). Si te preguntan por avances, basate en los sprints (terminado/en proceso/pendiente) y el % de avance. Si te preguntan por reuniones, usá los resúmenes y transcripts. Si falta información, decilo explícitamente.
+
+EQUIPO: ${team || '—'}
+
+=== PROYECTOS (${(data.projects || []).length}) ===
+${projects || '(sin proyectos)'}
+
+=== REUNIONES / CALLS (${(data.calls || []).length}) ===
+${calls}`
+}
+
+const ASSISTANT_SUGGESTIONS = [
+  '¿Cómo viene el avance general de todos los proyectos?',
+  '¿Qué proyectos están más atrasados o con riesgos altos?',
+  'Resumime lo más importante de las últimas reuniones',
+  '¿Qué pendientes de cliente están bloqueando avances?',
+]
+
+function AssistantView() {
+  const { data, setData } = useApp()
+  const chats = data.assistantChats || []
+  const [activeId, setActiveId] = useState(chats[0]?.id || null)
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState(null)
+  const scrollRef = useRef(null)
+  const active = chats.find((c) => c.id === activeId)
+
+  const setChats = (fn) => setData((d) => ({ ...d, assistantChats: fn(d.assistantChats || []) }))
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 1e9, behavior: 'smooth' }) }, [active?.messages.length, sending])
+
+  const newChat = () => { const id = uid(); setChats((cs) => [{ id, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }, ...cs]); setActiveId(id) }
+
+  const sendText = async (text) => {
+    text = (text || '').trim()
+    if (!text || sending) return
+    let chatId = activeId
+    if (!chatId) { chatId = uid(); setChats((cs) => [{ id: chatId, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }, ...cs]); setActiveId(chatId) }
+    const prev = (data.assistantChats || []).find((c) => c.id === chatId)?.messages || []
+    const userMsg = { role: 'user', content: text, timestamp: Date.now() }
+    setChats((cs) => cs.map((c) => c.id === chatId ? { ...c, messages: [...c.messages, userMsg], title: c.messages.length === 0 ? (text.length > 42 ? text.slice(0, 42) + '…' : text) : c.title } : c))
+    setInput(''); setSending(true); setError(null)
+    try {
+      const reply = await anthropicChat({ system: buildGlobalSystemPrompt(data), messages: [...prev, userMsg] })
+      setChats((cs) => cs.map((c) => c.id === chatId ? { ...c, messages: [...c.messages, { role: 'assistant', content: reply, timestamp: Date.now() }] } : c))
+    } catch (e) {
+      if (e.message === 'NO_KEY') setError('Configurá tu Anthropic API key en ⚙ Ajustes para usar el asistente.')
+      else setError(e.message)
+    } finally { setSending(false) }
+  }
+
+  return (
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+      {/* conversations */}
+      <div style={{ width: 250, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg-elevated)' }}>
+        <div style={{ padding: 14 }}>
+          <button className="btn btn-accent" onClick={newChat} style={{ width: '100%', justifyContent: 'center' }}><I.plus width={15} height={15} /> Nueva conversación</button>
+        </div>
+        <div className="scroll-y" style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px' }}>
+          {chats.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-faint)', padding: 10 }}>Sin conversaciones aún.</div>}
+          {chats.map((c) => (
+            <button key={c.id} onClick={() => setActiveId(c.id)} className="row-hover" style={{ width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9, background: c.id === activeId ? 'var(--card-hover)' : 'transparent', marginBottom: 3 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
+              <div className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)' }}>{fmtDate(c.date)} · {c.messages.length} msgs</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* chat */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div ref={scrollRef} className="scroll-y" style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {(!active || active.messages.length === 0) && (
+              <div style={{ marginTop: '8vh', textAlign: 'center' }}>
+                <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', margin: '0 auto 16px' }}><I.spark width={26} height={26} /></div>
+                <h1 style={{ fontSize: 26, marginBottom: 8 }}>Asistente IA de Insights</h1>
+                <div style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>Preguntá sobre el avance de los proyectos, los sprints, los pendientes<br />y lo que se habló en las reuniones.</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxWidth: 560, margin: '0 auto' }}>
+                  {ASSISTANT_SUGGESTIONS.map((s) => (
+                    <button key={s} className="surface surface-hover click" onClick={() => sendText(s)} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.4 }}>{s}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {active?.messages.map((m, i) => (
+              <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'grid', placeItems: 'center', background: m.role === 'user' ? 'var(--border-strong)' : 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, fontFamily: 'Bricolage Grotesque' }}>{m.role === 'user' ? 'Vos' : <I.spark width={15} height={15} />}</div>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 14.5, lineHeight: 1.65, whiteSpace: 'pre-wrap', paddingTop: 3, color: m.role === 'user' ? 'var(--text)' : 'var(--text-dim)' }}>{m.content}</div>
+              </motion.div>
+            ))}
+            {sending && <div style={{ display: 'flex', gap: 4, paddingLeft: 40 }}>{[0, 1, 2].map((i) => <motion.span key={i} animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }} style={{ width: 6, height: 6, borderRadius: 99, background: 'var(--text-faint)' }} />)}</div>}
+          </div>
+        </div>
+        {error && <div style={{ padding: '8px 24px', fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', maxWidth: 760, margin: '0 auto', width: '100%' }}>{error}</div>}
+        <div style={{ padding: '14px 24px 20px' }}>
+          <div style={{ maxWidth: 760, margin: '0 auto', position: 'relative' }}>
+            <textarea className="input" rows={2} value={input} onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(input) } }}
+              placeholder="Preguntá sobre los proyectos, avances, reuniones…" style={{ resize: 'none', paddingRight: 48 }} />
+            <button onClick={() => sendText(input)} disabled={sending || !input.trim()} className="btn-accent" style={{ position: 'absolute', right: 8, bottom: 8, width: 32, height: 32, borderRadius: 8, display: 'grid', placeItems: 'center', opacity: input.trim() ? 1 : 0.5 }}><I.send width={15} height={15} /></button>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 8, textAlign: 'center' }} className="mono">claude-sonnet-4 · lee proyectos + reuniones · Enter envía</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================================
    17 · SIDEBAR + USER PROFILE
 ============================================================================ */
 /* floating profile avatar (bottom-right): solo foto + a quién representa */
@@ -2086,6 +2243,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed }) {
     { key: 'projects', label: 'Projects', icon: I.folder },
     { key: 'clients', label: 'Clients', icon: I.users },
     { key: 'calls', label: 'Calls', icon: I.phone },
+    { key: 'assistant', label: 'IA Assistant', icon: I.spark },
   ]
   return (
     <motion.aside animate={{ width: collapsed ? 64 : 232 }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}
@@ -2137,7 +2295,7 @@ function SyncBadge({ sync }) {
   )
 }
 function Header({ theme, setTheme, onSettings, route, sync, onLogout }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', clients: 'Clients', calls: 'Calls', project: 'Projects / Detalle' }[route.view]
+  const crumb = { overview: 'Overview', projects: 'Projects', clients: 'Clients', calls: 'Calls', assistant: 'IA Assistant', project: 'Projects / Detalle' }[route.view]
   return (
     <header style={{ height: 64, flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', background: 'var(--bg-elevated)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-dim)', fontSize: 13 }}>
@@ -2264,10 +2422,11 @@ function AppShell({ session, onLogout }) {
           <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
-              style={{ height: '100%', overflow: route.view === 'project' ? 'hidden' : 'auto' }}>
+              style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' ? 'hidden' : 'auto' }}>
               {route.view === 'projects' && <Projects onOpenProject={openProject} />}
               {route.view === 'clients' && <Clients />}
               {route.view === 'calls' && <Calls />}
+              {route.view === 'assistant' && <AssistantView />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
             </motion.div>
           </main>
