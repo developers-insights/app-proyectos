@@ -512,18 +512,21 @@ function migrate(state) {
   seedClients().forEach((c) => { if (!cIds.has(c.id)) state.clients.push(c) })
   const pIds = new Set(state.projects.map((p) => p.id))
   seedProjects().forEach((p) => { if (!pIds.has(p.id)) state.projects.push(p) })
-  // ensure assignments + tags exist, normalize sprint statuses, add description/comments
-  state.projects = state.projects.map((p) => ({
-    ...p,
-    assignments: p.assignments || DEMO_ASSIGN[p.id] || { pm: null, dev: null },
-    tags: p.tags || [],
-    sprints: (p.sprints || []).map((s) => ({
-      ...s,
-      status: normSprint(s.status),
-      description: s.description || '',
-      comments: s.comments || [],
-    })),
-  }))
+  // ensure assignments + tags exist, normalize sprint statuses, add description/comments, drop devUrl
+  state.projects = state.projects.map((p) => {
+    const { devUrl, ...rest } = p   // devUrl eliminado del modelo
+    return {
+      ...rest,
+      assignments: rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null },
+      tags: rest.tags || [],
+      sprints: (rest.sprints || []).map((s) => ({
+        ...s,
+        status: normSprint(s.status),
+        description: s.description || '',
+        comments: s.comments || [],
+      })),
+    }
+  })
   return state
 }
 function loadState() {
@@ -828,7 +831,6 @@ function EditProjectModal({ open, project, onClose, onSave }) {
             </Field>
             <Field label="GitHub repo (org/repo)"><input className="input mono" value={d.githubRepo || ''} onChange={(e) => set('githubRepo', e.target.value)} /></Field>
             <Field label="URL Producción"><input className="input" value={d.productionUrl || ''} onChange={(e) => set('productionUrl', e.target.value)} /></Field>
-            <Field label="URL Dev env"><input className="input" value={d.devUrl || ''} onChange={(e) => set('devUrl', e.target.value)} /></Field>
             <Field label="Testing / Deploy URL"><input className="input" value={d.testingUrl || ''} onChange={(e) => set('testingUrl', e.target.value)} /></Field>
             <Field label="Grupo de WhatsApp"><input className="input" value={d.whatsappUrl || ''} onChange={(e) => set('whatsappUrl', e.target.value)} /></Field>
             <Field label="Contrato total (USD)"><input className="input mono" type="number" value={d.totalAmount} onChange={(e) => set('totalAmount', Number(e.target.value))} /></Field>
@@ -1712,6 +1714,9 @@ function ProjectDetail({ projectId, onBack }) {
 
   const sprintProgress = calcProgress(project)
   const counts = moduleCounts(project)
+  const sprintsTotal = project.sprints.length
+  const sprintsDone = project.sprints.filter((s) => normSprint(s.status) === 'terminado').length
+  const sprintsProg = project.sprints.filter((s) => normSprint(s.status) === 'en proceso').length
 
   const allModules = project.sprints.flatMap((s) => s.modules.map((m) => ({ ...m, sprint: s.name })))
   const kpiDetails = {
@@ -1746,21 +1751,19 @@ function ProjectDetail({ projectId, onBack }) {
           <a href={project.testingUrl || project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm btn-accent" onClick={(e) => { if (!(project.testingUrl || project.productionUrl)) e.preventDefault() }}><I.ext width={14} height={14} /> Testing</a>
           <a href={project.whatsappUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm" onClick={(e) => { if (!project.whatsappUrl) e.preventDefault() }} style={{ color: project.whatsappUrl ? 'var(--green)' : undefined, opacity: project.whatsappUrl ? 1 : 0.55 }}><I.whatsapp width={15} height={15} /> WhatsApp</a>
           <a href={project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm"><I.rocket width={14} height={14} /> Producción</a>
-          <a href={project.devUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm"><I.ext width={14} height={14} /> Dev env</a>
+          <div className="btn btn-sm" style={{ cursor: 'default', color: 'var(--red)', borderColor: 'var(--red)', background: 'var(--red-soft)', fontWeight: 700 }}>
+            <I.rocket width={14} height={14} /> Último deploy{project.lastDeployDate ? ` · ${fmtDate(project.lastDeployDate)} (${dd}d)` : ' · —'}
+          </div>
           <a href={`https://github.com/${project.githubRepo}`} target="_blank" rel="noreferrer" className="btn btn-sm"><I.github width={14} height={14} /> GitHub repo</a>
           <div className="btn btn-sm" style={{ cursor: 'default', borderColor: 'var(--border)' }}><CommitChip repo={project.githubRepo} compact /></div>
         </div>
 
-        {/* KPI GRID */}
+        {/* KPI GRID — solo sprints */}
         <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 30 }}>
-          <KpiCard label="Módulos scope" value={counts.total} sub="ver desglose" onClick={() => setKpiModal('scope')} />
-          <KpiCard label="Entregados" value={counts.delivered} tone="var(--green)" sub="ver desglose" onClick={() => setKpiModal('delivered')} />
-          <KpiCard label="Parciales" value={counts.partial} tone="var(--accent)" sub="ver desglose" onClick={() => setKpiModal('partial')} />
-          <KpiCard label="Pendientes" value={counts.pending} tone="var(--text-dim)" sub="ver desglose" onClick={() => setKpiModal('pending')} />
-          <KpiCard label="Pagado" value={money(project.paidAmount)} tone="var(--green)" sub={`${billedPct}% del total`} onClick={() => setKpiModal('paid')} />
-          <KpiCard label="Por cobrar" value={money(project.totalAmount - project.paidAmount)} tone="var(--red)" sub="ver desglose" onClick={() => setKpiModal('due')} />
-          <KpiCard label="Last deploy" value={`${dd}d`} tone={dd > 7 ? 'var(--red)' : 'var(--text)'} sub={fmtDate(project.lastDeployDate)} onClick={() => setKpiModal('deploy')} />
-          <KpiCard label="Avance general" value={`${sprintProgress}%`} tone={pctColor(sprintProgress)} sub="por sprints" onClick={() => setKpiModal('progress')} />
+          <KpiCard label="Sprints totales" value={sprintsTotal} sub="ver detalle" onClick={() => setKpiModal('progress')} />
+          <KpiCard label="Sprints terminados" value={sprintsDone} tone="var(--green)" sub="ver detalle" onClick={() => setKpiModal('progress')} />
+          <KpiCard label="Sprints en proceso" value={sprintsProg} tone="var(--accent)" sub="ver detalle" onClick={() => setKpiModal('progress')} />
+          <KpiCard label="% Avance" value={`${sprintProgress}%`} tone={pctColor(sprintProgress)} sub="por sprints" onClick={() => setKpiModal('progress')} />
         </motion.div>
 
         {/* KICK-OFF */}
