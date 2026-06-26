@@ -507,6 +507,7 @@ function migrate(state) {
   if (!state.clients) state.clients = seedClients()
   if (!state.projects) state.projects = seedProjects()
   if (!state.calls) state.calls = seedCalls()
+  state.calls = state.calls.map((c) => ({ ...c, priority: c.priority || 'normal', summary: c.summary || '', transcript: c.transcript || '' }))
   if (!state.assistantChats) state.assistantChats = []
   // add new clients/projects that aren't present yet (by id)
   const cIds = new Set(state.clients.map((c) => c.id))
@@ -1607,13 +1608,74 @@ function Field({ label, children }) {
 /* ============================================================================
    14 · CALLS (+ Fathom sync)
 ============================================================================ */
+/* editor de llamada: alta/edición/borrado, selectores encadenados, prioridad */
+function CallEditor({ open, call, isNew, onClose, onSave, onDelete }) {
+  const { data } = useApp()
+  const [f, setF] = useState(null)
+  useEffect(() => {
+    if (!open) return
+    setF(call ? { ...call } : { id: uid(), advisor: data.team[0]?.name || '', clientId: data.clients[0]?.id || '', projectId: '', date: NOW.toISOString().slice(0, 10), priority: 'normal', summary: '', transcript: '', fathomUrl: '' })
+  }, [open, call && call.id])
+  if (!f) return <Modal open={open} onClose={onClose} title="Llamada" />
+  const set = (k, v) => setF((s) => {
+    const n = { ...s, [k]: v }
+    if (k === 'clientId') { const projs = data.projects.filter((p) => p.clientId === v); if (!projs.some((p) => p.id === n.projectId)) n.projectId = projs[0]?.id || '' }
+    return n
+  })
+  const projOptions = data.projects.filter((p) => p.clientId === f.clientId)
+  const advisors = [...new Set([...data.team.map((u) => u.name), f.advisor].filter(Boolean))]
+  return (
+    <Modal open={open} onClose={onClose} title={isNew ? 'Nueva llamada' : 'Editar llamada'} sub={data.clients.find((c) => c.id === f.clientId)?.company} width={640}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="Asesor">
+            <select className="input" value={f.advisor} onChange={(e) => set('advisor', e.target.value)}>
+              {advisors.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </Field>
+          <Field label="Fecha"><input className="input mono" type="date" value={(f.date || '').slice(0, 10)} onChange={(e) => set('date', e.target.value)} /></Field>
+          <Field label="Cliente">
+            <select className="input" value={f.clientId} onChange={(e) => set('clientId', e.target.value)}>
+              {data.clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
+            </select>
+          </Field>
+          <Field label="Proyecto">
+            <select className="input" value={f.projectId} onChange={(e) => set('projectId', e.target.value)}>
+              <option value="">— Sin proyecto —</option>
+              {projOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Prioridad">
+            <select className="input" value={f.priority || 'normal'} onChange={(e) => set('priority', e.target.value)}>
+              <option value="normal">Normal</option>
+              <option value="alta">Prioridad (cliente urgente / enojado)</option>
+            </select>
+          </Field>
+          <Field label="Link de Fathom (opcional)"><input className="input mono" value={f.fathomUrl || ''} onChange={(e) => set('fathomUrl', e.target.value)} placeholder="https://fathom.video/..." /></Field>
+        </div>
+        <Field label="Resumen"><textarea className="input" rows={3} value={f.summary || ''} onChange={(e) => set('summary', e.target.value)} placeholder="Resumen de la llamada…" /></Field>
+        <Field label="Transcript completo"><textarea className="input mono" rows={8} value={f.transcript || ''} onChange={(e) => set('transcript', e.target.value)} placeholder="Pegá acá el transcript completo…" style={{ fontSize: 12.5, lineHeight: 1.6 }} /></Field>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+          {!isNew ? <button className="btn" onClick={() => { onDelete(f.id); onClose() }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I.trash width={15} height={15} /> Eliminar</button> : <span />}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-accent" onClick={() => { onSave(f); onClose() }}><I.check width={15} height={15} /> Guardar</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function Calls() {
   const { data, setData } = useApp()
-  const [open, setOpen] = useState(null)
+  const [editing, setEditing] = useState(null)   // {call, isNew} | null
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
   const clientOf = (id) => data.clients.find((c) => c.id === id)
   const projOf = (id) => data.projects.find((p) => p.id === id)
+  const saveCall = (call) => setData((d) => ({ ...d, calls: d.calls.some((c) => c.id === call.id) ? d.calls.map((c) => (c.id === call.id ? call : c)) : [call, ...d.calls] }))
+  const deleteCall = (id) => setData((d) => ({ ...d, calls: d.calls.filter((c) => c.id !== id) }))
 
   // Fathom MCP sync — intenta el endpoint real, cae a demo si CORS/no-token.
   const syncFathom = async () => {
@@ -1641,16 +1703,19 @@ function Calls() {
   }
 
   const importCall = (d) => {
-    setData((prev) => ({ ...prev, calls: [{ id: uid(), clientId: d.clientGuess || prev.clients[0].id, projectId: d.projectGuess || prev.projects[0].id, advisor: d.advisor, date: d.date, summary: d.summary, fathomUrl: 'https://fathom.video/share/' + uid(), transcript: d.transcript }, ...prev.calls] }))
+    setData((prev) => ({ ...prev, calls: [{ id: uid(), clientId: d.clientGuess || prev.clients[0].id, projectId: d.projectGuess || prev.projects[0].id, advisor: d.advisor, date: d.date, priority: 'normal', summary: d.summary, fathomUrl: 'https://fathom.video/share/' + uid(), transcript: d.transcript }, ...prev.calls] }))
   }
 
   return (
     <div style={{ padding: '28px 34px 60px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Soporte & seguimiento</div><h1 style={{ fontSize: 32 }}>Calls</h1></div>
-        <button className="btn btn-accent" onClick={syncFathom} disabled={syncing}>
-          <I.refresh width={15} height={15} style={syncing ? { animation: 'spin 1s linear infinite' } : {}} /> {syncing ? 'Sincronizando…' : 'Sync Fathom'}
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-accent" onClick={() => setEditing({ call: null, isNew: true })}><I.plus width={15} height={15} /> Agregar llamada</button>
+          <button className="btn" onClick={syncFathom} disabled={syncing}>
+            <I.refresh width={15} height={15} style={syncing ? { animation: 'spin 1s linear infinite' } : {}} /> {syncing ? 'Sincronizando…' : 'Sync Fathom'}
+          </button>
+        </div>
       </div>
 
       {syncResult && (
@@ -1672,38 +1737,32 @@ function Calls() {
         </motion.div>
       )}
 
-      <div className="surface" style={{ overflow: 'hidden' }}>
-        <table>
-          <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-            {['Asesor', 'Cliente', 'Proyecto', 'Fecha', 'Resumen', 'Fathom'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {[...data.calls].sort((a, b) => new Date(b.date) - new Date(a.date)).map((c) => (
-              <tr key={c.id} className="row-hover click" onClick={() => setOpen(c)} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '13px 16px', fontWeight: 600, whiteSpace: 'nowrap' }}>{c.advisor}</td>
-                <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{clientOf(c.clientId)?.company}</td>
-                <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{projOf(c.projectId)?.name}</td>
-                <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }} className="mono">{fmtDate(c.date)}</td>
-                <td style={{ padding: '13px 16px', color: 'var(--text-dim)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.summary}</td>
-                <td style={{ padding: '13px 16px' }}><a href={c.fathomUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--accent)' }}><I.link width={16} height={16} /></a></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {data.calls.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Sin llamadas. Agregá una con “Agregar llamada”.</div>}
 
-      <Modal open={!!open} onClose={() => setOpen(null)} title={open ? `${clientOf(open.clientId)?.company}` : ''} sub={open ? `${open.advisor} · ${fmtDate(open.date)} · ${projOf(open.projectId)?.name}` : ''}>
-        {open && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <a href={open.fathomUrl} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ alignSelf: 'flex-start' }}><I.link width={14} height={14} /> Abrir en Fathom</a>
-            <div><div className="label" style={{ marginBottom: 8 }}>Resumen</div><div style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text-dim)' }}>{open.summary}</div></div>
-            <div>
-              <div className="label" style={{ marginBottom: 8 }}>Transcript completo</div>
-              <pre className="mono surface" style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--text-dim)', padding: 16, background: 'var(--bg-elevated)', whiteSpace: 'pre-wrap', margin: 0 }}>{open.transcript}</pre>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {data.calls.length > 0 && (
+        <div className="surface" style={{ overflow: 'hidden' }}>
+          <table>
+            <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
+              {['', 'Asesor', 'Cliente', 'Proyecto', 'Fecha', 'Resumen', 'Fathom'].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {[...data.calls].sort((a, b) => new Date(b.date) - new Date(a.date)).map((c) => (
+                <tr key={c.id} className="row-hover click" onClick={() => setEditing({ call: c, isNew: false })} style={{ borderBottom: '1px solid var(--border)', background: c.priority === 'alta' ? 'var(--red-soft)' : 'transparent' }}>
+                  <td style={{ padding: '13px 0 13px 16px', width: 14 }}>{c.priority === 'alta' && <span title="Prioridad" style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: 'var(--red)' }} />}</td>
+                  <td style={{ padding: '13px 16px', fontWeight: 600, whiteSpace: 'nowrap' }}>{c.advisor}</td>
+                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{clientOf(c.clientId)?.company || '—'}</td>
+                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{projOf(c.projectId)?.name || '—'}</td>
+                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }} className="mono">{fmtDate(c.date)}</td>
+                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.priority === 'alta' && <Badge tone="red">Prioridad</Badge>} {c.summary}</td>
+                  <td style={{ padding: '13px 16px' }}>{c.fathomUrl ? <a href={c.fathomUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--accent)' }}><I.link width={16} height={16} /></a> : <span style={{ color: 'var(--text-faint)' }}>—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <CallEditor open={!!editing} call={editing?.call} isNew={editing?.isNew} onClose={() => setEditing(null)} onSave={saveCall} onDelete={deleteCall} />
     </div>
   )
 }
