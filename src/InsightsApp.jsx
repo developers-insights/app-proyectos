@@ -15,6 +15,7 @@ import React, {
   createContext,
   useContext,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@supabase/supabase-js'
 
@@ -766,10 +767,10 @@ function StatusMenu({ status, onChange }) {
           {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1 }} />
         </span>
       </button>
-      {open && pos && (
+      {open && pos && createPortal(
         <>
           <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
-          <div className="surface" style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, minWidth: menuW, boxShadow: 'var(--shadow)' }}>
+          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, minWidth: menuW, boxShadow: 'var(--shadow)' }}>
             {PROJECT_STATUS.map((o) => (
               <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: o.key === status ? 'var(--accent)' : 'var(--text)' }}>
@@ -778,7 +779,8 @@ function StatusMenu({ status, onChange }) {
               </button>
             ))}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </span>
   )
@@ -1156,10 +1158,10 @@ function SprintStatusBadge({ status, onChange, full }) {
           {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1 }} />
         </span>
       </button>
-      {open && pos && (
+      {open && pos && createPortal(
         <>
           <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
-          <div className="surface" style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, minWidth: 150, boxShadow: 'var(--shadow)' }}>
+          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, minWidth: 150, boxShadow: 'var(--shadow)' }}>
             {SPRINT_STATUS.map((o) => (
               <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: normSprint(status) === o.key ? 'var(--accent)' : 'var(--text)' }}>
@@ -1168,7 +1170,8 @@ function SprintStatusBadge({ status, onChange, full }) {
               </button>
             ))}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </span>
   )
