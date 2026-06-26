@@ -655,7 +655,8 @@ function useGithubCommit(repo) {
    8 · ANTHROPIC CHAT
 ============================================================================ */
 async function anthropicChat({ system, messages }) {
-  const key = localStorage.getItem('anthropic_key')
+  // tu propia key (Ajustes) tiene prioridad; si no, la global de Render (env var)
+  const key = localStorage.getItem('anthropic_key') || import.meta.env.VITE_ANTHROPIC_API_KEY
   if (!key) throw new Error('NO_KEY')
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
