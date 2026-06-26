@@ -1746,7 +1746,7 @@ function Calls() {
         <div className="surface" style={{ overflow: 'hidden' }}>
           <table>
             <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['', 'Asesor', 'Cliente', 'Proyecto', 'Fecha', 'Resumen', 'Fathom'].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+              {['', 'Asesor', 'Cliente', 'Proyecto', 'Fecha', 'Resumen', 'Fathom', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
             </tr></thead>
             <tbody>
               {[...data.calls].sort((a, b) => new Date(b.date) - new Date(a.date)).map((c) => (
@@ -1756,8 +1756,11 @@ function Calls() {
                   <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{clientOf(c.clientId)?.company || '—'}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{projOf(c.projectId)?.name || '—'}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }} className="mono">{fmtDate(c.date)}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.priority === 'alta' && <Badge tone="red">Prioridad</Badge>} {c.summary}</td>
-                  <td style={{ padding: '13px 16px' }}>{c.fathomUrl ? <a href={c.fathomUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--accent)' }}><I.link width={16} height={16} /></a> : <span style={{ color: 'var(--text-faint)' }}>—</span>}</td>
+                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.priority === 'alta' && <Badge tone="red">Prioridad</Badge>} {c.summary}</td>
+                  <td style={{ padding: '13px 16px', width: 50 }}>{c.fathomUrl ? <a href={c.fathomUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Abrir en Fathom" style={{ color: 'var(--accent)' }}><I.link width={16} height={16} /></a> : <span style={{ color: 'var(--text-faint)' }}>—</span>}</td>
+                  <td style={{ padding: '13px 16px 13px 0', width: 44 }}>
+                    <button className="btn btn-sm btn-ghost" title="Eliminar llamada" onClick={(e) => { e.stopPropagation(); if (window.confirm('¿Eliminar esta llamada? No se puede deshacer.')) deleteCall(c.id) }} style={{ padding: 6, color: 'var(--text-faint)' }}><I.x width={15} height={15} /></button>
+                  </td>
                 </tr>
               ))}
             </tbody>
