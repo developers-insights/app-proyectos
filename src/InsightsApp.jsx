@@ -180,7 +180,7 @@ const I = {
    3 · UTILITIES
 ============================================================================ */
 const uid = () => Math.random().toString(36).slice(2, 10)
-const NOW = new Date('2026-06-11T12:00:00')
+const NOW = new Date()   // fecha real de hoy (antes estaba fija en el demo y rompía los cálculos)
 const daysAgo = (iso) => {
   if (!iso) return null
   return Math.max(0, Math.round((NOW - new Date(iso)) / 86400000))
@@ -1576,7 +1576,7 @@ function PendingDatePrompt({ open, project, onClose, onSave }) {
         {date && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)' }}>
             Vista previa: <PendingDateChip date={date} />
-            <span>{(() => { const d = daysUntil(date); return d == null ? '' : d < 0 ? `(hace ${-d}d)` : `(en ${d}d)` })()}</span>
+            <span>{(() => { const d = daysUntil(date); return d == null ? '' : d < 0 ? `(hace ${-d}d)` : d === 0 ? '(hoy)' : `(en ${d}d)` })()}</span>
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
