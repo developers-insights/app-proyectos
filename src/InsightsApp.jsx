@@ -22,8 +22,9 @@ import { createClient } from '@supabase/supabase-js'
    0 · SUPABASE (cloud persistence + auth) — optional, enabled via env vars
    VITE_SUPABASE_URL · VITE_SUPABASE_ANON_KEY (set locally in .env and in Render)
 ============================================================================ */
-const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Podés configurarlo por variables de entorno (Render) O hardcodearlo acá abajo.
+const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || 'https://otowpbkhcjpdqowpqfyx.supabase.co'
+const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '' // ← pegá acá tu publishable key (sb_publishable_…) y el login funciona sin tocar Render
 const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY) : null
 const cloudEnabled = !!supabase
 
@@ -2018,8 +2019,8 @@ function ProjectChat({ project, client, patch }) {
 /* ============================================================================
    17 · SIDEBAR + USER PROFILE
 ============================================================================ */
-/* current-user profile chip (bottom of sidebar) + editor: name · email · foto */
-function UserProfile({ collapsed, session, myId, setMyId, onLogout }) {
+/* floating profile avatar (bottom-right): solo foto + a quién representa */
+function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
   const { data, setData } = useApp()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -2036,56 +2037,48 @@ function UserProfile({ collapsed, session, myId, setMyId, onLogout }) {
     e.target.value = ''
   }
   const email = session?.user?.email || ''
+  const Placeholder = ({ size, icon = 22 }) => <div style={{ width: size, height: size, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '2px dashed var(--border-strong)', color: 'var(--text-faint)' }}><I.users width={icon} height={icon} /></div>
 
   return (
-    <div style={{ padding: 10, borderTop: '1px solid var(--border)' }}>
-      <button onClick={() => setOpen(true)} className="row-hover" title="Mi perfil"
-        style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: 8, borderRadius: 10, textAlign: 'left' }}>
-        {me ? <Avatar user={me} size={collapsed ? 30 : 34} ring="var(--bg-elevated)" />
-          : <div style={{ width: collapsed ? 30 : 34, height: collapsed ? 30 : 34, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: 'var(--bg)', border: '2px dashed var(--border-strong)', color: 'var(--text-faint)' }}><I.users width={15} height={15} /></div>}
-        {!collapsed && (
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{me ? me.name : 'Configurar perfil'}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email || (cloudEnabled ? '' : 'modo local')}</div>
-          </div>
-        )}
-      </button>
+    <>
+      {!hidden && (
+        <motion.button initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ scale: 1.06 }}
+          onClick={() => setOpen(true)} title="Mi perfil"
+          style={{ position: 'fixed', right: 22, bottom: 22, zIndex: 50, padding: 0, borderRadius: '50%', boxShadow: 'var(--shadow)', background: 'var(--card)' }}>
+          {me ? <Avatar user={me} size={48} ring="var(--bg)" /> : <Placeholder size={48} icon={18} />}
+        </motion.button>
+      )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Mi perfil" sub={email || undefined} width={460}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            {me ? <Avatar user={me} size={72} ring="var(--card)" /> : <div style={{ width: 72, height: 72, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '2px dashed var(--border-strong)', color: 'var(--text-faint)' }}><I.users width={24} height={24} /></div>}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <input ref={fileRef} type="file" accept="image/*" onChange={onPick} style={{ display: 'none' }} />
-              <button className="btn btn-sm" disabled={!me || busy} onClick={() => fileRef.current && fileRef.current.click()}><I.pencil width={13} height={13} /> {busy ? 'Procesando…' : 'Cambiar foto'}</button>
-              {me && me.photo && <button className="btn btn-sm btn-ghost" onClick={() => updateMember(me.id, { photo: '' })} style={{ color: 'var(--text-dim)' }}><I.x width={13} height={13} /> Quitar foto</button>}
-            </div>
+      <Modal open={open} onClose={() => setOpen(false)} title="Mi perfil" sub={email || undefined} width={420}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'center', textAlign: 'center' }}>
+          {me ? <Avatar user={me} size={96} ring="var(--card)" /> : <Placeholder size={96} />}
+          <input ref={fileRef} type="file" accept="image/*" onChange={onPick} style={{ display: 'none' }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-accent" disabled={!me || busy} onClick={() => fileRef.current && fileRef.current.click()}><I.pencil width={14} height={14} /> {busy ? 'Procesando…' : me && me.photo ? 'Cambiar foto' : 'Subir foto'}</button>
+            {me && me.photo && <button className="btn btn-ghost" onClick={() => updateMember(me.id, { photo: '' })} style={{ color: 'var(--text-dim)' }}><I.x width={14} height={14} /> Quitar</button>}
           </div>
 
-          <Field label="¿Quién sos? (te vincula a un miembro del equipo)">
-            <select className="input" value={myId || ''} onChange={(e) => setMyId(e.target.value)}>
-              <option value="">— Elegí tu nombre —</option>
-              {team.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </Field>
-          {me && <Field label="Nombre"><input className="input" value={me.name} onChange={(e) => updateMember(me.id, { name: e.target.value })} /></Field>}
-          <Field label="Email">
-            <input className="input mono" value={me ? (me.email || email) : email} placeholder="tu@email.com"
-              onChange={(e) => me && updateMember(me.id, { email: e.target.value })} readOnly={!me} />
-          </Field>
-          <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5 }}>Tu foto se muestra en las tarjetas de los proyectos donde estés asignado como PM o Dev.</div>
+          <div style={{ width: '100%', textAlign: 'left' }}>
+            <Field label="Sos:">
+              <select className="input" value={myId || ''} onChange={(e) => setMyId(e.target.value)}>
+                <option value="">— Elegí tu nombre —</option>
+                {team.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </Field>
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 7 }}>{me ? 'Tu foto se ve abajo a la derecha y en las tarjetas donde estés asignado.' : 'Elegí tu nombre para poder subir tu foto.'}</div>
+          </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
             {cloudEnabled && onLogout ? <button className="btn" onClick={onLogout} style={{ color: 'var(--red)' }}><I.ext width={14} height={14} /> Cerrar sesión</button> : <span />}
             <button className="btn btn-accent" onClick={() => setOpen(false)}><I.check width={15} height={15} /> Listo</button>
           </div>
         </div>
       </Modal>
-    </div>
+    </>
   )
 }
 
-function Sidebar({ route, setRoute, collapsed, setCollapsed, session, myId, setMyId, onLogout }) {
+function Sidebar({ route, setRoute, collapsed, setCollapsed }) {
   const items = [
     { key: 'projects', label: 'Projects', icon: I.folder },
     { key: 'clients', label: 'Clients', icon: I.users },
@@ -2112,7 +2105,6 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, session, myId, setM
           )
         })}
       </nav>
-      <UserProfile collapsed={collapsed} session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} />
       <hr className="divider" />
       <button onClick={() => setCollapsed((v) => !v)} className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', color: 'var(--text-faint)', fontSize: 13 }}>
         <I.panelLeft width={17} height={17} style={{ transform: collapsed ? 'scaleX(-1)' : 'none' }} />{!collapsed && 'Colapsar'}
@@ -2264,7 +2256,7 @@ function AppShell({ session, onLogout }) {
   return (
     <AppCtx.Provider value={{ data, setData }}>
       <div className="app-shell">
-        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} />
+        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
@@ -2278,6 +2270,7 @@ function AppShell({ session, onLogout }) {
           </main>
         </div>
         <Settings open={settings} onClose={() => setSettings(false)} />
+        <UserProfile session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} hidden={route.view === 'project'} />
       </div>
     </AppCtx.Provider>
   )
