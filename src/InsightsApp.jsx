@@ -508,7 +508,7 @@ function migrate(state) {
   if (!state.clients) state.clients = seedClients()
   if (!state.projects) state.projects = seedProjects()
   if (!state.calls) state.calls = seedCalls()
-  state.calls = state.calls.map((c) => ({ ...c, priority: c.priority || 'normal', summary: c.summary || '', transcript: c.transcript || '' }))
+  state.calls = state.calls.map((c) => ({ ...c, priority: c.priority || 'normal', type: c.type || 'soporte', summary: c.summary || '', transcript: c.transcript || '' }))
   if (!state.assistantChats) state.assistantChats = []
   // add new clients/projects that aren't present yet (by id)
   const cIds = new Set(state.clients.map((c) => c.id))
@@ -723,6 +723,39 @@ const SPRINT_STATUS = [
 const normSprint = (s) => (s === 'completado' ? 'terminado' : s === 'en progreso' ? 'en proceso' : (s || 'pendiente'))
 const sprintMeta = (s) => SPRINT_STATUS.find((x) => x.key === normSprint(s)) || SPRINT_STATUS[0]
 
+/* tipos de call: onboarding · soporte · entrega */
+const CALL_TYPES = [
+  { key: 'onboarding', label: 'Onboarding', color: '#38BDF8' },
+  { key: 'soporte', label: 'Soporte', color: '#9CA3AF' },
+  { key: 'entrega', label: 'Entrega', color: '#22C55E' },
+]
+const callTypeMeta = (t) => CALL_TYPES.find((x) => x.key === t) || CALL_TYPES[1]
+
+/* fecha estimada de ingreso de proyecto pendiente: chip con color por proximidad */
+const parseLocalDate = (iso) => { if (!iso) return null; const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d) }
+const daysUntil = (iso) => { const dt = parseLocalDate(iso); return dt ? Math.ceil((dt - new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate())) / 86400000) : null }
+const fmtShortDate = (iso) => {
+  const dt = parseLocalDate(iso)
+  if (!dt) return ''
+  return dt.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/\./g, '').replace(/,/g, '')   // "lun 3 jul"
+}
+const pendingDateColor = (iso) => {
+  const d = daysUntil(iso)
+  if (d == null) return 'var(--text-faint)'
+  if (d <= 5) return 'var(--red)'
+  if (d <= 15) return 'var(--yellow)'
+  return 'var(--green)'
+}
+function PendingDateChip({ date, style }) {
+  if (!date) return null
+  const col = pendingDateColor(date)
+  return (
+    <span className="tag" title="Ingreso estimado del proyecto" style={{ color: col, background: 'transparent', borderColor: col, fontWeight: 700, ...style }}>
+      <I.calendar width={12} height={12} /> {fmtShortDate(date)}
+    </span>
+  )
+}
+
 /* progress derived live from sprints (keeps overview/detail in sync) */
 function calcProgress(project) {
   const sprints = project.sprints || []
@@ -853,6 +886,7 @@ function EditProjectModal({ open, project, onClose, onSave }) {
             <Field label="Grupo de WhatsApp"><input className="input" value={d.whatsappUrl || ''} onChange={(e) => set('whatsappUrl', e.target.value)} /></Field>
             <Field label="Contrato total (USD)"><input className="input mono" type="number" value={d.totalAmount} onChange={(e) => set('totalAmount', Number(e.target.value))} /></Field>
             <Field label="Cobrado / pagado (USD)"><input className="input mono" type="number" value={d.paidAmount} onChange={(e) => set('paidAmount', Number(e.target.value))} /></Field>
+            <Field label="Ingreso estimado (si está pendiente)"><input className="input mono" type="date" value={(d.expectedStartDate || '').slice(0, 10)} onChange={(e) => set('expectedStartDate', e.target.value)} /></Field>
           </div>
           <Field label="Kick-off"><textarea className="input" rows={3} value={d.kickoff || ''} onChange={(e) => set('kickoff', e.target.value)} /></Field>
           <div>
@@ -1378,9 +1412,11 @@ function Projects({ onOpenProject }) {
   const [pmFilter, setPmFilter] = useState(qp.get('pm') || 'all')
   const [devFilter, setDevFilter] = useState(qp.get('dev') || 'all')
   const [tagFilter, setTagFilter] = useState(qp.get('tag') || 'all')
+  const [pendingFor, setPendingFor] = useState(null)   // id del proyecto al que se le pide fecha de ingreso
   const clientOf = (id) => data.clients.find((c) => c.id === id)
   const userOf = (id) => data.team.find((u) => u.id === id)
   const updateProject = (id, fields) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, ...fields } : p)) }))
+  const setStatus = (id, status) => { updateProject(id, { status }); if (status === 'pending') setPendingFor(id) }
 
   // keep filters URL-friendly
   useEffect(() => {
@@ -1463,8 +1499,15 @@ function Projects({ onOpenProject }) {
                     <div style={{ fontWeight: 600, fontSize: 16 }}>{p.name}</div>
                     <div style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>{cl?.company}</div>
                   </div>
-                  <StatusMenu status={p.status} onChange={(s) => updateProject(p.id, { status: s })} />
+                  <StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />
                 </div>
+                {p.status === 'pending' && (
+                  <div style={{ marginBottom: 14 }} onClick={(e) => { e.stopPropagation(); setPendingFor(p.id) }}>
+                    {p.expectedStartDate
+                      ? <PendingDateChip date={p.expectedStartDate} style={{ cursor: 'pointer' }} />
+                      : <span className="tag click" style={{ color: 'var(--blue)', background: 'transparent', borderColor: 'var(--blue)' }}><I.calendar width={12} height={12} /> Definir ingreso</span>}
+                  </div>
+                )}
                 <div style={{ marginBottom: 14 }}><Progress value={calcProgress(p)} showLabel /></div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
                   <div className="surface" style={{ padding: '8px 11px', background: 'var(--bg-elevated)' }}>
@@ -1503,7 +1546,7 @@ function Projects({ onOpenProject }) {
                     <td style={{ padding: '13px 16px', fontWeight: 600 }}>{p.name}</td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)' }}>{cl?.company}</td>
                     <td style={{ padding: '13px 16px' }}><TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} size={26} ring="var(--card)" /></td>
-                    <td style={{ padding: '13px 16px' }}><StatusMenu status={p.status} onChange={(s) => updateProject(p.id, { status: s })} /></td>
+                    <td style={{ padding: '13px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />{p.status === 'pending' && p.expectedStartDate && <PendingDateChip date={p.expectedStartDate} />}</div></td>
                     <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={calcProgress(p)} showLabel /></td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)', fontSize: 13 }}>{cs?.name || '—'}</td>
                     <td style={{ padding: '13px 16px' }} className="mono"><span style={{ color: dd > 7 ? 'var(--red)' : 'var(--text-dim)' }}>{dd == null ? '—' : `${dd}d`}</span></td>
@@ -1515,7 +1558,36 @@ function Projects({ onOpenProject }) {
           </table>
         </div>
       )}
+
+      <PendingDatePrompt open={!!pendingFor} project={data.projects.find((p) => p.id === pendingFor)} onClose={() => setPendingFor(null)} onSave={(d) => { updateProject(pendingFor, { expectedStartDate: d }); setPendingFor(null) }} />
     </div>
+  )
+}
+
+/* popup de fecha estimada de ingreso para proyectos pendientes */
+function PendingDatePrompt({ open, project, onClose, onSave }) {
+  const [date, setDate] = useState('')
+  useEffect(() => { if (open) setDate(project?.expectedStartDate ? project.expectedStartDate.slice(0, 10) : '') }, [open, project && project.id])
+  return (
+    <Modal open={open} onClose={onClose} title="Proyecto pendiente de ingreso" sub={project?.name} width={420}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>¿Para cuándo está previsto el ingreso de este proyecto? Lo vas a ver en la tarjeta con un color según qué tan cerca esté.</div>
+        <Field label="Fecha estimada de ingreso"><input className="input mono" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        {date && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)' }}>
+            Vista previa: <PendingDateChip date={date} />
+            <span>{(() => { const d = daysUntil(date); return d == null ? '' : d < 0 ? `(hace ${-d}d)` : `(en ${d}d)` })()}</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+          {date ? <button className="btn" onClick={() => { setDate(''); onSave('') }} style={{ color: 'var(--text-dim)' }}>Quitar fecha</button> : <span />}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-accent" onClick={() => onSave(date)}><I.check width={15} height={15} /> Guardar</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -1617,7 +1689,7 @@ function CallEditor({ open, call, isNew, onClose, onSave, onDelete }) {
   const [f, setF] = useState(null)
   useEffect(() => {
     if (!open) return
-    setF(call ? { ...call } : { id: uid(), advisor: data.team[0]?.name || '', clientId: data.clients[0]?.id || '', projectId: '', date: NOW.toISOString().slice(0, 10), priority: 'normal', summary: '', transcript: '', fathomUrl: '' })
+    setF(call ? { ...call } : { id: uid(), advisor: data.team[0]?.name || '', clientId: data.clients[0]?.id || '', projectId: '', date: NOW.toISOString().slice(0, 10), type: 'onboarding', priority: 'normal', summary: '', transcript: '', fathomUrl: '' })
   }, [open, call && call.id])
   if (!f) return <Modal open={open} onClose={onClose} title="Llamada" />
   const set = (k, v) => setF((s) => {
@@ -1646,6 +1718,11 @@ function CallEditor({ open, call, isNew, onClose, onSave, onDelete }) {
             <select className="input" value={f.projectId} onChange={(e) => set('projectId', e.target.value)}>
               <option value="">— Sin proyecto —</option>
               {projOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Tipo de call">
+            <select className="input" value={f.type || 'soporte'} onChange={(e) => set('type', e.target.value)}>
+              {CALL_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
           </Field>
           <Field label="Prioridad">
@@ -1746,13 +1823,14 @@ function Calls() {
         <div className="surface" style={{ overflow: 'hidden' }}>
           <table>
             <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['', 'Asesor', 'Cliente', 'Proyecto', 'Fecha', 'Resumen', 'Fathom', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+              {['', 'Asesor', 'Tipo', 'Cliente', 'Proyecto', 'Fecha', 'Resumen', 'Fathom', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
             </tr></thead>
             <tbody>
               {[...data.calls].sort((a, b) => new Date(b.date) - new Date(a.date)).map((c) => (
                 <tr key={c.id} className="row-hover click" onClick={() => setEditing({ call: c, isNew: false })} style={{ borderBottom: '1px solid var(--border)', background: c.priority === 'alta' ? 'var(--red-soft)' : 'transparent' }}>
                   <td style={{ padding: '13px 0 13px 16px', width: 14 }}>{c.priority === 'alta' && <span title="Prioridad" style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: 'var(--red)' }} />}</td>
                   <td style={{ padding: '13px 16px', fontWeight: 600, whiteSpace: 'nowrap' }}>{c.advisor}</td>
+                  <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>{(() => { const m = callTypeMeta(c.type); return <span className="tag" style={{ color: m.color, background: m.color + '1f', borderColor: m.color + '55' }}>{m.label}</span> })()}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{clientOf(c.clientId)?.company || '—'}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{projOf(c.projectId)?.name || '—'}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }} className="mono">{fmtDate(c.date)}</td>
@@ -1797,6 +1875,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [editKickoff, setEditKickoff] = useState(false)
   const [openSprintId, setOpenSprintId] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
+  const [pendingPrompt, setPendingPrompt] = useState(false)
 
   if (!project) return null
   const patch = (fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === projectId ? fn(p) : p)) }))
@@ -1831,7 +1910,10 @@ function ProjectDetail({ projectId, onBack }) {
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 4 }}>
           <h1 style={{ fontSize: 30 }}>{project.name}</h1>
-          <StatusMenu status={project.status} onChange={(s) => patch((p) => ({ ...p, status: s }))} />
+          <StatusMenu status={project.status} onChange={(s) => { patch((p) => ({ ...p, status: s })); if (s === 'pending') setPendingPrompt(true) }} />
+          {project.status === 'pending' && (project.expectedStartDate
+            ? <span onClick={() => setPendingPrompt(true)} style={{ cursor: 'pointer' }}><PendingDateChip date={project.expectedStartDate} /></span>
+            : <button className="tag click" onClick={() => setPendingPrompt(true)} style={{ color: 'var(--blue)', background: 'transparent', borderColor: 'var(--blue)' }}><I.calendar width={12} height={12} /> Definir ingreso</button>)}
           <button className="btn btn-sm" onClick={() => setEditOpen(true)} style={{ marginLeft: 'auto' }}><I.pencil width={14} height={14} /> Editar proyecto</button>
         </div>
         <div style={{ color: 'var(--text-dim)', marginBottom: 14, fontSize: 14 }}>{client?.company} · {client?.name} · {project.stack}</div>
@@ -1977,6 +2059,7 @@ function ProjectDetail({ projectId, onBack }) {
 
       <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} />
       <SprintDetailModal open={!!openSprint} sprint={openSprint} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprint(openSprintId, fields)} />
+      <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
     </div>
   )
 }
