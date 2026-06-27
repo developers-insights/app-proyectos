@@ -178,6 +178,8 @@ const I = {
   paperclip: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.3 3.3 0 0 1 4.7 4.7l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.3-7.3"/></svg>,
   download: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>,
   tasks: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M4 6h2l1 1 2-2M4 12h2l1 1 2-2M4 18h2l1 1 2-2M13 6h7M13 12h7M13 18h7"/></svg>,
+  flag: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M5 21V4"/><path d="M5 4h12l-2.4 3.5L17 11H5z" fill="currentColor"/></svg>,
+  bell: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>,
 }
 
 /* ============================================================================
@@ -500,11 +502,10 @@ function seedCalls() {
 }
 
 function seedTasks() {
-  const plus = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10) }
   return [
-    { id: uid(), name: 'Preparar demo para el board de Chamber', assigneeId: 'u1', dueDate: plus(3), status: 'en proceso', notes: 'Mostrar el directorio de miembros y el flujo de búsqueda. Tener datos cargados de ejemplo.', comments: [] },
-    { id: uid(), name: 'Optimizar render 3D en mobile (Green Roofing)', assigneeId: 'u3', dueDate: plus(8), status: 'pendiente', notes: 'Usar instancing para la vegetación. Objetivo 60fps en gama media de Android.', comments: [] },
-    { id: uid(), name: 'Cerrar pago drop-in de clases sueltas (Shockwave)', assigneeId: 'u5', dueDate: plus(-1), status: 'pendiente', notes: '', comments: [] },
+    { id: uid(), name: 'Preparar demo para el board de Chamber', assigneeId: 'u1', priority: 'urgente', status: 'en proceso', notes: 'Mostrar el directorio de miembros y el flujo de búsqueda. Tener datos cargados de ejemplo.', comments: [] },
+    { id: uid(), name: 'Optimizar render 3D en mobile (Green Roofing)', assigneeId: 'u3', priority: 'normal', status: 'pendiente', notes: 'Usar instancing para la vegetación. Objetivo 60fps en gama media de Android.', comments: [] },
+    { id: uid(), name: 'Cerrar pago drop-in de clases sueltas (Shockwave)', assigneeId: 'u5', priority: 'bajo', status: 'pendiente', notes: '', comments: [] },
   ]
 }
 
@@ -524,6 +525,8 @@ function migrate(state) {
   state.calls = state.calls.map((c) => ({ ...c, priority: c.priority || 'normal', type: c.type || 'soporte', summary: c.summary || '', transcript: c.transcript || '' }))
   if (!state.assistantChats) state.assistantChats = []
   if (!state.tasks) state.tasks = seedTasks()
+  state.tasks = state.tasks.map((t) => ({ ...t, priority: t.priority || 'normal' }))
+  if (!state.activity) state.activity = []
   // add new clients/projects that aren't present yet (by id)
   const cIds = new Set(state.clients.map((c) => c.id))
   seedClients().forEach((c) => { if (!cIds.has(c.id)) state.clients.push(c) })
@@ -756,6 +759,25 @@ const TASK_STATUS = [
 ]
 const taskStatusMeta = (s) => TASK_STATUS.find((x) => x.key === s) || TASK_STATUS[0]
 
+/* prioridad de tarea: banderita roja / amarilla / blanca */
+const TASK_PRIORITY = [
+  { key: 'urgente', label: 'Urgente', color: 'var(--red)' },
+  { key: 'normal', label: 'Normal', color: 'var(--yellow)' },
+  { key: 'bajo', label: 'Bajo', color: 'var(--text)' },
+]
+const taskPrioMeta = (p) => TASK_PRIORITY.find((x) => x.key === p) || TASK_PRIORITY[1]
+
+/* tiempo relativo para el centro de notificaciones */
+const fmtRelative = (iso) => {
+  if (!iso) return ''
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000
+  if (diff < 60) return 'recién'
+  if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`
+  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`
+  if (diff < 172800) return 'ayer'
+  return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
+}
+
 /* fecha estimada de ingreso de proyecto pendiente: chip con color por proximidad */
 const parseLocalDate = (iso) => { if (!iso) return null; const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d) }
 const daysUntil = (iso) => { const dt = parseLocalDate(iso); return dt ? Math.ceil((dt - new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate())) / 86400000) : null }
@@ -778,6 +800,48 @@ function PendingDateChip({ date, style }) {
     <span className="tag" title="Ingreso estimado del proyecto" style={{ color: col, background: 'transparent', borderColor: col, fontWeight: 700, ...style }}>
       <I.calendar width={12} height={12} /> {fmtShortDate(date)}
     </span>
+  )
+}
+
+/* hilo de comentarios reutilizable: muestra avatar + nombre del autor, registra actividad */
+function CommentThread({ comments, onAdd, onDelete, subject, label = 'Comentarios' }) {
+  const { data, logActivity } = useApp()
+  const [text, setText] = useState('')
+  const team = data.team || []
+  const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
+  const userOf = (id) => team.find((u) => u.id === id)
+  const list = comments || []
+  const submit = () => {
+    const t = text.trim(); if (!t) return
+    onAdd({ id: uid(), text: t, date: new Date().toISOString(), authorId: myId || '' })
+    setText('')
+    if (subject && logActivity) logActivity({ type: 'comment', text: `comentó en ${subject}` })
+  }
+  return (
+    <div>
+      <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.comment width={14} height={14} /> {label} ({list.length})</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+        {list.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin comentarios todavía.</div>}
+        {list.map((c) => {
+          const u = userOf(c.authorId)
+          return (
+            <div key={c.id} className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                {u ? <Avatar user={u} size={22} ring="var(--bg-elevated)" /> : <Avatar empty size={22} ring="var(--bg-elevated)" />}
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>{u ? u.name : 'Alguien'}</span>
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fmtDate(c.date)}</span>
+                <button className="btn btn-sm btn-ghost" onClick={() => onDelete(c.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
+              </div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.text}</div>
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <textarea className="input" rows={2} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }} placeholder="Dejá un comentario… (Enter envía)" style={{ resize: 'none' }} />
+        <button className="btn btn-accent" onClick={submit} style={{ alignSelf: 'stretch' }}><I.send width={15} height={15} /></button>
+      </div>
+    </div>
   )
 }
 
@@ -1238,10 +1302,7 @@ function SprintStatusBadge({ status, onChange, full }) {
 
 /* sprint detail card: descripción + comentarios + tareas */
 function SprintDetailModal({ open, sprint, onClose, onPatch }) {
-  const [comment, setComment] = useState('')
   if (!sprint) return <Modal open={open} onClose={onClose} title="Sprint" />
-  const addComment = () => { const t = comment.trim(); if (!t) return; onPatch({ comments: [...(sprint.comments || []), { id: uid(), text: t, date: NOW.toISOString() }] }); setComment('') }
-  const delComment = (id) => onPatch({ comments: (sprint.comments || []).filter((c) => c.id !== id) })
   const setMod = (mid, fields) => onPatch({ modules: sprint.modules.map((m) => m.id === mid ? { ...m, ...fields } : m) })
   const addMod = (name) => onPatch({ modules: [...sprint.modules, { id: uid(), name, status: 'pendiente' }] })
   const delMod = (mid) => onPatch({ modules: sprint.modules.filter((m) => m.id !== mid) })
@@ -1273,25 +1334,9 @@ function SprintDetailModal({ open, sprint, onClose, onPatch }) {
           </div>
         </div>
 
-        <div>
-          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.comment width={14} height={14} /> Comentarios ({(sprint.comments || []).length})</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-            {(sprint.comments || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin comentarios todavía.</div>}
-            {(sprint.comments || []).map((c) => (
-              <div key={c.id} className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{fmtDate(c.date)}</span>
-                  <button className="btn btn-sm btn-ghost" onClick={() => delComment(c.id)} style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
-                </div>
-                <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.text}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment() } }} placeholder="Dejá un comentario… (Enter envía)" style={{ resize: 'none' }} />
-            <button className="btn btn-accent" onClick={addComment} style={{ alignSelf: 'stretch' }}><I.send width={15} height={15} /></button>
-          </div>
-        </div>
+        <CommentThread comments={sprint.comments} subject={`el sprint "${sprint.name}"`}
+          onAdd={(c) => onPatch({ comments: [...(sprint.comments || []), c] })}
+          onDelete={(id) => onPatch({ comments: (sprint.comments || []).filter((x) => x.id !== id) })} />
       </div>
     </Modal>
   )
@@ -1299,12 +1344,17 @@ function SprintDetailModal({ open, sprint, onClose, onPatch }) {
 
 /* sprint board: table (drag to reorder) or kanban (drag between status columns) */
 function SprintBoard({ project, patch, onOpenSprint }) {
+  const { logActivity } = useApp()
   const [boardView, setBoardView] = useState('table')
   const [dragId, setDragId] = useState(null)
   const [overId, setOverId] = useState(null)
   const sprints = project.sprints || []
-  const setSprint = (sid, fields) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
-  const addSprint = () => patch((p) => ({ ...p, sprints: [...p.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', estimatedDate: NOW.toISOString(), actualDate: null, modules: [], description: '', comments: [] }] }))
+  const setSprint = (sid, fields) => {
+    const prev = sprints.find((s) => s.id === sid)
+    patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
+    if (fields.status && normSprint(fields.status) === 'terminado' && prev && normSprint(prev.status) !== 'terminado' && logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${prev.name}" de ${project.name}` })
+  }
+  const addSprint = () => { patch((p) => ({ ...p, sprints: [...p.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', estimatedDate: NOW.toISOString(), actualDate: null, modules: [], description: '', comments: [] }] })); logActivity && logActivity({ type: 'sprint-add', text: `agregó un sprint a ${project.name}` }) }
 
   const reorder = (fromId, toId) => {
     if (fromId === toId) return
@@ -1634,17 +1684,13 @@ function LinkAdder({ onAdd, cta = 'Agregar link' }) {
 function ScopeModal({ open, project, onClose, patch }) {
   const fileRef = useRef(null)
   const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState('')
   if (!project) return <Modal open={open} onClose={onClose} title="Alcance" />
   const files = project.scopeFiles || []
   const sales = project.salesLinks || []
-  const notes = project.scopeNotes || []
   const addFile = (item) => patch((p) => ({ ...p, scopeFiles: [item, ...(p.scopeFiles || [])] }))
   const delFile = (id) => patch((p) => ({ ...p, scopeFiles: (p.scopeFiles || []).filter((x) => x.id !== id) }))
   const addSale = (item) => patch((p) => ({ ...p, salesLinks: [item, ...(p.salesLinks || [])] }))
   const delSale = (id) => patch((p) => ({ ...p, salesLinks: (p.salesLinks || []).filter((x) => x.id !== id) }))
-  const addNote = () => { const t = note.trim(); if (!t) return; patch((p) => ({ ...p, scopeNotes: [...(p.scopeNotes || []), { id: uid(), text: t, date: NOW.toISOString() }] })); setNote('') }
-  const delNote = (id) => patch((p) => ({ ...p, scopeNotes: (p.scopeNotes || []).filter((x) => x.id !== id) }))
   const onFile = (e) => {
     const f = e.target.files && e.target.files[0]
     if (!f) return
@@ -1699,25 +1745,9 @@ function ScopeModal({ open, project, onClose, patch }) {
         <hr className="divider" />
 
         {/* Notas y comentarios */}
-        <div>
-          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.comment width={14} height={14} /> Notas y comentarios ({notes.length})</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-            {notes.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin notas todavía.</div>}
-            {notes.map((c) => (
-              <div key={c.id} className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{fmtDate(c.date)}</span>
-                  <button className="btn btn-sm btn-ghost" onClick={() => delNote(c.id)} style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
-                </div>
-                <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.text}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote() } }} placeholder="Dejá una nota o comentario… (Enter envía)" style={{ resize: 'none' }} />
-            <button className="btn btn-accent" onClick={addNote} style={{ alignSelf: 'stretch' }}><I.send width={15} height={15} /></button>
-          </div>
-        </div>
+        <CommentThread comments={project.scopeNotes} label="Notas y comentarios" subject={`el alcance de ${project.name}`}
+          onAdd={(c) => patch((p) => ({ ...p, scopeNotes: [...(p.scopeNotes || []), c] }))}
+          onDelete={(id) => patch((p) => ({ ...p, scopeNotes: (p.scopeNotes || []).filter((x) => x.id !== id) }))} />
       </div>
     </Modal>
   )
@@ -1880,13 +1910,17 @@ function CallEditor({ open, call, isNew, onClose, onSave, onDelete }) {
 }
 
 function Calls() {
-  const { data, setData } = useApp()
+  const { data, setData, logActivity } = useApp()
   const [editing, setEditing] = useState(null)   // {call, isNew} | null
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
   const clientOf = (id) => data.clients.find((c) => c.id === id)
   const projOf = (id) => data.projects.find((p) => p.id === id)
-  const saveCall = (call) => setData((d) => ({ ...d, calls: d.calls.some((c) => c.id === call.id) ? d.calls.map((c) => (c.id === call.id ? call : c)) : [call, ...d.calls] }))
+  const saveCall = (call) => {
+    const isNew = !data.calls.some((c) => c.id === call.id)
+    setData((d) => ({ ...d, calls: d.calls.some((c) => c.id === call.id) ? d.calls.map((c) => (c.id === call.id ? call : c)) : [call, ...d.calls] }))
+    if (isNew && logActivity) logActivity({ type: 'call-add', text: `agregó una llamada con ${clientOf(call.clientId)?.company || 'un cliente'}` })
+  }
   const deleteCall = (id) => setData((d) => ({ ...d, calls: d.calls.filter((c) => c.id !== id) }))
 
   // Fathom MCP sync — intenta el endpoint real, cae a demo si CORS/no-token.
@@ -2462,10 +2496,7 @@ function AssistantView() {
    16c · TAREAS — tabla / kanban, simple: asignado · tarea · entrega · notas · comentarios
 ============================================================================ */
 function TaskDetailModal({ open, task, team, onClose, onPatch, onDelete }) {
-  const [comment, setComment] = useState('')
   if (!task) return <Modal open={open} onClose={onClose} title="Tarea" />
-  const addComment = () => { const t = comment.trim(); if (!t) return; onPatch({ comments: [...(task.comments || []), { id: uid(), text: t, date: NOW.toISOString() }] }); setComment('') }
-  const delComment = (id) => onPatch({ comments: (task.comments || []).filter((c) => c.id !== id) })
   return (
     <Modal open={open} onClose={onClose} title={task.name || 'Tarea'} sub="Tarea" width={560}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -2477,7 +2508,11 @@ function TaskDetailModal({ open, task, team, onClose, onPatch, onDelete }) {
               {team.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </Field>
-          <Field label="Entrega"><input className="input mono" type="date" value={(task.dueDate || '').slice(0, 10)} onChange={(e) => onPatch({ dueDate: e.target.value })} /></Field>
+          <Field label="Prioridad">
+            <select className="input" value={task.priority || 'normal'} onChange={(e) => onPatch({ priority: e.target.value })}>
+              {TASK_PRIORITY.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </Field>
           <Field label="Estado">
             <select className="input" value={task.status || 'pendiente'} onChange={(e) => onPatch({ status: e.target.value })}>
               {TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -2486,25 +2521,9 @@ function TaskDetailModal({ open, task, team, onClose, onPatch, onDelete }) {
         </div>
         <Field label="Notas / info para hacer la tarea mejor"><textarea className="input" rows={4} value={task.notes || ''} onChange={(e) => onPatch({ notes: e.target.value })} placeholder="Contexto, links, detalles…" /></Field>
 
-        <div>
-          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.comment width={14} height={14} /> Comentarios ({(task.comments || []).length})</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-            {(task.comments || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin comentarios todavía.</div>}
-            {(task.comments || []).map((c) => (
-              <div key={c.id} className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{fmtDate(c.date)}</span>
-                  <button className="btn btn-sm btn-ghost" onClick={() => delComment(c.id)} style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
-                </div>
-                <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.text}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment() } }} placeholder="Dejá un comentario… (Enter envía)" style={{ resize: 'none' }} />
-            <button className="btn btn-accent" onClick={addComment} style={{ alignSelf: 'stretch' }}><I.send width={15} height={15} /></button>
-          </div>
-        </div>
+        <CommentThread comments={task.comments} subject={`la tarea "${task.name}"`}
+          onAdd={(c) => onPatch({ comments: [...(task.comments || []), c] })}
+          onDelete={(id) => onPatch({ comments: (task.comments || []).filter((x) => x.id !== id) })} />
 
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <button className="btn" onClick={() => { onDelete(task.id); onClose() }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I.trash width={15} height={15} /> Eliminar tarea</button>
@@ -2516,7 +2535,7 @@ function TaskDetailModal({ open, task, team, onClose, onPatch, onDelete }) {
 }
 
 function TasksView() {
-  const { data, setData } = useApp()
+  const { data, setData, logActivity } = useApp()
   const [view, setView] = useState('table')
   const [openId, setOpenId] = useState(null)
   const [dragId, setDragId] = useState(null)
@@ -2525,15 +2544,18 @@ function TasksView() {
   const team = data.team || []
   const userOf = (id) => team.find((u) => u.id === id)
   const setTasks = (fn) => setData((d) => ({ ...d, tasks: fn(d.tasks || []) }))
-  const addTask = () => { const id = uid(); setTasks((ts) => [{ id, name: 'Nueva tarea', assigneeId: '', dueDate: '', status: 'pendiente', notes: '', comments: [] }, ...ts]); setOpenId(id) }
-  const updateTask = (id, fields) => setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...fields } : t)))
+  const addTask = () => { const id = uid(); setTasks((ts) => [{ id, name: 'Nueva tarea', assigneeId: '', priority: 'normal', status: 'pendiente', notes: '', comments: [] }, ...ts]); setOpenId(id); logActivity && logActivity({ type: 'task-add', text: 'creó una tarea' }) }
+  const updateTask = (id, fields) => {
+    const prev = tasks.find((t) => t.id === id)
+    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...fields } : t)))
+    if (fields.status === 'terminado' && prev && prev.status !== 'terminado' && logActivity) logActivity({ type: 'task-done', text: `terminó la tarea "${prev.name}"` })
+  }
   const delTask = (id) => setTasks((ts) => ts.filter((t) => t.id !== id))
   const openTask = tasks.find((t) => t.id === openId)
 
-  const DueChip = ({ date }) => {
-    if (!date) return <span style={{ color: 'var(--text-faint)' }}>—</span>
-    const col = pendingDateColor(date)
-    return <span className="tag" style={{ color: col, background: 'transparent', borderColor: col, fontWeight: 700 }}><I.calendar width={12} height={12} /> {fmtShortDate(date)}</span>
+  const PrioFlag = ({ p, withLabel }) => {
+    const m = taskPrioMeta(p)
+    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: m.color, fontSize: 13, fontWeight: 600 }} title={`Prioridad: ${m.label}`}><I.flag width={15} height={15} />{withLabel && m.label}</span>
   }
   const Assignee = ({ id, size = 26 }) => {
     const u = userOf(id)
@@ -2560,14 +2582,14 @@ function TasksView() {
         <div className="surface" style={{ overflow: 'hidden' }}>
           <table>
             <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Asignado', 'Tarea', 'Entrega', 'Estado', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+              {['Asignado', 'Tarea', 'Prioridad', 'Estado', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
             </tr></thead>
             <tbody>
               {tasks.map((t) => (
                 <tr key={t.id} className="row-hover click" onClick={() => setOpenId(t.id)} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Assignee id={t.assigneeId} /></td>
                   <td style={{ padding: '12px 16px', fontWeight: 600 }}>{t.name}{(t.comments || []).length > 0 && <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{t.comments.length}</span>}</td>
-                  <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><DueChip date={t.dueDate} /></td>
+                  <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><PrioFlag p={t.priority} withLabel /></td>
                   <td style={{ padding: '8px 16px' }} onClick={(e) => e.stopPropagation()}>
                     <select className="input" value={t.status} onChange={(e) => updateTask(t.id, { status: e.target.value })} style={{ width: 'auto', padding: '6px 8px', fontSize: 13 }}>
                       {TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -2605,7 +2627,7 @@ function TasksView() {
                       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>{t.name}</div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         {t.assigneeId ? <Avatar user={userOf(t.assigneeId)} size={24} ring="var(--card)" /> : <Avatar empty size={24} ring="var(--card)" />}
-                        <DueChip date={t.dueDate} />
+                        <PrioFlag p={t.priority} />
                       </div>
                     </div>
                   ))}
@@ -2741,6 +2763,64 @@ function SyncBadge({ sync }) {
     </span>
   )
 }
+/* centro de notificaciones: log de actividad (quién hizo qué) */
+function NotificationCenter() {
+  const { data } = useApp()
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState(null)
+  const [lastSeen, setLastSeen] = useState(() => (typeof localStorage !== 'undefined' ? localStorage.getItem('activity_seen') || '' : ''))
+  const btnRef = useRef(null)
+  const activity = data.activity || []
+  const team = data.team || []
+  const userOf = (id) => team.find((u) => u.id === id)
+  const unread = activity.filter((a) => a.date > lastSeen).length
+  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, comment: I.comment }
+  const toggle = (e) => {
+    e.stopPropagation()
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) })
+      const now = new Date().toISOString(); localStorage.setItem('activity_seen', now); setLastSeen(now)
+    }
+    setOpen((v) => !v)
+  }
+  return (
+    <span style={{ display: 'inline-block', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} className="btn btn-sm" onClick={toggle} title="Notificaciones" style={{ padding: 8, position: 'relative' }}>
+        <I.bell width={16} height={16} />
+        {unread > 0 && <span style={{ position: 'absolute', top: 2, right: 2, minWidth: 15, height: 15, padding: '0 3px', borderRadius: 99, background: 'var(--red)', color: '#fff', fontSize: 9.5, fontWeight: 700, display: 'grid', placeItems: 'center', border: '1.5px solid var(--bg-elevated)' }}>{unread > 9 ? '9+' : unread}</span>}
+      </button>
+      {open && pos && createPortal(
+        <>
+          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
+          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 201, width: 340, maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow)' }}>
+            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <I.bell width={15} height={15} style={{ color: 'var(--accent)' }} /><strong style={{ fontSize: 14 }}>Actividad</strong>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 'auto' }}>{activity.length}</span>
+            </div>
+            <div className="scroll-y" style={{ overflowY: 'auto', padding: 8 }}>
+              {activity.length === 0 && <div style={{ padding: 18, textAlign: 'center', fontSize: 13, color: 'var(--text-faint)' }}>Sin actividad todavía.</div>}
+              {activity.map((a) => {
+                const u = userOf(a.actorId); const Ico = ICONS[a.type] || I.spark
+                return (
+                  <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '9px 8px', borderRadius: 9 }} className="row-hover">
+                    {u ? <Avatar user={u} size={28} ring="var(--card)" /> : <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-faint)', flexShrink: 0 }}><Ico width={14} height={14} /></div>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, lineHeight: 1.45 }}><strong>{u ? u.name : 'Alguien'}</strong> <span style={{ color: 'var(--text-dim)' }}>{a.text}</span></div>
+                      <div className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2 }}>{fmtRelative(a.date)}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+    </span>
+  )
+}
+
 function Header({ theme, setTheme, onSettings, route, sync, onLogout }) {
   const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', assistant: 'IA Assistant', project: 'Projects / Detalle' }[route.view]
   return (
@@ -2750,6 +2830,7 @@ function Header({ theme, setTheme, onSettings, route, sync, onLogout }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <SyncBadge sync={sync} />
+        <NotificationCenter />
         <button className="btn btn-sm btn-ghost" onClick={onSettings} title="Ajustes & API keys">⚙ <span style={{ marginLeft: 2 }}>Ajustes</span></button>
         <button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Cambiar tema" style={{ padding: 8 }}>
           {theme === 'dark' ? <I.sun width={16} height={16} /> : <I.moon width={16} height={16} />}
@@ -2860,9 +2941,10 @@ function AppShell({ session, onLogout }) {
   }, [session, data.team, myId])
 
   const openProject = (id) => setRoute({ view: 'project', projectId: id })
+  const logActivity = (entry) => setData((d) => ({ ...d, activity: [{ id: uid(), date: new Date().toISOString(), actorId: localStorage.getItem('my_team_id') || '', ...entry }, ...(d.activity || [])].slice(0, 200) }))
 
   return (
-    <AppCtx.Provider value={{ data, setData }}>
+    <AppCtx.Provider value={{ data, setData, logActivity }}>
       <div className="app-shell">
         <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
