@@ -539,6 +539,7 @@ function migrate(state) {
       ...rest,
       assignments: rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null },
       tags: rest.tags || [],
+      priority: rest.priority || 'normal',
       scopeFiles: rest.scopeFiles || [],
       salesLinks: rest.salesLinks || [],
       scopeNotes: rest.scopeNotes || [],
@@ -732,6 +733,14 @@ const PROJECT_STATUS = [
 ]
 const projStatusMeta = (s) => PROJECT_STATUS.find((x) => x.key === s) || PROJECT_STATUS[0]
 
+/* prioridad de proyecto: banderita roja (alta) / amarilla (normal) / celeste (baja) */
+const PROJECT_PRIORITY = [
+  { key: 'alta', label: 'Alta', color: 'var(--red)', rank: 3 },
+  { key: 'normal', label: 'Normal', color: 'var(--yellow)', rank: 2 },
+  { key: 'baja', label: 'Baja', color: 'var(--blue)', rank: 1 },
+]
+const projPrioMeta = (p) => PROJECT_PRIORITY.find((x) => x.key === p) || PROJECT_PRIORITY[1]
+
 /* sprint statuses: pendiente (default) · en proceso · pausado · terminado */
 const SPRINT_STATUS = [
   { key: 'pendiente', label: 'Pendiente', tone: 'neutral', dot: 'var(--text-faint)' },
@@ -908,6 +917,47 @@ function StatusMenu({ status, onChange }) {
   )
 }
 
+/* banderita de prioridad de proyecto (roja/amarilla/celeste) con dropdown */
+function PriorityMenu({ value, onChange, size = 16 }) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const meta = projPrioMeta(value)
+  const menuH = PROJECT_PRIORITY.length * 38 + 12
+  const toggle = (e) => {
+    e.stopPropagation()
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      const down = r.bottom + menuH <= window.innerHeight
+      setPos({ left: Math.max(8, r.right - 150), top: down ? r.bottom + 4 : Math.max(8, r.top - menuH - 4) })
+    }
+    setOpen((v) => !v)
+  }
+  return (
+    <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} onClick={toggle} title={`Prioridad: ${meta.label}`} style={{ display: 'inline-flex', alignItems: 'center', padding: 4, borderRadius: 8 }} className="row-hover">
+        <I.flag width={size} height={size} style={{ color: meta.color }} />
+      </button>
+      {open && pos && createPortal(
+        <>
+          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
+          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, minWidth: 150, boxShadow: 'var(--shadow)' }}>
+            <div className="label" style={{ padding: '4px 9px 6px' }}>Prioridad</div>
+            {PROJECT_PRIORITY.map((o) => (
+              <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: o.key === value ? 'var(--accent)' : 'var(--text)' }}>
+                <I.flag width={15} height={15} style={{ color: o.color, flexShrink: 0 }} />{o.label}
+                {o.key === value && <I.check width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </span>
+  )
+}
+
 /* Testing + WhatsApp links on a card, with an inline pencil editor */
 function CardLinks({ project, onSave }) {
   const [editing, setEditing] = useState(false)
@@ -967,6 +1017,11 @@ function EditProjectModal({ open, project, onClose, onSave }) {
             <Field label="Estado">
               <select className="input" value={d.status} onChange={(e) => set('status', e.target.value)}>
                 {PROJECT_STATUS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Prioridad">
+              <select className="input" value={d.priority || 'normal'} onChange={(e) => set('priority', e.target.value)}>
+                {PROJECT_PRIORITY.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
               </select>
             </Field>
             <Field label="GitHub repo (org/repo)"><input className="input mono" value={d.githubRepo || ''} onChange={(e) => set('githubRepo', e.target.value)} /></Field>
@@ -1487,6 +1542,7 @@ function Projects({ onOpenProject }) {
   const [pmFilter, setPmFilter] = useState(qp.get('pm') || 'all')
   const [devFilter, setDevFilter] = useState(qp.get('dev') || 'all')
   const [tagFilter, setTagFilter] = useState(qp.get('tag') || 'all')
+  const [prioFilter, setPrioFilter] = useState(qp.get('prio') || 'all')   // all | sort | alta | normal | baja
   const [pendingFor, setPendingFor] = useState(null)   // id del proyecto al que se le pide fecha de ingreso
   const clientOf = (id) => data.clients.find((c) => c.id === id)
   const userOf = (id) => data.team.find((u) => u.id === id)
@@ -1501,20 +1557,23 @@ function Projects({ onOpenProject }) {
     if (pmFilter !== 'all') p.set('pm', pmFilter)
     if (devFilter !== 'all') p.set('dev', devFilter)
     if (tagFilter !== 'all') p.set('tag', tagFilter)
+    if (prioFilter !== 'all') p.set('prio', prioFilter)
     const qs = p.toString()
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
-  }, [tab, clientFilter, pmFilter, devFilter, tagFilter])
+  }, [tab, clientFilter, pmFilter, devFilter, tagFilter, prioFilter])
 
   const allTags = [...new Set(data.projects.flatMap((p) => (p.tags || []).map((t) => t.text)))]
-  const filtersActive = clientFilter !== 'all' || pmFilter !== 'all' || devFilter !== 'all' || tagFilter !== 'all'
-  const clearFilters = () => { setClientFilter('all'); setPmFilter('all'); setDevFilter('all'); setTagFilter('all') }
+  const filtersActive = clientFilter !== 'all' || pmFilter !== 'all' || devFilter !== 'all' || tagFilter !== 'all' || prioFilter !== 'all'
+  const clearFilters = () => { setClientFilter('all'); setPmFilter('all'); setDevFilter('all'); setTagFilter('all'); setPrioFilter('all') }
   const matchesFilters = (p) =>
     (clientFilter === 'all' || p.clientId === clientFilter) &&
     (pmFilter === 'all' || p.assignments?.pm?.userId === pmFilter) &&
     (devFilter === 'all' || p.assignments?.dev?.userId === devFilter) &&
-    (tagFilter === 'all' || (p.tags || []).some((t) => t.text === tagFilter))
+    (tagFilter === 'all' || (p.tags || []).some((t) => t.text === tagFilter)) &&
+    (prioFilter === 'all' || prioFilter === 'sort' || (p.priority || 'normal') === prioFilter)
   const countFor = (status) => data.projects.filter((p) => p.status === status && matchesFilters(p)).length
-  const list = data.projects.filter((p) => p.status === tab && matchesFilters(p))
+  let list = data.projects.filter((p) => p.status === tab && matchesFilters(p))
+  if (prioFilter === 'sort') list = [...list].sort((a, b) => projPrioMeta(b.priority).rank - projPrioMeta(a.priority).rank)
 
   return (
     <div style={{ padding: '28px 34px 60px' }}>
@@ -1547,6 +1606,13 @@ function Projects({ onOpenProject }) {
           <option value="all">Etiqueta: todas</option>
           {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
+        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={prioFilter} onChange={(e) => setPrioFilter(e.target.value)}>
+          <option value="all">Prioridad: todas</option>
+          <option value="sort">▼ Más prioritario primero</option>
+          <option value="alta">🚩 Alta</option>
+          <option value="normal">🚩 Normal</option>
+          <option value="baja">🚩 Baja</option>
+        </select>
         {filtersActive && <button className="btn btn-sm btn-ghost" onClick={clearFilters} style={{ color: 'var(--text-dim)' }}><I.x width={13} height={13} /> Limpiar</button>}
       </div>
 
@@ -1574,7 +1640,10 @@ function Projects({ onOpenProject }) {
                     <div style={{ fontWeight: 600, fontSize: 16 }}>{p.name}</div>
                     <div style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>{cl?.company}</div>
                   </div>
-                  <StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                    <PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} />
+                    <StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />
+                  </div>
                 </div>
                 {p.status === 'pending' && (
                   <div style={{ marginBottom: 14 }} onClick={(e) => { e.stopPropagation(); setPendingFor(p.id) }}>
@@ -1621,7 +1690,7 @@ function Projects({ onOpenProject }) {
                     <td style={{ padding: '13px 16px', fontWeight: 600 }}>{p.name}</td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)' }}>{cl?.company}</td>
                     <td style={{ padding: '13px 16px' }}><TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} size={26} ring="var(--card)" /></td>
-                    <td style={{ padding: '13px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />{p.status === 'pending' && p.expectedStartDate && <PendingDateChip date={p.expectedStartDate} />}</div></td>
+                    <td style={{ padding: '13px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} /><StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />{p.status === 'pending' && p.expectedStartDate && <PendingDateChip date={p.expectedStartDate} />}</div></td>
                     <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={calcProgress(p)} showLabel /></td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)', fontSize: 13 }}>{cs?.name || '—'}</td>
                     <td style={{ padding: '13px 16px' }} className="mono"><span style={{ color: dd > 7 ? 'var(--red)' : 'var(--text-dim)' }}>{dd == null ? '—' : `${dd}d`}</span></td>
@@ -2077,6 +2146,7 @@ function ProjectDetail({ projectId, onBack }) {
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 4 }}>
           <h1 style={{ fontSize: 30 }}>{project.name}</h1>
+          <PriorityMenu value={project.priority} onChange={(v) => patch((p) => ({ ...p, priority: v }))} size={18} />
           <StatusMenu status={project.status} onChange={(s) => { patch((p) => ({ ...p, status: s })); if (s === 'pending') setPendingPrompt(true) }} />
           {project.status === 'pending' && (project.expectedStartDate
             ? <span onClick={() => setPendingPrompt(true)} style={{ cursor: 'pointer' }}><PendingDateChip date={project.expectedStartDate} /></span>
