@@ -540,6 +540,7 @@ function migrate(state) {
       assignments: rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null },
       tags: rest.tags || [],
       priority: rest.priority || 'normal',
+      createdAt: rest.createdAt || new Date().toISOString(),
       avances: rest.avances || [],
       comms: rest.comms || [],
       scopeFiles: rest.scopeFiles || [],
@@ -800,6 +801,21 @@ function businessDaysSince(iso) {
   while (cur < today) { cur.setDate(cur.getDate() + 1); const wd = cur.getDay(); if (wd !== 0 && wd !== 6) count++ }
   return count
 }
+/* convierte el value de un <input type=date> (YYYY-MM-DD) a ISO en hora local (mediodía) */
+const dateInputISO = (v) => (v ? new Date(v + 'T12:00:00').toISOString() : new Date().toISOString())
+/* estado de seguimiento de avance/comunicación de un proyecto (primer registro vs días sin) */
+function trackInfo(project, kind) {
+  const entries = (kind === 'avance' ? project.avances : project.comms) || []
+  if (entries.length) {
+    const days = businessDaysSince(entries[0].date)
+    const threshold = kind === 'avance' ? 5 : 3
+    return { first: false, days, overdue: days != null && days > threshold }
+  }
+  const days = businessDaysSince(project.createdAt)
+  const threshold = kind === 'avance' ? 7 : 3
+  return { first: true, days, overdue: days != null && days > threshold }
+}
+
 /* imagen (captura) a data URL redimensionada para no inflar el documento */
 function fileToImageDataURL(file, maxW = 1100, quality = 0.82) {
   return new Promise((resolve, reject) => {
@@ -1688,24 +1704,23 @@ function Projects({ onOpenProject }) {
                 )}
                 <div style={{ marginBottom: 14 }}><Progress value={calcProgress(p)} showLabel /></div>
                 {(() => {
-                  const commDays = (p.comms || []).length ? businessDaysSince(p.comms[0].date) : null
-                  const avDays = (p.avances || []).length ? businessDaysSince(p.avances[0].date) : null
-                  const mini = (label, Icon, dys, threshold, openKind) => {
-                    const bad = dys != null && dys > threshold
+                  const mini = (label, Icon, kind, firstLabel) => {
+                    const t = trackInfo(p, kind)
+                    const bad = t.overdue
                     return (
-                      <button className="surface surface-hover" onClick={(e) => { e.stopPropagation(); setLogModal({ projectId: p.id, kind: openKind }) }}
+                      <button className="surface surface-hover" onClick={(e) => { e.stopPropagation(); setLogModal({ projectId: p.id, kind }) }}
                         style={{ padding: '8px 11px', background: bad ? 'var(--red-soft)' : 'var(--bg-elevated)', borderColor: bad ? 'var(--red)' : 'var(--border)', textAlign: 'left', cursor: 'pointer' }}>
                         <div className="label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Icon width={12} height={12} /> {label}</div>
-                        <div className="mono" style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: bad ? 'var(--red)' : 'var(--text)' }}>
-                          {dys == null ? <span style={{ color: 'var(--text-faint)' }}>sin registro</span> : dys === 0 ? 'hoy' : `${dys}d háb.`}{bad && ' ⚠'}
+                        <div className="mono" style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: bad ? 'var(--red)' : t.first ? 'var(--text-faint)' : 'var(--text)' }}>
+                          {t.first ? firstLabel : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)}{bad && ' ⚠'}
                         </div>
                       </button>
                     )
                   }
                   return (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-                      {mini('Último mensaje', I.phone, commDays, 3, 'comm')}
-                      {mini('Último avance', I.folder, avDays, 5, 'avance')}
+                      {mini('Último mensaje', I.phone, 'comm', 'Sin primer mensaje')}
+                      {mini('Último avance', I.folder, 'avance', 'Sin primer avance')}
                     </div>
                   )
                 })()}
@@ -1788,17 +1803,18 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
   const [text, setText] = useState('')
   const [shots, setShots] = useState([])
   const [busy, setBusy] = useState(false)
+  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10))
   const fileRef = useRef(null)
   if (!project) return <Modal open={open} onClose={onClose} title="Registro" />
   const clientName = data.clients.find((c) => c.id === project.clientId)?.company || 'el cliente'
   const cfg = kind === 'comm'
-    ? { field: 'comms', title: 'Última comunicación', icon: I.phone, alert: 3, accent: 'var(--blue)', placeholder: 'Ej: hablé con el cliente por WhatsApp, pidió un cambio en…', actText: `registró comunicación con ${clientName}`, unit: 'comunicación' }
-    : { field: 'avances', title: 'Último avance', icon: I.folder, alert: 5, accent: 'var(--green)', placeholder: 'Ej: le mandé la v2 con el módulo de pagos para revisar…', actText: `registró un avance en ${project.name}`, unit: 'avance' }
+    ? { field: 'comms', title: 'Última comunicación', icon: I.phone, accent: 'var(--blue)', placeholder: 'Ej: hablé con el cliente por WhatsApp, pidió un cambio en…', actText: `registró comunicación con ${clientName}`, unit: 'comunicación', firstLabel: 'Sin primer mensaje', firstMax: 3 }
+    : { field: 'avances', title: 'Último avance', icon: I.folder, accent: 'var(--green)', placeholder: 'Ej: le mandé la v2 con el módulo de pagos para revisar…', actText: `registró un avance en ${project.name}`, unit: 'avance', firstLabel: 'Sin primer avance', firstMax: 7 }
   const entries = project[cfg.field] || []
   const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
   const userOf = (id) => (data.team || []).find((u) => u.id === id)
-  const days = entries.length ? businessDaysSince(entries[0].date) : null
-  const overdue = days != null && days > cfg.alert
+  const track = trackInfo(project, kind === 'comm' ? 'comm' : 'avance')
+  const overdue = track.overdue
 
   const onFiles = async (e) => {
     const files = [...(e.target.files || [])]; if (!files.length) return
@@ -1808,29 +1824,35 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
   }
   const addEntry = () => {
     const t = text.trim(); if (!t && shots.length === 0) return
-    patch((p) => ({ ...p, [cfg.field]: [{ id: uid(), text: t, shots, date: new Date().toISOString(), authorId: myId || '' }, ...(p[cfg.field] || [])] }))
-    setText(''); setShots([])
+    patch((p) => ({ ...p, [cfg.field]: [{ id: uid(), text: t, shots, date: dateInputISO(entryDate), authorId: myId || '' }, ...(p[cfg.field] || [])].sort((a, b) => new Date(b.date) - new Date(a.date)) }))
+    setText(''); setShots([]); setEntryDate(new Date().toISOString().slice(0, 10))
     if (logActivity) logActivity({ type: kind === 'comm' ? 'comm' : 'avance', text: cfg.actText })
   }
+  const updateEntry = (id, fields) => patch((p) => ({ ...p, [cfg.field]: (p[cfg.field] || []).map((x) => x.id === id ? { ...x, ...fields } : x).sort((a, b) => new Date(b.date) - new Date(a.date)) }))
   const delEntry = (id) => patch((p) => ({ ...p, [cfg.field]: (p[cfg.field] || []).filter((x) => x.id !== id) }))
 
   return (
     <Modal open={open} onClose={onClose} title={cfg.title} sub={project.name} width={620}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="surface" style={{ padding: 14, background: overdue ? 'var(--red-soft)' : 'var(--bg-elevated)', borderColor: overdue ? 'var(--red)' : 'var(--border)' }}>
-          {days == null ? <div style={{ fontSize: 13.5, color: 'var(--text-dim)' }}>Todavía no hay registro de {cfg.unit}. Dejá el primero abajo.</div>
-            : <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <cfg.icon width={18} height={18} style={{ color: overdue ? 'var(--red)' : cfg.accent }} />
-              <div style={{ fontSize: 14 }}>Último{kind === 'comm' ? 'a' : ''} {cfg.unit}: <strong style={{ color: overdue ? 'var(--red)' : 'var(--text)' }}>{days === 0 ? 'hoy' : `hace ${days} ${days === 1 ? 'día hábil' : 'días hábiles'}`}</strong></div>
-              {overdue && <span className="tag" style={{ marginLeft: 'auto', color: 'var(--red)', background: 'transparent', borderColor: 'var(--red)' }}><I.alert width={12} height={12} /> Reportarse con el cliente</span>}
-            </div>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <cfg.icon width={18} height={18} style={{ color: overdue ? 'var(--red)' : cfg.accent }} />
+            {track.first
+              ? <div style={{ fontSize: 14 }}><strong style={{ color: overdue ? 'var(--red)' : 'var(--text)' }}>{cfg.firstLabel}</strong> <span style={{ color: 'var(--text-faint)', fontSize: 12.5 }}>· máx {cfg.firstMax} días hábiles{track.days != null ? ` (van ${track.days})` : ''}</span></div>
+              : <div style={{ fontSize: 14 }}>Último{kind === 'comm' ? 'a' : ''} {cfg.unit}: <strong style={{ color: overdue ? 'var(--red)' : 'var(--text)' }}>{track.days === 0 ? 'hoy' : `hace ${track.days} ${track.days === 1 ? 'día hábil' : 'días hábiles'}`}</strong></div>}
+            {overdue && <span className="tag" style={{ marginLeft: 'auto', color: 'var(--red)', background: 'transparent', borderColor: 'var(--red)' }}><I.alert width={12} height={12} /> {track.first ? 'Mandar primer ' + cfg.unit : 'Reportarse con el cliente'}</span>}
+          </div>
         </div>
 
         {/* nueva entrada */}
         <div>
-          <Field label={`Nuevo registro de ${cfg.unit}`}>
-            <textarea className="input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder={cfg.placeholder} style={{ resize: 'none' }} />
-          </Field>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, marginBottom: 7 }}>
+            <span className="label">Nuevo registro de {cfg.unit}</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-faint)' }}>Fecha:
+              <input type="date" className="input mono" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={{ width: 'auto', padding: '5px 8px', fontSize: 12 }} />
+            </label>
+          </div>
+          <textarea className="input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder={cfg.placeholder} style={{ resize: 'none' }} />
           {shots.length > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
               {shots.map((s, i) => (
@@ -1860,7 +1882,7 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                     {u ? <Avatar user={u} size={22} ring="var(--bg-elevated)" /> : <Avatar empty size={22} ring="var(--bg-elevated)" />}
                     <span style={{ fontSize: 12.5, fontWeight: 600 }}>{u ? u.name : 'Alguien'}</span>
-                    <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fmtDate(en.date)}</span>
+                    <input type="date" className="input mono" title="Editar fecha del registro" value={(en.date || '').slice(0, 10)} onChange={(e) => updateEntry(en.id, { date: dateInputISO(e.target.value) })} style={{ width: 'auto', padding: '4px 7px', fontSize: 11, marginLeft: 'auto' }} />
                     <button className="btn btn-sm btn-ghost" onClick={() => delEntry(en.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
                   </div>
                   {en.text && <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: (en.shots || []).length ? 8 : 0 }}>{en.text}</div>}
@@ -1882,26 +1904,23 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
 /* pop-up de inicio para el PM: estado de seguimiento de sus proyectos */
 function PmStartupAlert({ open, projects, clients, onClose, onOpenProject }) {
   const clientOf = (id) => clients.find((c) => c.id === id)
-  const rows = projects.map((p) => ({
-    p,
-    avDays: (p.avances || []).length ? businessDaysSince(p.avances[0].date) : null,
-    commDays: (p.comms || []).length ? businessDaysSince(p.comms[0].date) : null,
-  })).sort((a, b) => (b.commDays ?? 99) - (a.commDays ?? 99))
+  const rows = projects.map((p) => ({ p, av: trackInfo(p, 'avance'), comm: trackInfo(p, 'comm') }))
+    .sort((a, b) => (b.comm.overdue || b.av.overdue ? 1 : 0) - (a.comm.overdue || a.av.overdue ? 1 : 0))
   return (
     <Modal open={open} onClose={onClose} title="Seguimiento de tus clientes" sub="Como PM, tené al día la comunicación y los avances" width={640}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.5 }}>Recordatorio: si pasaron más de <strong style={{ color: 'var(--text-dim)' }}>3 días hábiles</strong> sin comunicarte o más de <strong style={{ color: 'var(--text-dim)' }}>5 días hábiles</strong> sin un avance, escribile al cliente para reportar cómo va el proyecto.</div>
-        {rows.map(({ p, avDays, commDays }) => {
-          const commBad = commDays != null && commDays > 3, avBad = avDays != null && avDays > 5
-          const fmtD = (d, none) => d == null ? none : d === 0 ? 'hoy' : `hace ${d}d háb.`
+        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.5 }}>Recordatorio: si pasaron más de <strong style={{ color: 'var(--text-dim)' }}>3 días hábiles</strong> sin comunicarte, más de <strong style={{ color: 'var(--text-dim)' }}>5 días hábiles</strong> sin un avance (o <strong style={{ color: 'var(--text-dim)' }}>7</strong> sin el primer avance), escribile al cliente para reportar cómo va el proyecto.</div>
+        {rows.map(({ p, av, comm }) => {
+          const commBad = comm.overdue, avBad = av.overdue
+          const fmtD = (t, firstLabel) => t.first ? firstLabel : t.days === 0 ? 'hoy' : `hace ${t.days}d háb.`
           return (
             <div key={p.id} className="surface" style={{ padding: 13, background: commBad || avBad ? 'var(--red-soft)' : 'var(--bg-elevated)', borderColor: commBad || avBad ? 'var(--red)' : 'var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 14, cursor: 'pointer' }} onClick={() => { onClose(); onOpenProject(p.id) }}>{p.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>{clientOf(p.clientId)?.company}</div>
                 <div style={{ display: 'flex', gap: 14, marginTop: 6, fontSize: 12 }}>
-                  <span style={{ color: commBad ? 'var(--red)' : 'var(--text-dim)' }}><I.phone width={11} height={11} /> Comunicación: <strong>{fmtD(commDays, 'sin registro')}</strong></span>
-                  <span style={{ color: avBad ? 'var(--red)' : 'var(--text-dim)' }}><I.folder width={11} height={11} /> Avance: <strong>{fmtD(avDays, 'sin registro')}</strong></span>
+                  <span style={{ color: commBad ? 'var(--red)' : 'var(--text-dim)' }}><I.phone width={11} height={11} /> Comunicación: <strong>{fmtD(comm, 'sin primer mensaje')}</strong></span>
+                  <span style={{ color: avBad ? 'var(--red)' : 'var(--text-dim)' }}><I.folder width={11} height={11} /> Avance: <strong>{fmtD(av, 'sin primer avance')}</strong></span>
                 </div>
               </div>
               <a href={p.whatsappUrl || undefined} target="_blank" rel="noreferrer" onClick={(e) => { if (!p.whatsappUrl) e.preventDefault() }}
