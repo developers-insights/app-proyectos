@@ -540,6 +540,8 @@ function migrate(state) {
       assignments: rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null },
       tags: rest.tags || [],
       priority: rest.priority || 'normal',
+      avances: rest.avances || [],
+      comms: rest.comms || [],
       scopeFiles: rest.scopeFiles || [],
       salesLinks: rest.salesLinks || [],
       scopeNotes: rest.scopeNotes || [],
@@ -785,6 +787,36 @@ const fmtRelative = (iso) => {
   if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`
   if (diff < 172800) return 'ayer'
   return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
+}
+
+/* días hábiles (lun-vie) transcurridos desde una fecha hasta hoy */
+function businessDaysSince(iso) {
+  if (!iso) return null
+  const d = new Date(iso); d.setHours(0, 0, 0, 0)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  if (d >= today) return 0
+  let count = 0
+  const cur = new Date(d)
+  while (cur < today) { cur.setDate(cur.getDate() + 1); const wd = cur.getDay(); if (wd !== 0 && wd !== 6) count++ }
+  return count
+}
+/* imagen (captura) a data URL redimensionada para no inflar el documento */
+function fileToImageDataURL(file, maxW = 1100, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width)
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale)
+        const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.onerror = reject; img.src = reader.result
+    }
+    reader.onerror = reject; reader.readAsDataURL(file)
+  })
 }
 
 /* fecha estimada de ingreso de proyecto pendiente: chip con color por proximidad */
@@ -1544,9 +1576,11 @@ function Projects({ onOpenProject }) {
   const [tagFilter, setTagFilter] = useState(qp.get('tag') || 'all')
   const [prioFilter, setPrioFilter] = useState(qp.get('prio') || 'all')   // all | sort | alta | normal | baja
   const [pendingFor, setPendingFor] = useState(null)   // id del proyecto al que se le pide fecha de ingreso
+  const [logModal, setLogModal] = useState(null)       // { projectId, kind } | null
   const clientOf = (id) => data.clients.find((c) => c.id === id)
   const userOf = (id) => data.team.find((u) => u.id === id)
   const updateProject = (id, fields) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, ...fields } : p)) }))
+  const patchProject = (id, fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? fn(p) : p)) }))
   const setStatus = (id, status) => { updateProject(id, { status }); if (status === 'pending') setPendingFor(id) }
 
   // keep filters URL-friendly
@@ -1653,16 +1687,28 @@ function Projects({ onOpenProject }) {
                   </div>
                 )}
                 <div style={{ marginBottom: 14 }}><Progress value={calcProgress(p)} showLabel /></div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-                  <div className="surface" style={{ padding: '8px 11px', background: 'var(--bg-elevated)' }}>
-                    <div className="label">Sprint actual</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentSprint?.name || '—'}</div>
-                  </div>
-                  <div className="surface" style={{ padding: '8px 11px', background: 'var(--bg-elevated)' }}>
-                    <div className="label">Días sin deploy</div>
-                    <div className="mono" style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: dd > 7 ? 'var(--red)' : 'var(--text)' }}>{dd == null ? '—' : `${dd}d`} {dd > 7 && '⚠'}</div>
-                  </div>
-                </div>
+                {(() => {
+                  const commDays = (p.comms || []).length ? businessDaysSince(p.comms[0].date) : null
+                  const avDays = (p.avances || []).length ? businessDaysSince(p.avances[0].date) : null
+                  const mini = (label, Icon, dys, threshold, openKind) => {
+                    const bad = dys != null && dys > threshold
+                    return (
+                      <button className="surface surface-hover" onClick={(e) => { e.stopPropagation(); setLogModal({ projectId: p.id, kind: openKind }) }}
+                        style={{ padding: '8px 11px', background: bad ? 'var(--red-soft)' : 'var(--bg-elevated)', borderColor: bad ? 'var(--red)' : 'var(--border)', textAlign: 'left', cursor: 'pointer' }}>
+                        <div className="label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Icon width={12} height={12} /> {label}</div>
+                        <div className="mono" style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: bad ? 'var(--red)' : 'var(--text)' }}>
+                          {dys == null ? <span style={{ color: 'var(--text-faint)' }}>sin registro</span> : dys === 0 ? 'hoy' : `${dys}d háb.`}{bad && ' ⚠'}
+                        </div>
+                      </button>
+                    )
+                  }
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                      {mini('Último mensaje', I.phone, commDays, 3, 'comm')}
+                      {mini('Último avance', I.folder, avDays, 5, 'avance')}
+                    </div>
+                  )
+                })()}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                   <ProjectTags tags={p.tags} onChange={(tags) => updateProject(p.id, { tags })} />
                   <TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} />
@@ -1704,6 +1750,7 @@ function Projects({ onOpenProject }) {
       )}
 
       <PendingDatePrompt open={!!pendingFor} project={data.projects.find((p) => p.id === pendingFor)} onClose={() => setPendingFor(null)} onSave={(d) => { updateProject(pendingFor, { expectedStartDate: d }); setPendingFor(null) }} />
+      <ProjectLogModal open={!!logModal} kind={logModal?.kind} project={data.projects.find((p) => p.id === logModal?.projectId)} onClose={() => setLogModal(null)} patch={(fn) => patchProject(logModal.projectId, fn)} />
     </div>
   )
 }
@@ -1729,6 +1776,141 @@ function PendingDatePrompt({ open, project, onClose, onSave }) {
             <button className="btn" onClick={onClose}>Cancelar</button>
             <button className="btn btn-accent" onClick={() => onSave(date)}><I.check width={15} height={15} /> Guardar</button>
           </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* registro de Último avance / Última comunicación: entradas con texto + capturas + días hábiles */
+function ProjectLogModal({ open, kind, project, onClose, patch }) {
+  const { data, logActivity } = useApp()
+  const [text, setText] = useState('')
+  const [shots, setShots] = useState([])
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef(null)
+  if (!project) return <Modal open={open} onClose={onClose} title="Registro" />
+  const clientName = data.clients.find((c) => c.id === project.clientId)?.company || 'el cliente'
+  const cfg = kind === 'comm'
+    ? { field: 'comms', title: 'Última comunicación', icon: I.phone, alert: 3, accent: 'var(--blue)', placeholder: 'Ej: hablé con el cliente por WhatsApp, pidió un cambio en…', actText: `registró comunicación con ${clientName}`, unit: 'comunicación' }
+    : { field: 'avances', title: 'Último avance', icon: I.folder, alert: 5, accent: 'var(--green)', placeholder: 'Ej: le mandé la v2 con el módulo de pagos para revisar…', actText: `registró un avance en ${project.name}`, unit: 'avance' }
+  const entries = project[cfg.field] || []
+  const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
+  const userOf = (id) => (data.team || []).find((u) => u.id === id)
+  const days = entries.length ? businessDaysSince(entries[0].date) : null
+  const overdue = days != null && days > cfg.alert
+
+  const onFiles = async (e) => {
+    const files = [...(e.target.files || [])]; if (!files.length) return
+    setBusy(true)
+    for (const f of files) { if (!f.type.startsWith('image/')) continue; try { const url = await fileToImageDataURL(f); setShots((s) => [...s, url]) } catch (err) { /* ignore */ } }
+    setBusy(false); e.target.value = ''
+  }
+  const addEntry = () => {
+    const t = text.trim(); if (!t && shots.length === 0) return
+    patch((p) => ({ ...p, [cfg.field]: [{ id: uid(), text: t, shots, date: new Date().toISOString(), authorId: myId || '' }, ...(p[cfg.field] || [])] }))
+    setText(''); setShots([])
+    if (logActivity) logActivity({ type: kind === 'comm' ? 'comm' : 'avance', text: cfg.actText })
+  }
+  const delEntry = (id) => patch((p) => ({ ...p, [cfg.field]: (p[cfg.field] || []).filter((x) => x.id !== id) }))
+
+  return (
+    <Modal open={open} onClose={onClose} title={cfg.title} sub={project.name} width={620}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="surface" style={{ padding: 14, background: overdue ? 'var(--red-soft)' : 'var(--bg-elevated)', borderColor: overdue ? 'var(--red)' : 'var(--border)' }}>
+          {days == null ? <div style={{ fontSize: 13.5, color: 'var(--text-dim)' }}>Todavía no hay registro de {cfg.unit}. Dejá el primero abajo.</div>
+            : <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <cfg.icon width={18} height={18} style={{ color: overdue ? 'var(--red)' : cfg.accent }} />
+              <div style={{ fontSize: 14 }}>Último{kind === 'comm' ? 'a' : ''} {cfg.unit}: <strong style={{ color: overdue ? 'var(--red)' : 'var(--text)' }}>{days === 0 ? 'hoy' : `hace ${days} ${days === 1 ? 'día hábil' : 'días hábiles'}`}</strong></div>
+              {overdue && <span className="tag" style={{ marginLeft: 'auto', color: 'var(--red)', background: 'transparent', borderColor: 'var(--red)' }}><I.alert width={12} height={12} /> Reportarse con el cliente</span>}
+            </div>}
+        </div>
+
+        {/* nueva entrada */}
+        <div>
+          <Field label={`Nuevo registro de ${cfg.unit}`}>
+            <textarea className="input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder={cfg.placeholder} style={{ resize: 'none' }} />
+          </Field>
+          {shots.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+              {shots.map((s, i) => (
+                <div key={i} style={{ position: 'relative' }}>
+                  <img src={s} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                  <button onClick={() => setShots((arr) => arr.filter((_, j) => j !== i))} style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 99, background: 'var(--red)', color: '#fff', display: 'grid', placeItems: 'center' }}><I.x width={11} height={11} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} style={{ display: 'none' }} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}><I.paperclip width={14} height={14} /> {busy ? 'Procesando…' : 'Adjuntar capturas'}</button>
+            <button className="btn btn-sm btn-accent" onClick={addEntry} style={{ marginLeft: 'auto' }}><I.check width={14} height={14} /> Registrar {cfg.unit}</button>
+          </div>
+        </div>
+
+        {/* historial */}
+        <div>
+          <div className="label" style={{ marginBottom: 8 }}>Historial ({entries.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {entries.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin registros todavía.</div>}
+            {entries.map((en) => {
+              const u = userOf(en.authorId)
+              return (
+                <div key={en.id} className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    {u ? <Avatar user={u} size={22} ring="var(--bg-elevated)" /> : <Avatar empty size={22} ring="var(--bg-elevated)" />}
+                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{u ? u.name : 'Alguien'}</span>
+                    <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fmtDate(en.date)}</span>
+                    <button className="btn btn-sm btn-ghost" onClick={() => delEntry(en.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
+                  </div>
+                  {en.text && <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: (en.shots || []).length ? 8 : 0 }}>{en.text}</div>}
+                  {(en.shots || []).length > 0 && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {en.shots.map((s, i) => <a key={i} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></a>)}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* pop-up de inicio para el PM: estado de seguimiento de sus proyectos */
+function PmStartupAlert({ open, projects, clients, onClose, onOpenProject }) {
+  const clientOf = (id) => clients.find((c) => c.id === id)
+  const rows = projects.map((p) => ({
+    p,
+    avDays: (p.avances || []).length ? businessDaysSince(p.avances[0].date) : null,
+    commDays: (p.comms || []).length ? businessDaysSince(p.comms[0].date) : null,
+  })).sort((a, b) => (b.commDays ?? 99) - (a.commDays ?? 99))
+  return (
+    <Modal open={open} onClose={onClose} title="Seguimiento de tus clientes" sub="Como PM, tené al día la comunicación y los avances" width={640}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.5 }}>Recordatorio: si pasaron más de <strong style={{ color: 'var(--text-dim)' }}>3 días hábiles</strong> sin comunicarte o más de <strong style={{ color: 'var(--text-dim)' }}>5 días hábiles</strong> sin un avance, escribile al cliente para reportar cómo va el proyecto.</div>
+        {rows.map(({ p, avDays, commDays }) => {
+          const commBad = commDays != null && commDays > 3, avBad = avDays != null && avDays > 5
+          const fmtD = (d, none) => d == null ? none : d === 0 ? 'hoy' : `hace ${d}d háb.`
+          return (
+            <div key={p.id} className="surface" style={{ padding: 13, background: commBad || avBad ? 'var(--red-soft)' : 'var(--bg-elevated)', borderColor: commBad || avBad ? 'var(--red)' : 'var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, cursor: 'pointer' }} onClick={() => { onClose(); onOpenProject(p.id) }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>{clientOf(p.clientId)?.company}</div>
+                <div style={{ display: 'flex', gap: 14, marginTop: 6, fontSize: 12 }}>
+                  <span style={{ color: commBad ? 'var(--red)' : 'var(--text-dim)' }}><I.phone width={11} height={11} /> Comunicación: <strong>{fmtD(commDays, 'sin registro')}</strong></span>
+                  <span style={{ color: avBad ? 'var(--red)' : 'var(--text-dim)' }}><I.folder width={11} height={11} /> Avance: <strong>{fmtD(avDays, 'sin registro')}</strong></span>
+                </div>
+              </div>
+              <a href={p.whatsappUrl || undefined} target="_blank" rel="noreferrer" onClick={(e) => { if (!p.whatsappUrl) e.preventDefault() }}
+                className="btn btn-sm" title={p.whatsappUrl ? 'Abrir grupo de WhatsApp' : 'Sin link de WhatsApp cargado'} style={{ color: p.whatsappUrl ? 'var(--green)' : 'var(--text-faint)', opacity: p.whatsappUrl ? 1 : 0.5, flexShrink: 0 }}><I.whatsapp width={15} height={15} /> WhatsApp</a>
+            </div>
+          )
+        })}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+          <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Entendido</button>
         </div>
       </div>
     </Modal>
@@ -2844,7 +3026,7 @@ function NotificationCenter() {
   const team = data.team || []
   const userOf = (id) => team.find((u) => u.id === id)
   const unread = activity.filter((a) => a.date > lastSeen).length
-  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, comment: I.comment }
+  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, comment: I.comment, avance: I.folder, comm: I.phone }
   const toggle = (e) => {
     e.stopPropagation()
     if (!open && btnRef.current) {
@@ -3013,6 +3195,10 @@ function AppShell({ session, onLogout }) {
   const openProject = (id) => setRoute({ view: 'project', projectId: id })
   const logActivity = (entry) => setData((d) => ({ ...d, activity: [{ id: uid(), date: new Date().toISOString(), actorId: localStorage.getItem('my_team_id') || '', ...entry }, ...(d.activity || [])].slice(0, 200) }))
 
+  // pop-up de inicio para el PM con el estado de seguimiento de sus proyectos
+  const [pmAlertSeen, setPmAlertSeen] = useState(false)
+  const pmProjects = (data.projects || []).filter((p) => myId && p.assignments?.pm?.userId === myId && p.status === 'active')
+
   return (
     <AppCtx.Provider value={{ data, setData, logActivity }}>
       <div className="app-shell">
@@ -3033,6 +3219,7 @@ function AppShell({ session, onLogout }) {
         </div>
         <Settings open={settings} onClose={() => setSettings(false)} />
         <UserProfile session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} hidden={route.view === 'project'} />
+        <PmStartupAlert open={!pmAlertSeen && pmProjects.length > 0} projects={pmProjects} clients={data.clients} onClose={() => setPmAlertSeen(true)} onOpenProject={openProject} />
       </div>
     </AppCtx.Provider>
   )
