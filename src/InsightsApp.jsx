@@ -760,6 +760,7 @@ const CALL_TYPES = [
   { key: 'onboarding', label: 'Onboarding', color: '#38BDF8' },
   { key: 'soporte', label: 'Soporte', color: '#9CA3AF' },
   { key: 'entrega', label: 'Entrega', color: '#22C55E' },
+  { key: 'team', label: 'Team', color: '#A855F7' },
 ]
 const callTypeMeta = (t) => CALL_TYPES.find((x) => x.key === t) || CALL_TYPES[1]
 
@@ -2179,110 +2180,198 @@ function CallEditor({ open, call, isNew, onClose, onSave, onDelete }) {
   )
 }
 
+/* administrador de cuentas de Fathom (los tokens viven en Supabase, no en el navegador) */
+function FathomAccountsModal({ open, onClose, accounts, onReload }) {
+  const [label, setLabel] = useState('')
+  const [email, setEmail] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const add = async () => {
+    if (!apiKey.trim()) { setErr('Pegá la API key de Fathom.'); return }
+    if (!cloudEnabled) { setErr('Necesitás Supabase configurado.'); return }
+    setBusy(true); setErr(null)
+    try {
+      const { data: res, error } = await supabase.functions.invoke('fathom-sync', { body: { action: 'add_account', label: label.trim(), email: email.trim(), apiKey: apiKey.trim() } })
+      if (error) throw error
+      if (res?.error) throw new Error(res.error)
+      setLabel(''); setEmail(''); setApiKey(''); onReload()
+    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+  const remove = async (id) => {
+    if (!cloudEnabled) return
+    await supabase.functions.invoke('fathom-sync', { body: { action: 'remove_account', id } })
+    onReload()
+  }
+  return (
+    <Modal open={open} onClose={onClose} title="Cuentas de Fathom" sub="Los tokens se guardan en Supabase (backend), nunca en el navegador" width={560}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(accounts || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin cuentas todavía. Agregá una abajo (una por cada correo de la empresa: vendedor, asesores, socios…).</div>}
+          {(accounts || []).map((a) => (
+            <div key={a.id} className="surface" style={{ padding: '10px 12px', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>{a.label}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>{a.email || '—'} · {a.last_synced ? `sync ${fmtRelative(a.last_synced)}` : 'sin sincronizar'}</div>
+              </div>
+              <button className="btn btn-sm btn-ghost" onClick={() => remove(a.id)} title="Quitar cuenta" style={{ padding: 6, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
+            </div>
+          ))}
+        </div>
+        <hr className="divider" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <Field label="Nombre / etiqueta"><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ej: Federico (ventas)" /></Field>
+          <Field label="Email (opcional)"><input className="input mono" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="federicog@insightsapps.tech" /></Field>
+        </div>
+        <Field label="API key de Fathom (Fathom → Settings → API)"><input className="input mono" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="fathom_…" /></Field>
+        {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8 }}>{err}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button className="btn btn-accent" onClick={add} disabled={busy}><I.plus width={15} height={15} /> {busy ? 'Guardando…' : 'Agregar cuenta'}</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function Calls() {
   const { data, setData, logActivity } = useApp()
   const [editing, setEditing] = useState(null)   // {call, isNew} | null
+  const [fathomOpen, setFathomOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [syncResult, setSyncResult] = useState(null)
+  const [syncMsg, setSyncMsg] = useState(null)
+  const [fathomCalls, setFathomCalls] = useState([])
+  const [accounts, setAccounts] = useState([])
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [asesorFilter, setAsesorFilter] = useState('all')
   const clientOf = (id) => data.clients.find((c) => c.id === id)
   const projOf = (id) => data.projects.find((p) => p.id === id)
+
   const saveCall = (call) => {
     const isNew = !data.calls.some((c) => c.id === call.id)
     setData((d) => ({ ...d, calls: d.calls.some((c) => c.id === call.id) ? d.calls.map((c) => (c.id === call.id ? call : c)) : [call, ...d.calls] }))
     if (isNew && logActivity) logActivity({ type: 'call-add', text: `agregó una llamada con ${clientOf(call.clientId)?.company || 'un cliente'}` })
   }
   const deleteCall = (id) => setData((d) => ({ ...d, calls: d.calls.filter((c) => c.id !== id) }))
+  const patchManual = (id, fields) => setData((d) => ({ ...d, calls: d.calls.map((c) => c.id === id ? { ...c, ...fields } : c) }))
 
-  // Fathom MCP sync — intenta el endpoint real, cae a demo si CORS/no-token.
-  const syncFathom = async () => {
-    setSyncing(true); setSyncResult(null)
-    const token = localStorage.getItem('fathom_token')
+  const loadFathomCalls = async () => { if (!cloudEnabled) return; const { data: rows } = await supabase.from('fathom_calls').select('*').order('call_date', { ascending: false }); if (rows) setFathomCalls(rows) }
+  const loadAccounts = async () => { if (!cloudEnabled) return; try { const { data: res } = await supabase.functions.invoke('fathom-sync', { body: { action: 'list_accounts' } }); if (res?.accounts) setAccounts(res.accounts) } catch (e) { /* fn no desplegada */ } }
+  const traerCalls = async () => {
+    if (!cloudEnabled) { setSyncMsg({ error: 'Necesitás Supabase configurado (login).' }); return }
+    setSyncing(true); setSyncMsg(null)
     try {
-      const res = await fetch('https://api.fathom.ai/mcp', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_calls', arguments: { limit: 5 } } }),
-      })
-      if (!res.ok) throw new Error('http ' + res.status)
-      const json = await res.json()
-      setSyncResult({ ok: true, raw: json })
-    } catch (e) {
-      // Fallback demo (CORS/MCP no accesible desde browser sin proxy)
-      setSyncResult({
-        ok: false, error: e.message,
-        demo: [
-          { advisor: 'Federico Garbarino', date: '2026-06-10', title: 'Shockwave · seguimiento pagos', clientGuess: 'c5', projectGuess: 'p5', summary: 'JP confirmó pago drop-in funcionando en staging. Falta recordatorio de cobro.', transcript: '[00:00] JP: El pago en el momento ya funciona...\n[01:10] Fede: Cerramos recordatorios esta semana.' },
-          { advisor: 'Lucía Méndez', date: '2026-06-08', title: 'Green Roofing · performance', clientGuess: 'c3', projectGuess: 'p3', summary: 'Gregorio aprobó la optimización mobile, FPS estable. Avanzamos con pricing.', transcript: '[00:00] Gregorio: Now it runs smooth on my phone...\n[00:50] Lucía: Great, sending the budget engine next.' },
-        ],
-      })
-    } finally { setSyncing(false) }
+      const { data: res, error } = await supabase.functions.invoke('fathom-sync', { body: { action: 'sync' } })
+      if (error) throw error
+      if (res?.error) throw new Error(res.error)
+      setSyncMsg({ ok: true, imported: res.imported || 0, errors: res.errors || [] })
+      await loadFathomCalls(); await loadAccounts()
+    } catch (e) { setSyncMsg({ error: e.message || 'No se pudo traer (¿está desplegada la función fathom-sync?)' }) } finally { setSyncing(false) }
   }
+  const patchFathom = async (id, fields) => { setFathomCalls((fc) => fc.map((r) => r.id === id ? { ...r, ...fields } : r)); if (cloudEnabled) await supabase.from('fathom_calls').update(fields).eq('id', id) }
 
-  const importCall = (d) => {
-    setData((prev) => ({ ...prev, calls: [{ id: uid(), clientId: d.clientGuess || prev.clients[0].id, projectId: d.projectGuess || prev.projects[0].id, advisor: d.advisor, date: d.date, priority: 'normal', summary: d.summary, fathomUrl: 'https://fathom.video/share/' + uid(), transcript: d.transcript }, ...prev.calls] }))
-  }
+  useEffect(() => {
+    loadFathomCalls(); loadAccounts()
+    if (!cloudEnabled) return
+    const ch = supabase.channel('fathom_calls_rt').on('postgres_changes', { event: '*', schema: 'public', table: 'fathom_calls' }, () => loadFathomCalls()).subscribe()
+    const iv = setInterval(() => { traerCalls() }, 5 * 60 * 1000)   // refresco automático cada 5 min
+    return () => { supabase.removeChannel(ch); clearInterval(iv) }
+  }, [])
+
+  // unificar calls de Fathom + manuales
+  const unified = [
+    ...fathomCalls.map((r) => ({ id: r.id, source: 'fathom', name: r.title, asesor: r.asesor, type: r.type, clientId: r.client_id, projectId: r.project_id, date: r.call_date, url: r.share_url, testimonial: r.testimonial, upsell: r.upsell })),
+    ...data.calls.map((c) => ({ id: c.id, source: 'manual', name: c.summary ? c.summary.slice(0, 70) : 'Llamada', asesor: c.advisor, type: c.type, clientId: c.clientId, projectId: c.projectId, date: c.date, url: c.fathomUrl, testimonial: c.testimonial, upsell: c.upsell, raw: c })),
+  ].sort((a, b) => new Date(b.date) - new Date(a.date))
+  const asesores = [...new Set(unified.map((u) => u.asesor).filter(Boolean))]
+  const filtered = unified.filter((u) => (typeFilter === 'all' || u.type === typeFilter) && (asesorFilter === 'all' || u.asesor === asesorFilter))
+
+  const setClient = (row, clientId) => { const projs = data.projects.filter((p) => p.clientId === clientId); const projectId = projs.some((p) => p.id === row.projectId) ? row.projectId : (projs[0]?.id || ''); row.source === 'fathom' ? patchFathom(row.id, { client_id: clientId, project_id: projectId }) : patchManual(row.id, { clientId, projectId }) }
+  const setProject = (row, projectId) => row.source === 'fathom' ? patchFathom(row.id, { project_id: projectId }) : patchManual(row.id, { projectId })
+  const toggleFlag = (row, key) => { const next = row[key] === true ? false : true; if (row.source === 'fathom') patchFathom(row.id, { [key]: next }); else patchManual(row.id, { [key]: next }) }
+
+  const Flag = ({ on, label, row }) => (
+    <button onClick={(e) => { e.stopPropagation(); toggleFlag(row, label === 'Testimonio' ? 'testimonial' : 'upsell') }} title={label}
+      className="tag" style={{ cursor: 'pointer', color: on ? 'var(--green)' : 'var(--text-faint)', background: on ? 'var(--green-soft)' : 'var(--bg-elevated)', borderColor: on ? 'transparent' : 'var(--border)' }}>
+      {on ? <I.check width={11} height={11} /> : <I.x width={11} height={11} />} {label}
+    </button>
+  )
 
   return (
     <div style={{ padding: '28px 34px 60px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Soporte & seguimiento</div><h1 style={{ fontSize: 32 }}>Calls</h1></div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn btn-accent" onClick={() => setEditing({ call: null, isNew: true })}><I.plus width={15} height={15} /> Agregar llamada</button>
-          <button className="btn" onClick={syncFathom} disabled={syncing}>
-            <I.refresh width={15} height={15} style={syncing ? { animation: 'spin 1s linear infinite' } : {}} /> {syncing ? 'Sincronizando…' : 'Sync Fathom'}
-          </button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="btn btn-accent" onClick={traerCalls} disabled={syncing}><I.refresh width={15} height={15} style={syncing ? { animation: 'spin 1s linear infinite' } : {}} /> {syncing ? 'Trayendo…' : 'Traer calls'}</button>
+          <button className="btn" onClick={() => setFathomOpen(true)}><I.phone width={15} height={15} /> Cuentas Fathom {accounts.length ? `(${accounts.length})` : ''}</button>
+          <button className="btn" onClick={() => setEditing({ call: null, isNew: true })}><I.plus width={15} height={15} /> Agregar manual</button>
         </div>
       </div>
 
-      {syncResult && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="surface" style={{ padding: 16, marginBottom: 18, borderColor: 'var(--accent-line)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <strong style={{ fontSize: 14 }}>{syncResult.ok ? 'Fathom respondió ✓' : 'Calls importadas desde Fathom (demo)'}</strong>
-            <button className="btn btn-sm btn-ghost" onClick={() => setSyncResult(null)}><I.x width={14} height={14} /></button>
-          </div>
-          {!syncResult.ok && <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 12 }}>El MCP <span className="mono">api.fathom.ai/mcp</span> no es accesible directo desde el browser ({syncResult.error}). Mostrando últimas calls de ejemplo para asignar:</div>}
-          {(syncResult.demo || []).map((d, i) => (
-            <div key={i} className="surface" style={{ padding: 12, marginBottom: 8, background: 'var(--bg-elevated)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{d.title}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>{d.advisor} · {fmtDate(d.date)} · {clientOf(d.clientGuess)?.company}</div>
-              </div>
-              <button className="btn btn-sm btn-accent" onClick={() => { importCall(d); setSyncResult((r) => ({ ...r, demo: r.demo.filter((_, j) => j !== i) })) }}><I.plus width={13} height={13} /> Asignar</button>
-            </div>
-          ))}
-        </motion.div>
+      {syncMsg && (
+        <div className="surface" style={{ padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, borderColor: syncMsg.error ? 'var(--red)' : 'var(--accent-line)', background: syncMsg.error ? 'var(--red-soft)' : 'var(--bg-elevated)' }}>
+          <span style={{ fontSize: 13, color: syncMsg.error ? 'var(--red)' : 'var(--text-dim)', flex: 1 }}>{syncMsg.error ? syncMsg.error : `Se trajeron/actualizaron ${syncMsg.imported} calls de Fathom.${(syncMsg.errors || []).length ? ' Errores: ' + syncMsg.errors.join('; ') : ''}`}</span>
+          <button className="btn btn-sm btn-ghost" onClick={() => setSyncMsg(null)}><I.x width={13} height={13} /></button>
+        </div>
       )}
 
-      {data.calls.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Sin llamadas. Agregá una con “Agregar llamada”.</div>}
+      {/* filtros */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <option value="all">Tipo: todos</option>
+          {CALL_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={asesorFilter} onChange={(e) => setAsesorFilter(e.target.value)}>
+          <option value="all">Asesor: todos</option>
+          {asesores.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        {(typeFilter !== 'all' || asesorFilter !== 'all') && <button className="btn btn-sm btn-ghost" onClick={() => { setTypeFilter('all'); setAsesorFilter('all') }} style={{ color: 'var(--text-dim)' }}><I.x width={13} height={13} /> Limpiar</button>}
+      </div>
 
-      {data.calls.length > 0 && (
+      {filtered.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Sin llamadas. Cargá una cuenta de Fathom y tocá “Traer calls”, o agregá una manual.</div>}
+
+      {filtered.length > 0 && (
         <div className="surface" style={{ overflow: 'hidden' }}>
           <table>
             <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['', 'Asesor', 'Tipo', 'Cliente', 'Proyecto', 'Fecha', 'Resumen', 'Fathom', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+              {['Asesor', 'Nombre', 'Tipo', 'Cliente', 'Proyecto', 'Fecha', 'Fathom', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
             </tr></thead>
             <tbody>
-              {[...data.calls].sort((a, b) => new Date(b.date) - new Date(a.date)).map((c) => (
-                <tr key={c.id} className="row-hover click" onClick={() => setEditing({ call: c, isNew: false })} style={{ borderBottom: '1px solid var(--border)', background: c.priority === 'alta' ? 'var(--red-soft)' : 'transparent' }}>
-                  <td style={{ padding: '13px 0 13px 16px', width: 14 }}>{c.priority === 'alta' && <span title="Prioridad" style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: 'var(--red)' }} />}</td>
-                  <td style={{ padding: '13px 16px', fontWeight: 600, whiteSpace: 'nowrap' }}>{c.advisor}</td>
-                  <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>{(() => { const m = callTypeMeta(c.type); return <span className="tag" style={{ color: m.color, background: m.color + '1f', borderColor: m.color + '55' }}>{m.label}</span> })()}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{clientOf(c.clientId)?.company || '—'}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{projOf(c.projectId)?.name || '—'}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }} className="mono">{fmtDate(c.date)}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--text-dim)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.priority === 'alta' && <Badge tone="red">Prioridad</Badge>} {c.summary}</td>
-                  <td style={{ padding: '13px 16px', width: 50 }}>{c.fathomUrl ? <a href={c.fathomUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Abrir en Fathom" style={{ color: 'var(--accent)' }}><I.link width={16} height={16} /></a> : <span style={{ color: 'var(--text-faint)' }}>—</span>}</td>
-                  <td style={{ padding: '13px 16px 13px 0', width: 44 }}>
-                    <button className="btn btn-sm btn-ghost" title="Eliminar llamada" onClick={(e) => { e.stopPropagation(); if (window.confirm('¿Eliminar esta llamada? No se puede deshacer.')) deleteCall(c.id) }} style={{ padding: 6, color: 'var(--text-faint)' }}><I.x width={15} height={15} /></button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((u) => {
+                const m = callTypeMeta(u.type)
+                const projOpts = data.projects.filter((p) => p.clientId === u.clientId)
+                return (
+                  <tr key={u.source + u.id} className="row-hover" style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '12px 16px', fontWeight: 600, whiteSpace: 'nowrap' }}>{u.asesor || '—'}</td>
+                    <td style={{ padding: '12px 16px', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: u.source === 'manual' ? 'pointer' : 'default' }} onClick={() => u.source === 'manual' && setEditing({ call: u.raw, isNew: false })}>
+                      {u.name || '—'}
+                      {u.type === 'entrega' && <div style={{ display: 'flex', gap: 5, marginTop: 5 }}><Flag on={u.testimonial === true} label="Testimonio" row={u} /><Flag on={u.upsell === true} label="Upsell" row={u} /></div>}
+                    </td>
+                    <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><span className="tag" style={{ color: m.color, background: m.color + '1f', borderColor: m.color + '55' }}>{m.label}</span></td>
+                    <td style={{ padding: '8px 16px' }} onClick={(e) => e.stopPropagation()}>
+                      <select className="input" value={u.clientId || ''} onChange={(e) => setClient(u, e.target.value)} style={{ width: 'auto', maxWidth: 150, padding: '5px 8px', fontSize: 12.5 }}>
+                        <option value="">— Cliente —</option>
+                        {data.clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '8px 16px' }} onClick={(e) => e.stopPropagation()}>
+                      <select className="input" value={u.projectId || ''} onChange={(e) => setProject(u, e.target.value)} style={{ width: 'auto', maxWidth: 150, padding: '5px 8px', fontSize: 12.5 }} disabled={!u.clientId}>
+                        <option value="">— Proyecto —</option>
+                        {projOpts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '12px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }} className="mono">{fmtDate(u.date)}</td>
+                    <td style={{ padding: '12px 16px', width: 50 }}>{u.url ? <a href={u.url} target="_blank" rel="noreferrer" title="Ver transcript/resumen en Fathom" style={{ color: 'var(--accent)' }}><I.link width={16} height={16} /></a> : <span style={{ color: 'var(--text-faint)' }}>—</span>}</td>
+                    <td style={{ padding: '12px 16px 12px 0', width: 40 }}>{u.source === 'manual' && <button className="btn btn-sm btn-ghost" title="Eliminar" onClick={() => { if (window.confirm('¿Eliminar esta llamada?')) deleteCall(u.id) }} style={{ padding: 6, color: 'var(--text-faint)' }}><I.x width={14} height={14} /></button>}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       )}
 
       <CallEditor open={!!editing} call={editing?.call} isNew={editing?.isNew} onClose={() => setEditing(null)} onSave={saveCall} onDelete={deleteCall} />
+      <FathomAccountsModal open={fathomOpen} onClose={() => setFathomOpen(false)} accounts={accounts} onReload={loadAccounts} />
     </div>
   )
 }
