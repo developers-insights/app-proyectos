@@ -180,6 +180,7 @@ const I = {
   tasks: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...p}><path d="M4 6h2l1 1 2-2M4 12h2l1 1 2-2M4 18h2l1 1 2-2M13 6h7M13 12h7M13 18h7"/></svg>,
   flag: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M5 21V4"/><path d="M5 4h12l-2.4 3.5L17 11H5z" fill="currentColor"/></svg>,
   bell: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>,
+  at: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"/></svg>,
 }
 
 /* ============================================================================
@@ -862,6 +863,84 @@ function PendingDateChip({ date, style }) {
 }
 
 /* hilo de comentarios reutilizable: muestra avatar + nombre del autor, registra actividad */
+/* ---- @menciones: helpers + textarea con autocompletado de miembros ---- */
+const escapeRegex = (s) => (s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/* devuelve los ids de miembros que quedan mencionados como "@Nombre" en el texto */
+function extractMentions(text, team) {
+  const t = text || ''
+  return (team || []).filter((u) => u.name && new RegExp('@' + escapeRegex(u.name) + '(?![\\p{L}\\p{N}])', 'iu').test(t)).map((u) => u.id)
+}
+/* dispara una notificación (entrada de actividad tipo mention) a cada mencionado, menos a uno mismo */
+function notifyMentions({ text, team, subject, logActivity, selfId }) {
+  const ids = extractMentions(text, team).filter((id) => id !== selfId)
+  ids.forEach((id) => logActivity && logActivity({ type: 'mention', text: subject, targetId: id }))
+  return ids
+}
+/* renderiza texto resaltando las @menciones que matchean con un miembro real */
+function MentionText({ text, style }) {
+  const { data } = useApp()
+  const team = data.team || []
+  const names = team.filter((u) => u.name).map((u) => escapeRegex(u.name)).sort((a, b) => b.length - a.length)
+  if (!text) return null
+  if (!names.length) return <span style={style}>{text}</span>
+  const re = new RegExp('(@(?:' + names.join('|') + ')(?![\\p{L}\\p{N}]))', 'u')
+  const parts = text.split(re)
+  return <span style={style}>{parts.map((p, i) => (p && p[0] === '@' && re.test(p)
+    ? <span key={i} style={{ color: 'var(--accent)', fontWeight: 600 }}>{p}</span>
+    : <span key={i}>{p}</span>))}</span>
+}
+/* textarea que muestra un menú de miembros al tipear "@" para etiquetarlos */
+function MentionTextarea({ value, onChange, rows = 2, placeholder, onEnter, style, className = 'input', taRef }) {
+  const { data } = useApp()
+  const team = data.team || []
+  const localRef = useRef(null)
+  const ref = taRef || localRef
+  const [menu, setMenu] = useState(null)   // { q, start, top, left } | null
+  const [hi, setHi] = useState(0)
+  const matches = menu ? team.filter((u) => u.name && u.name.toLowerCase().includes(menu.q.toLowerCase())).slice(0, 6) : []
+
+  const scan = (el) => {
+    const pos = el.selectionStart
+    const m = el.value.slice(0, pos).match(/(?:^|\s)@([\p{L}\p{N}]*)$/u)
+    if (m) { const r = el.getBoundingClientRect(); setMenu({ q: m[1], start: pos - m[1].length - 1, top: r.bottom + 4, left: r.left }); setHi(0) }
+    else setMenu(null)
+  }
+  const change = (e) => { onChange(e.target.value); scan(e.target) }
+  const pick = (u) => {
+    const el = ref.current; if (!el) return
+    const pos = el.selectionStart
+    const before = value.slice(0, menu.start), after = value.slice(pos), insert = '@' + u.name + ' '
+    onChange(before + insert + after); setMenu(null)
+    requestAnimationFrame(() => { const c = (before + insert).length; el.focus(); el.setSelectionRange(c, c) })
+  }
+  const key = (e) => {
+    if (menu && matches.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setHi((i) => (i + 1) % matches.length); return }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setHi((i) => (i - 1 + matches.length) % matches.length); return }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(matches[hi]); return }
+      if (e.key === 'Escape') { e.preventDefault(); setMenu(null); return }
+    }
+    if (e.key === 'Enter' && !e.shiftKey && onEnter) { e.preventDefault(); onEnter() }
+  }
+  return (
+    <>
+      <textarea ref={ref} className={className} rows={rows} value={value} onChange={change} onKeyDown={key}
+        onBlur={() => setTimeout(() => setMenu(null), 150)} onScroll={() => setMenu(null)} placeholder={placeholder} style={style} />
+      {menu && matches.length > 0 && createPortal(
+        <div className="surface" onMouseDown={(e) => e.preventDefault()} style={{ position: 'fixed', top: menu.top, left: menu.left, zIndex: 300, width: 244, padding: 5, boxShadow: 'var(--shadow)', maxHeight: 250, overflowY: 'auto' }}>
+          <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', padding: '4px 8px 6px' }}>Etiquetar a…</div>
+          {matches.map((u, i) => (
+            <div key={u.id} onMouseDown={(e) => { e.preventDefault(); pick(u) }} onMouseEnter={() => setHi(i)}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 8, cursor: 'pointer', background: i === hi ? 'var(--bg-elevated)' : 'transparent' }}>
+              <Avatar user={u} size={24} ring="var(--card)" />
+              <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</span>
+            </div>
+          ))}
+        </div>, document.body)}
+    </>
+  )
+}
+
 function CommentThread({ comments, onAdd, onDelete, subject, label = 'Comentarios' }) {
   const { data, logActivity } = useApp()
   const [text, setText] = useState('')
@@ -872,8 +951,9 @@ function CommentThread({ comments, onAdd, onDelete, subject, label = 'Comentario
   const submit = () => {
     const t = text.trim(); if (!t) return
     onAdd({ id: uid(), text: t, date: new Date().toISOString(), authorId: myId || '' })
-    setText('')
     if (subject && logActivity) logActivity({ type: 'comment', text: `comentó en ${subject}` })
+    if (subject) notifyMentions({ text: t, team, subject: `en ${subject}`, logActivity, selfId: myId })
+    setText('')
   }
   return (
     <div>
@@ -890,13 +970,13 @@ function CommentThread({ comments, onAdd, onDelete, subject, label = 'Comentario
                 <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fmtDate(c.date)}</span>
                 <button className="btn btn-sm btn-ghost" onClick={() => onDelete(c.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
               </div>
-              <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.text}</div>
+              <MentionText text={c.text} style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', display: 'block' }} />
             </div>
           )
         })}
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <textarea className="input" rows={2} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }} placeholder="Dejá un comentario… (Enter envía)" style={{ resize: 'none' }} />
+        <MentionTextarea value={text} onChange={setText} onEnter={submit} placeholder="Dejá un comentario… @ para etiquetar · Enter envía" style={{ resize: 'none' }} />
         <button className="btn btn-accent" onClick={submit} style={{ alignSelf: 'stretch' }}><I.send width={15} height={15} /></button>
       </div>
     </div>
@@ -1826,8 +1906,9 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
   const addEntry = () => {
     const t = text.trim(); if (!t && shots.length === 0) return
     patch((p) => ({ ...p, [cfg.field]: [{ id: uid(), text: t, shots, date: dateInputISO(entryDate), authorId: myId || '' }, ...(p[cfg.field] || [])].sort((a, b) => new Date(b.date) - new Date(a.date)) }))
-    setText(''); setShots([]); setEntryDate(new Date().toISOString().slice(0, 10))
     if (logActivity) logActivity({ type: kind === 'comm' ? 'comm' : 'avance', text: cfg.actText })
+    notifyMentions({ text: t, team: data.team || [], subject: `en un${kind === 'comm' ? 'a comunicación' : ' avance'} de ${project.name}`, logActivity, selfId: myId })
+    setText(''); setShots([]); setEntryDate(new Date().toISOString().slice(0, 10))
   }
   const updateEntry = (id, fields) => patch((p) => ({ ...p, [cfg.field]: (p[cfg.field] || []).map((x) => x.id === id ? { ...x, ...fields } : x).sort((a, b) => new Date(b.date) - new Date(a.date)) }))
   const delEntry = (id) => patch((p) => ({ ...p, [cfg.field]: (p[cfg.field] || []).filter((x) => x.id !== id) }))
@@ -1853,7 +1934,7 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
               <input type="date" className="input mono" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={{ width: 'auto', padding: '5px 8px', fontSize: 12 }} />
             </label>
           </div>
-          <textarea className="input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder={cfg.placeholder} style={{ resize: 'none' }} />
+          <MentionTextarea rows={3} value={text} onChange={setText} placeholder={cfg.placeholder + ' · @ para etiquetar'} style={{ resize: 'none' }} />
           {shots.length > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
               {shots.map((s, i) => (
@@ -1886,7 +1967,7 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
                     <input type="date" className="input mono" title="Editar fecha del registro" value={(en.date || '').slice(0, 10)} onChange={(e) => updateEntry(en.id, { date: dateInputISO(e.target.value) })} style={{ width: 'auto', padding: '4px 7px', fontSize: 11, marginLeft: 'auto' }} />
                     <button className="btn btn-sm btn-ghost" onClick={() => delEntry(en.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
                   </div>
-                  {en.text && <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: (en.shots || []).length ? 8 : 0 }}>{en.text}</div>}
+                  {en.text && <MentionText text={en.text} style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: (en.shots || []).length ? 8 : 0, display: 'block' }} />}
                   {(en.shots || []).length > 0 && (
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {en.shots.map((s, i) => <a key={i} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></a>)}
@@ -3132,9 +3213,11 @@ function NotificationCenter() {
   const btnRef = useRef(null)
   const activity = data.activity || []
   const team = data.team || []
+  const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
   const userOf = (id) => team.find((u) => u.id === id)
   const unread = activity.filter((a) => a.date > lastSeen).length
-  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, comment: I.comment, avance: I.folder, comm: I.phone }
+  const mentionsForMe = activity.filter((a) => a.type === 'mention' && a.targetId === myId && a.date > lastSeen).length
+  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, comment: I.comment, avance: I.folder, comm: I.phone, mention: I.at }
   const toggle = (e) => {
     e.stopPropagation()
     if (!open && btnRef.current) {
@@ -3148,7 +3231,7 @@ function NotificationCenter() {
     <span style={{ display: 'inline-block', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
       <button ref={btnRef} className="btn btn-sm" onClick={toggle} title="Notificaciones" style={{ padding: 8, position: 'relative' }}>
         <I.bell width={16} height={16} />
-        {unread > 0 && <span style={{ position: 'absolute', top: 2, right: 2, minWidth: 15, height: 15, padding: '0 3px', borderRadius: 99, background: 'var(--red)', color: '#fff', fontSize: 9.5, fontWeight: 700, display: 'grid', placeItems: 'center', border: '1.5px solid var(--bg-elevated)' }}>{unread > 9 ? '9+' : unread}</span>}
+        {unread > 0 && <span title={mentionsForMe > 0 ? `${mentionsForMe} mención${mentionsForMe > 1 ? 'es' : ''} para vos` : undefined} style={{ position: 'absolute', top: 2, right: 2, minWidth: 15, height: 15, padding: '0 3px', borderRadius: 99, background: mentionsForMe > 0 ? 'var(--accent)' : 'var(--red)', color: '#fff', fontSize: 9.5, fontWeight: 700, display: 'grid', placeItems: 'center', border: '1.5px solid var(--bg-elevated)' }}>{mentionsForMe > 0 ? '@' : (unread > 9 ? '9+' : unread)}</span>}
       </button>
       {open && pos && createPortal(
         <>
@@ -3162,11 +3245,16 @@ function NotificationCenter() {
               {activity.length === 0 && <div style={{ padding: 18, textAlign: 'center', fontSize: 13, color: 'var(--text-faint)' }}>Sin actividad todavía.</div>}
               {activity.map((a) => {
                 const u = userOf(a.actorId); const Ico = ICONS[a.type] || I.spark
+                const mine = a.type === 'mention' && a.targetId === myId
+                const body = a.type === 'mention'
+                  ? (mine ? <span style={{ color: 'var(--text-dim)' }}>te mencionó {a.text}</span>
+                          : <span style={{ color: 'var(--text-dim)' }}>mencionó a <strong style={{ color: 'var(--text)' }}>{userOf(a.targetId)?.name || 'alguien'}</strong> {a.text}</span>)
+                  : <span style={{ color: 'var(--text-dim)' }}>{a.text}</span>
                 return (
-                  <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '9px 8px', borderRadius: 9 }} className="row-hover">
-                    {u ? <Avatar user={u} size={28} ring="var(--card)" /> : <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-faint)', flexShrink: 0 }}><Ico width={14} height={14} /></div>}
+                  <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '9px 8px', borderRadius: 9, background: mine ? 'var(--accent-soft, var(--bg-elevated))' : 'transparent', border: mine ? '1px solid var(--accent-line)' : '1px solid transparent' }} className="row-hover">
+                    {u ? <Avatar user={u} size={28} ring="var(--card)" badge={a.type === 'mention' ? <span style={{ position: 'absolute', bottom: -2, right: -2, width: 15, height: 15, borderRadius: 99, background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', border: '1.5px solid var(--card)' }}><I.at width={9} height={9} /></span> : null} /> : <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-faint)', flexShrink: 0 }}><Ico width={14} height={14} /></div>}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, lineHeight: 1.45 }}><strong>{u ? u.name : 'Alguien'}</strong> <span style={{ color: 'var(--text-dim)' }}>{a.text}</span></div>
+                      <div style={{ fontSize: 13, lineHeight: 1.45 }}><strong>{u ? u.name : 'Alguien'}</strong> {body}{mine && <span className="tag" style={{ marginLeft: 6, color: 'var(--accent)', background: 'transparent', borderColor: 'var(--accent-line)', fontSize: 10 }}>para vos</span>}</div>
                       <div className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2 }}>{fmtRelative(a.date)}</div>
                     </div>
                   </div>
