@@ -196,7 +196,20 @@ const fmtDate = (iso) =>
   iso ? new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const money = (n) => '$' + (n ?? 0).toLocaleString('en-US')
 const pctColor = (p) => (p < 40 ? 'var(--red)' : p <= 70 ? 'var(--accent)' : 'var(--green)')
+/* color de la barra de avance en las cards: verde ≥70, ámbar ≥40, naranja >0, gris en 0 */
+const cardPctColor = (p) => (p >= 70 ? 'var(--green)' : p >= 40 ? 'var(--yellow)' : p > 0 ? 'var(--accent)' : 'var(--text-faint)')
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
+
+/* identidad visual del proyecto: iniciales (ignorando conectores) + color propio derivado del proyecto */
+const PROJECT_HUES = ['#6366F1', '#14B8A6', '#22C55E', '#F59E0B', '#0EA5E9', '#A855F7', '#EC4899', '#F43F5E', '#FB923C', '#84CC16', '#3B82F6', '#8B5CF6']
+const hexA = (hex, a) => { const h = (hex || '').replace('#', ''); const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16); return `rgba(${r},${g},${b},${a})` }
+const projectInitials = (name) => {
+  const stop = ['de', 'la', 'el', 'y', 'del', 'the', '&', 'los', 'las']
+  const words = (name || '').split(/[\s/·-]+/).filter((w) => w && !stop.includes(w.toLowerCase()))
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase()
+  return ((words[0] || name || '?').replace(/[^a-z0-9]/gi, '').slice(0, 2) || '?').toUpperCase()
+}
+const projectHue = (p) => { const s = (p && (p.id || p.name)) || ''; let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return PROJECT_HUES[h % PROJECT_HUES.length] }
 
 /* ============================================================================
    4 · SEED DATA — 5 proyectos reales de Insights Software
@@ -1023,8 +1036,9 @@ function StatusMenu({ status, onChange }) {
   return (
     <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
       <button ref={btnRef} onClick={toggle} title="Cambiar estado">
-        <span className="tag" style={{ color: `var(--${meta.tone === 'accent' ? 'accent' : meta.tone})`, background: `var(--${meta.tone === 'accent' ? 'accent-soft' : meta.tone + '-soft'})`, borderColor: meta.tone === 'accent' ? 'var(--accent-line)' : 'transparent', cursor: 'pointer' }}>
-          {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1 }} />
+        <span className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text)', background: 'var(--bg-elevated)', borderColor: 'var(--border)', cursor: 'pointer' }}>
+          <span style={{ width: 7, height: 7, borderRadius: 99, background: meta.dot, flexShrink: 0 }} />
+          {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1, color: 'var(--text-faint)' }} />
         </span>
       </button>
       {open && pos && createPortal(
@@ -1096,12 +1110,12 @@ function CardLinks({ project, onSave }) {
   const wa = project.whatsappUrl || ''
   const openEdit = (e) => { e.stopPropagation(); setT(project.testingUrl || project.productionUrl || ''); setW(project.whatsappUrl || ''); setEditing(true) }
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
       <a href={testing || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!testing) e.preventDefault() }}
-        className="btn btn-sm" style={{ flex: 1, justifyContent: 'center', opacity: testing ? 1 : 0.45 }}><I.ext width={13} height={13} /> Testing</a>
+        className="btn btn-sm" title="Abrir testing / deploy" style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', opacity: testing ? 1 : 0.45 }}><I.ext width={14} height={14} /></a>
       <a href={wa || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!wa) e.preventDefault() }}
-        className="btn btn-sm" style={{ flex: 1, justifyContent: 'center', color: wa ? 'var(--green)' : undefined, opacity: wa ? 1 : 0.45 }}><I.whatsapp width={14} height={14} /> WhatsApp</a>
-      <button className="btn btn-sm btn-ghost" onClick={openEdit} title="Editar links" style={{ padding: 7 }}><I.pencil width={14} height={14} /></button>
+        className="btn btn-sm" style={{ justifyContent: 'center', color: wa ? 'var(--green)' : undefined, opacity: wa ? 1 : 0.45 }}><I.whatsapp width={14} height={14} /> WhatsApp</a>
+      <button className="btn btn-sm" onClick={openEdit} title="Editar links" style={{ width: 34, height: 34, padding: 0, justifyContent: 'center' }}><I.pencil width={14} height={14} /></button>
       <Modal open={editing} onClose={() => setEditing(false)} title="Editar links del proyecto" sub={project.name} width={460}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Field label="Testing / Deploy URL (Render, Vercel…)"><input className="input" value={t} onChange={(e) => setT(e.target.value)} placeholder="https://mi-app.onrender.com" /></Field>
@@ -1190,14 +1204,15 @@ function EditProjectModal({ open, project, onClose, onSave }) {
     </Modal>
   )
 }
-function Progress({ value, height = 8, showLabel = false }) {
+function Progress({ value, height = 8, showLabel = false, color }) {
+  const c = color || pctColor(value)
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
       <div style={{ flex: 1, height, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}>
         <motion.div initial={{ width: 0 }} animate={{ width: `${clamp(value, 0, 100)}%` }} transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-          style={{ height: '100%', background: pctColor(value), borderRadius: 999 }} />
+          style={{ height: '100%', background: c, borderRadius: 999 }} />
       </div>
-      {showLabel && <span className="mono" style={{ fontSize: 12, color: pctColor(value), fontWeight: 600, minWidth: 36, textAlign: 'right' }}>{value}%</span>}
+      {showLabel && <span className="mono" style={{ fontSize: 12, color: c, fontWeight: 600, minWidth: 36, textAlign: 'right' }}>{value}%</span>}
     </div>
   )
 }
@@ -1348,7 +1363,7 @@ function TeamAvatars({ assignments, team, onChange, size = 28, ring = 'var(--car
             <span style={{ position: 'relative', zIndex: 2 }}>
               <Avatar user={pmU} size={size} ring={ring} empty={!pmU} title={pmU ? `${a.pm.roleLabel}: ${pmU.name}` : 'Asignar PM'} onClick={() => { setMenu(menu === 'pm' ? null : 'pm') }} />
             </span>
-            <span style={{ position: 'relative', zIndex: 1, marginLeft: -size * 0.32 }}>
+            <span style={{ position: 'relative', zIndex: 1, marginLeft: Math.round(size * 0.28) }}>
               <Avatar user={devU} size={size} ring={ring} empty={!devU} title={devU ? `${a.dev.roleLabel}: ${devU.name}` : 'Asignar Dev'} onClick={() => { setMenu(menu === 'dev' ? null : 'dev') }} />
             </span>
           </>
@@ -1672,6 +1687,7 @@ function Projects({ onOpenProject }) {
   const [devFilter, setDevFilter] = useState(qp.get('dev') || 'all')
   const [tagFilter, setTagFilter] = useState(qp.get('tag') || 'all')
   const [prioFilter, setPrioFilter] = useState(qp.get('prio') || 'all')   // all | sort | alta | normal | baja
+  const [search, setSearch] = useState('')             // búsqueda en vivo (client-side): nombre, cliente, PM/Dev
   const [pendingFor, setPendingFor] = useState(null)   // id del proyecto al que se le pide fecha de ingreso
   const [logModal, setLogModal] = useState(null)       // { projectId, kind } | null
   const clientOf = (id) => data.clients.find((c) => c.id === id)
@@ -1702,8 +1718,17 @@ function Projects({ onOpenProject }) {
     (devFilter === 'all' || p.assignments?.dev?.userId === devFilter) &&
     (tagFilter === 'all' || (p.tags || []).some((t) => t.text === tagFilter)) &&
     (prioFilter === 'all' || prioFilter === 'sort' || (p.priority || 'normal') === prioFilter)
-  const countFor = (status) => data.projects.filter((p) => p.status === status && matchesFilters(p)).length
-  let list = data.projects.filter((p) => p.status === tab && matchesFilters(p))
+  const q = search.trim().toLowerCase()
+  const matchesSearch = (p) => {
+    if (!q) return true
+    const pmU = p.assignments?.pm ? userOf(p.assignments.pm.userId) : null
+    const devU = p.assignments?.dev ? userOf(p.assignments.dev.userId) : null
+    const hay = [p.name, clientOf(p.clientId)?.company, pmU?.name, devU?.name].filter(Boolean).join(' ').toLowerCase()
+    return hay.includes(q)
+  }
+  const keep = (p) => matchesFilters(p) && matchesSearch(p)
+  const countFor = (status) => data.projects.filter((p) => p.status === status && keep(p)).length
+  let list = data.projects.filter((p) => p.status === tab && keep(p))
   if (prioFilter === 'sort') list = [...list].sort((a, b) => projPrioMeta(b.priority).rank - projPrioMeta(a.priority).rank)
 
   return (
@@ -1713,9 +1738,17 @@ function Projects({ onOpenProject }) {
           <div className="label" style={{ marginBottom: 6 }}>Cartera</div>
           <h1 style={{ fontSize: 32 }}>Proyectos</h1>
         </div>
-        <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
-          <button className="btn btn-sm btn-ghost" onClick={() => setView('cards')} style={{ background: view === 'cards' ? 'var(--card-hover)' : 'transparent', color: view === 'cards' ? 'var(--accent)' : 'var(--text-dim)' }}><I.cards width={15} height={15} /></button>
-          <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, width: 300, maxWidth: '52vw', height: 40, padding: '0 12px', borderRadius: 10, background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+            <I.search width={15} height={15} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar proyecto, cliente o miembro…"
+              style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 13.5, color: 'var(--text)', outline: 'none' }} />
+            {search && <button onClick={() => setSearch('')} title="Limpiar búsqueda" style={{ display: 'flex', padding: 2, border: 'none', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer' }}><I.x width={14} height={14} /></button>}
+          </label>
+          <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
+            <button className="btn btn-sm btn-ghost" onClick={() => setView('cards')} style={{ background: view === 'cards' ? 'var(--card-hover)' : 'transparent', color: view === 'cards' ? 'var(--accent)' : 'var(--text-dim)' }}><I.cards width={15} height={15} /></button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
+          </div>
         </div>
       </div>
 
@@ -1756,7 +1789,7 @@ function Projects({ onOpenProject }) {
         ))}
       </div>
 
-      {list.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Sin proyectos en esta vista.</div>}
+      {list.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>{q ? <>Sin proyectos que coincidan con «{search.trim()}».</> : 'Sin proyectos en esta vista.'}</div>}
 
       {view === 'cards' ? (
         <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(340px,1fr))', gap: 16 }}>
@@ -1764,52 +1797,51 @@ function Projects({ onOpenProject }) {
             const cl = clientOf(p.clientId)
             const dd = daysAgo(p.lastDeployDate)
             const currentSprint = p.sprints.find((s) => normSprint(s.status) === 'en proceso')
+            const hue = projectHue(p)
+            const pct = calcProgress(p)
+            const mini = (label, Icon, kind, firstLabel) => {
+              const t = trackInfo(p, kind)
+              const bad = t.overdue
+              const val = t.first ? firstLabel : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)
+              return (
+                <button onClick={(e) => { e.stopPropagation(); setLogModal({ projectId: p.id, kind }) }}
+                  style={{ display: 'flex', flexDirection: 'column', gap: 5, textAlign: 'left', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', minWidth: 0 }}>
+                  <span className="mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9.5, letterSpacing: '.09em', fontWeight: 500, color: bad ? 'var(--red)' : 'var(--text-faint)' }}><Icon width={12} height={12} /> {label.toUpperCase()}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: bad ? 'var(--red)' : t.first ? 'var(--text-faint)' : 'var(--text)' }}>{val}{bad ? ' ⚠' : ''}</span>
+                </button>
+              )
+            }
             return (
-              <motion.div key={p.id} variants={rise} whileHover={{ y: -3 }} onClick={() => onOpenProject(p.id)} className="surface surface-hover click" style={{ padding: 18 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 16 }}>{p.name}</div>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>{cl?.company}</div>
+              <motion.div key={p.id} variants={rise} whileHover={{ y: -3 }} onClick={() => onOpenProject(p.id)} className="surface surface-hover click" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 15 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 'none', width: 44, height: 44, borderRadius: 12, display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 15, letterSpacing: '-.01em', background: hexA(hue, 0.16), color: hue }}>{projectInitials(p.name)}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                      <span style={{ flex: 'none', display: 'inline-flex' }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} size={14} /></span>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{cl?.company}</div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                    <PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} />
-                    <StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />
-                  </div>
+                  <span style={{ flex: 'none' }}><StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} /></span>
                 </div>
                 {p.status === 'pending' && (
-                  <div style={{ marginBottom: 14 }} onClick={(e) => { e.stopPropagation(); setPendingFor(p.id) }}>
+                  <div onClick={(e) => { e.stopPropagation(); setPendingFor(p.id) }}>
                     {p.expectedStartDate
                       ? <PendingDateChip date={p.expectedStartDate} style={{ cursor: 'pointer' }} />
                       : <span className="tag click" style={{ color: 'var(--blue)', background: 'transparent', borderColor: 'var(--blue)' }}><I.calendar width={12} height={12} /> Definir ingreso</span>}
                   </div>
                 )}
-                <div style={{ marginBottom: 14 }}><Progress value={calcProgress(p)} showLabel /></div>
-                {(() => {
-                  const mini = (label, Icon, kind, firstLabel) => {
-                    const t = trackInfo(p, kind)
-                    const bad = t.overdue
-                    return (
-                      <button className="surface surface-hover" onClick={(e) => { e.stopPropagation(); setLogModal({ projectId: p.id, kind }) }}
-                        style={{ padding: '8px 11px', background: bad ? 'var(--red-soft)' : 'var(--bg-elevated)', borderColor: bad ? 'var(--red)' : 'var(--border)', textAlign: 'left', cursor: 'pointer' }}>
-                        <div className="label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Icon width={12} height={12} /> {label}</div>
-                        <div className="mono" style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: bad ? 'var(--red)' : t.first ? 'var(--text-faint)' : 'var(--text)' }}>
-                          {t.first ? firstLabel : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)}{bad && ' ⚠'}
-                        </div>
-                      </button>
-                    )
-                  }
-                  return (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-                      {mini('Último mensaje', I.phone, 'comm', 'Sin primer mensaje')}
-                      {mini('Último avance', I.folder, 'avance', 'Sin primer avance')}
-                    </div>
-                  )
-                })()}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <ProjectTags tags={p.tags} onChange={(tags) => updateProject(p.id, { tags })} />
-                  <TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} />
+                <Progress value={pct} height={6} showLabel color={cardPctColor(pct)} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {mini('Último mensaje', I.phone, 'comm', 'Sin primer mensaje')}
+                  {mini('Último avance', I.folder, 'avance', 'Sin primer avance')}
                 </div>
-                <CardLinks project={p} onSave={(f) => updateProject(p.id, f)} />
+                <ProjectTags tags={p.tags} onChange={(tags) => updateProject(p.id, { tags })} />
+                <div style={{ height: 1, background: 'var(--border)' }} />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} />
+                  <CardLinks project={p} onSave={(f) => updateProject(p.id, f)} />
+                </div>
               </motion.div>
             )
           })}
