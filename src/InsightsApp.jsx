@@ -1301,17 +1301,18 @@ function Avatar({ user, size = 28, ring = 'var(--card)', title, onClick, badge, 
   )
 }
 
-/* dropdown to assign a user to a slot (pm/dev) — shows ALL users, role label editable */
-function AssignMenu({ slot, assignment, team, onChange, onClose }) {
+/* dropdown to assign a user to a slot (pm/dev) — shows ALL users, role label editable.
+   Se renderiza en un portal (position:fixed) para que quede por encima de las cards y no se superponga. */
+function AssignMenu({ slot, assignment, team, onChange, onClose, pos }) {
   const [q, setQ] = useState('')
   const dft = slot === 'pm' ? 'Project Manager' : 'Developer'
   const [label, setLabel] = useState(assignment?.roleLabel || dft)
   const filtered = team.filter((u) => u.name.toLowerCase().includes(q.toLowerCase().trim()))
   const pick = (userId) => { onChange({ userId, roleLabel: (label || dft).trim() }); onClose() }
-  return (
+  return createPortal(
     <>
-      <div onClick={(e) => { e.stopPropagation(); onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
-      <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '120%', left: 0, zIndex: 70, width: 248, padding: 10, boxShadow: 'var(--shadow)' }}>
+      <div onClick={(e) => { e.stopPropagation(); onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 300 }} />
+      <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 301, width: 248, padding: 10, boxShadow: 'var(--shadow)' }}>
         <div className="label" style={{ marginBottom: 8 }}>Asignar {slot === 'pm' ? 'PM' : 'Dev'}</div>
         <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Rol (ej: Lead Dev, Tech Lead…)" style={{ padding: '7px 9px', fontSize: 12.5, marginBottom: 7 }} />
         <div style={{ position: 'relative', marginBottom: 7 }}>
@@ -1334,7 +1335,8 @@ function AssignMenu({ slot, assignment, team, onChange, onClose }) {
           </button>
         )}
       </div>
-    </>
+    </>,
+    document.body
   )
 }
 
@@ -1342,12 +1344,23 @@ function AssignMenu({ slot, assignment, team, onChange, onClose }) {
 function TeamAvatars({ assignments, team, onChange, size = 28, ring = 'var(--card)' }) {
   const [menu, setMenu] = useState(null)      // 'pm' | 'dev' | null
   const [dual, setDual] = useState(false)     // mini chooser when same user fills both slots
+  const [anchor, setAnchor] = useState(null)  // rect del avatar clickeado, para posicionar el portal
   const a = assignments || { pm: null, dev: null }
   const userById = (id) => team.find((u) => u.id === id)
   const pmU = a.pm ? userById(a.pm.userId) : null
   const devU = a.dev ? userById(a.dev.userId) : null
   const same = a.pm && a.dev && a.pm.userId === a.dev.userId
   const setSlot = (slot, val) => onChange({ ...a, [slot]: val })
+  // ubica el menú (fixed) debajo del avatar, o arriba si no entra; clamp al viewport
+  const place = (h, w = 248) => {
+    if (!anchor) return { left: 8, top: 8 }
+    const left = Math.min(Math.max(8, anchor.left), window.innerWidth - w - 8)
+    const down = anchor.bottom + h <= window.innerHeight
+    return { left, top: down ? anchor.bottom + 6 : Math.max(8, anchor.top - h - 6) }
+  }
+  const capture = (e) => { const r = e.currentTarget.getBoundingClientRect(); setAnchor({ left: r.left, right: r.right, top: r.top, bottom: r.bottom }) }
+  const openSlot = (slot, e) => { e.stopPropagation(); if (menu === slot) { setMenu(null); return } capture(e); setDual(false); setMenu(slot) }
+  const openDual = (e) => { e.stopPropagation(); if (dual) { setDual(false); return } capture(e); setMenu(null); setDual(true) }
   const dbadge = (
     <span style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', fontSize: 7.5, fontWeight: 800, letterSpacing: '.02em', padding: '1px 4px', borderRadius: 6, background: 'var(--accent)', color: '#fff', border: '1.5px solid ' + ring, whiteSpace: 'nowrap', lineHeight: 1.3 }}>PM·DEV</span>
   )
@@ -1356,25 +1369,25 @@ function TeamAvatars({ assignments, team, onChange, size = 28, ring = 'var(--car
       <div style={{ display: 'flex', alignItems: 'center' }}>
         {same ? (
           <span style={{ position: 'relative' }}>
-            <Avatar user={pmU} size={size} ring={ring} title={`${a.pm.roleLabel} + ${a.dev.roleLabel}: ${pmU?.name}`} onClick={() => setDual((v) => !v)} badge={dbadge} />
+            <Avatar user={pmU} size={size} ring={ring} title={`${a.pm.roleLabel} + ${a.dev.roleLabel}: ${pmU?.name}`} onClick={openDual} badge={dbadge} />
           </span>
         ) : (
           <>
             <span style={{ position: 'relative', zIndex: 2 }}>
-              <Avatar user={pmU} size={size} ring={ring} empty={!pmU} title={pmU ? `${a.pm.roleLabel}: ${pmU.name}` : 'Asignar PM'} onClick={() => { setMenu(menu === 'pm' ? null : 'pm') }} />
+              <Avatar user={pmU} size={size} ring={ring} empty={!pmU} title={pmU ? `${a.pm.roleLabel}: ${pmU.name}` : 'Asignar PM'} onClick={(e) => openSlot('pm', e)} />
             </span>
             <span style={{ position: 'relative', zIndex: 1, marginLeft: Math.round(size * 0.28) }}>
-              <Avatar user={devU} size={size} ring={ring} empty={!devU} title={devU ? `${a.dev.roleLabel}: ${devU.name}` : 'Asignar Dev'} onClick={() => { setMenu(menu === 'dev' ? null : 'dev') }} />
+              <Avatar user={devU} size={size} ring={ring} empty={!devU} title={devU ? `${a.dev.roleLabel}: ${devU.name}` : 'Asignar Dev'} onClick={(e) => openSlot('dev', e)} />
             </span>
           </>
         )}
       </div>
 
-      {/* mini chooser for the same-user case */}
-      {dual && (
+      {/* mini chooser para el caso mismo-usuario (portal, por encima de todo) */}
+      {dual && createPortal(
         <>
-          <div onClick={(e) => { e.stopPropagation(); setDual(false) }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
-          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '120%', left: 0, zIndex: 70, padding: 6, minWidth: 180, boxShadow: 'var(--shadow)' }}>
+          <div onClick={(e) => { e.stopPropagation(); setDual(false) }} style={{ position: 'fixed', inset: 0, zIndex: 300 }} />
+          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', ...place(100, 200), zIndex: 301, padding: 6, minWidth: 180, boxShadow: 'var(--shadow)' }}>
             {['pm', 'dev'].map((slot) => (
               <button key={slot} className="row-hover" onClick={() => { setDual(false); setMenu(slot) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13 }}>
                 <span style={{ fontWeight: 700, color: 'var(--accent)', minWidth: 30 }}>{slot.toUpperCase()}</span>
@@ -1382,11 +1395,12 @@ function TeamAvatars({ assignments, team, onChange, size = 28, ring = 'var(--car
               </button>
             ))}
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {menu && (
-        <AssignMenu slot={menu} assignment={a[menu]} team={team} onChange={(val) => setSlot(menu, val)} onClose={() => setMenu(null)} />
+        <AssignMenu slot={menu} assignment={a[menu]} team={team} onChange={(val) => setSlot(menu, val)} onClose={() => setMenu(null)} pos={place(360)} />
       )}
     </div>
   )
