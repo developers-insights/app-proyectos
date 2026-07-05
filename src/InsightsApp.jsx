@@ -230,22 +230,26 @@ function seedClients() {
 }
 
 /* team members — rol NO fijo (se define por proyecto en assignments) */
+/* miembros dados de baja (se eliminan del equipo aunque estén guardados en la data) */
+const REMOVED_MEMBER_IDS = ['u4']   // Nicolas Arditi
+/* email de login (Supabase) por miembro — para auto-vincular al iniciar sesión sin duplicar */
+const SEED_EMAILS = { u1: 'federicog@insightsapps.tech', u2: 'lisandropiva@insightsapps.tech', u3: 'manuelnavarro@insightsapps.tech', u5: 'juanp@insightsapps.tech', u7: 'nachocachaza@insightsapps.tech' }
 function seedTeam() {
   return [
-    { id: 'u1', name: 'Federico Garbarino', color: '#F97316', initials: 'FG' },
-    { id: 'u2', name: 'Lisandro', color: '#6366F1', initials: 'L' },
-    { id: 'u3', name: 'Manuel Navarro', color: '#10B981', initials: 'MN' },
-    { id: 'u4', name: 'Nicolas Arditi', color: '#EC4899', initials: 'NA' },
-    { id: 'u5', name: 'Juan Pamies', color: '#38BDF8', initials: 'JP' },
+    { id: 'u1', name: 'Federico Garbarino', email: SEED_EMAILS.u1, color: '#F97316', initials: 'FG' },
+    { id: 'u2', name: 'Lisandro', email: SEED_EMAILS.u2, color: '#6366F1', initials: 'L' },
+    { id: 'u3', name: 'Manuel Navarro', email: SEED_EMAILS.u3, color: '#10B981', initials: 'MN' },
+    { id: 'u5', name: 'Juan Pamies', email: SEED_EMAILS.u5, color: '#38BDF8', initials: 'JP' },
     { id: 'u6', name: 'Valentin Toledo', color: '#A855F7', initials: 'VT' },
+    { id: 'u7', name: 'Nacho Cachaza', email: SEED_EMAILS.u7, color: '#F43F5E', initials: 'NC' },
   ]
 }
 /* default demo assignments for the original 5 projects (rol por proyecto) */
 const DEMO_ASSIGN = {
   p1: { pm: { userId: 'u1', roleLabel: 'Project Manager' }, dev: { userId: 'u3', roleLabel: 'Developer' } },
-  p2: { pm: { userId: 'u2', roleLabel: 'Project Manager' }, dev: { userId: 'u4', roleLabel: 'Developer' } },
+  p2: { pm: { userId: 'u2', roleLabel: 'Project Manager' }, dev: { userId: 'u6', roleLabel: 'Developer' } },
   p3: { pm: { userId: 'u1', roleLabel: 'Project Manager' }, dev: { userId: 'u5', roleLabel: 'Developer' } },
-  p4: { pm: { userId: 'u4', roleLabel: 'Project Manager' }, dev: { userId: 'u3', roleLabel: 'Developer' } },
+  p4: { pm: { userId: 'u6', roleLabel: 'Project Manager' }, dev: { userId: 'u3', roleLabel: 'Developer' } },
   p5: { pm: { userId: 'u1', roleLabel: 'Project Manager' }, dev: { userId: 'u1', roleLabel: 'Lead Dev' } },
 }
 const TAG_NEW = () => ({ id: uid(), text: 'New', color: '#22C55E' })
@@ -530,16 +534,20 @@ const STORE_KEY = 'insights_os_v1'
 /* merge seeds into persisted state without wiping user edits */
 function migrate(state) {
   if (!state.team || !state.team.length) state.team = seedTeam()
-  // add any new team members that aren't present yet (by id)
+  // add any new team members that aren't present yet (by id) — ej: Nacho Cachaza (u7)
   const uIds = new Set(state.team.map((u) => u.id))
   seedTeam().forEach((u) => { if (!uIds.has(u.id)) state.team.push(u) })
+  // baja forzada de miembros dados de baja (ej: Nicolas Arditi = u4)
+  state.team = state.team.filter((u) => !REMOVED_MEMBER_IDS.includes(u.id))
+  // backfill del email de login en miembros que no lo tienen (auto-vincula sin duplicar)
+  state.team = state.team.map((u) => (!u.email && SEED_EMAILS[u.id]) ? { ...u, email: SEED_EMAILS[u.id] } : u)
   if (!state.clients) state.clients = seedClients()
   if (!state.projects) state.projects = seedProjects()
   if (!state.calls) state.calls = seedCalls()
   state.calls = state.calls.map((c) => ({ ...c, priority: c.priority || 'normal', type: c.type || 'soporte', summary: c.summary || '', transcript: c.transcript || '' }))
   if (!state.assistantChats) state.assistantChats = []
   if (!state.tasks) state.tasks = seedTasks()
-  state.tasks = state.tasks.map((t) => ({ ...t, priority: t.priority || 'normal' }))
+  state.tasks = state.tasks.map((t) => ({ ...t, priority: t.priority || 'normal', assigneeId: REMOVED_MEMBER_IDS.includes(t.assigneeId) ? '' : t.assigneeId }))
   if (!state.activity) state.activity = []
   // add new clients/projects that aren't present yet (by id)
   const cIds = new Set(state.clients.map((c) => c.id))
@@ -547,11 +555,17 @@ function migrate(state) {
   const pIds = new Set(state.projects.map((p) => p.id))
   seedProjects().forEach((p) => { if (!pIds.has(p.id)) state.projects.push(p) })
   // ensure assignments + tags exist, normalize sprint statuses, add description/comments, drop devUrl
+  const stripRemoved = (as) => {
+    const r = { pm: as?.pm || null, dev: as?.dev || null }
+    if (r.pm && REMOVED_MEMBER_IDS.includes(r.pm.userId)) r.pm = null
+    if (r.dev && REMOVED_MEMBER_IDS.includes(r.dev.userId)) r.dev = null
+    return r
+  }
   state.projects = state.projects.map((p) => {
     const { devUrl, ...rest } = p   // devUrl eliminado del modelo
     return {
       ...rest,
-      assignments: rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null },
+      assignments: stripRemoved(rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null }),
       tags: rest.tags || [],
       priority: rest.priority || 'normal',
       createdAt: rest.createdAt || new Date().toISOString(),
