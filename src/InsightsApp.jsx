@@ -1851,14 +1851,26 @@ function Projects({ onOpenProject }) {
           <table>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Proyecto', 'Cliente', 'Equipo', 'Estado', 'Avance', 'Sprint actual', 'Deploy', 'Cobrado'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+                {['Proyecto', 'Cliente', 'Equipo', 'Estado', 'Avance', 'Sprint actual', 'Últ. comunicación', 'Últ. avance'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {list.map((p) => {
                 const cl = clientOf(p.clientId)
-                const dd = daysAgo(p.lastDeployDate)
                 const cs = p.sprints.find((s) => normSprint(s.status) === 'en proceso')
+                const trackCell = (kind, firstLabel) => {
+                  const t = trackInfo(p, kind)
+                  const bad = t.overdue
+                  const val = t.first ? firstLabel : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)
+                  return (
+                    <td style={{ padding: '13px 16px' }}>
+                      <button onClick={(e) => { e.stopPropagation(); setLogModal({ projectId: p.id, kind }) }} title="Ver / registrar" className="mono row-hover"
+                        style={{ fontSize: 12.5, fontWeight: 600, background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 7px', borderRadius: 7, whiteSpace: 'nowrap', color: bad ? 'var(--red)' : t.first ? 'var(--text-faint)' : 'var(--text)' }}>
+                        {val}{bad ? ' ⚠' : ''}
+                      </button>
+                    </td>
+                  )
+                }
                 return (
                   <tr key={p.id} className="row-hover click" onClick={() => onOpenProject(p.id)} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '13px 16px', fontWeight: 600 }}>{p.name}</td>
@@ -1867,8 +1879,8 @@ function Projects({ onOpenProject }) {
                     <td style={{ padding: '13px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} /><StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />{p.status === 'pending' && p.expectedStartDate && <PendingDateChip date={p.expectedStartDate} />}</div></td>
                     <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={calcProgress(p)} showLabel /></td>
                     <td style={{ padding: '13px 16px', color: 'var(--text-dim)', fontSize: 13 }}>{cs?.name || '—'}</td>
-                    <td style={{ padding: '13px 16px' }} className="mono"><span style={{ color: dd > 7 ? 'var(--red)' : 'var(--text-dim)' }}>{dd == null ? '—' : `${dd}d`}</span></td>
-                    <td style={{ padding: '13px 16px' }} className="mono">{money(p.paidAmount)}</td>
+                    {trackCell('comm', 'Sin primer mensaje')}
+                    {trackCell('avance', 'Sin primer avance')}
                   </tr>
                 )
               })}
