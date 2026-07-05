@@ -3089,9 +3089,58 @@ function TasksView() {
    17 · SIDEBAR + USER PROFILE
 ============================================================================ */
 /* floating profile avatar (bottom-right): solo foto + a quién representa */
+/* paleta y iniciales automáticas para nuevos miembros */
+const AVATAR_COLORS = ['#F97316', '#6366F1', '#10B981', '#EC4899', '#38BDF8', '#A855F7', '#F59E0B', '#14B8A6', '#EF4444', '#8B5CF6', '#0EA5E9', '#22C55E']
+const autoInitials = (name) => ((name || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase()) || '?'
+
+/* gestor del equipo: agregar / editar / quitar miembros que aparecen en asignaciones y @menciones */
+function TeamManager({ open, onClose }) {
+  const { data, setData } = useApp()
+  const team = data.team || []
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const add = () => {
+    const n = name.trim(); if (!n) return
+    const m = { id: uid(), name: n, email: email.trim(), initials: autoInitials(n), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length] }
+    setData((d) => ({ ...d, team: [...(d.team || []), m] }))
+    setName(''); setEmail('')
+  }
+  const update = (id, fields) => setData((d) => ({ ...d, team: d.team.map((u) => (u.id === id ? { ...u, ...fields } : u)) }))
+  const remove = (id) => { if (window.confirm('¿Quitar a esta persona del equipo? Sus asignaciones quedarán sin nadie (no se borran proyectos ni tareas).')) setData((d) => ({ ...d, team: d.team.filter((u) => u.id !== id) })) }
+  return (
+    <Modal open={open} onClose={onClose} title="Equipo" sub="Miembros que aparecen en asignaciones, comentarios y @menciones" width={560}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {team.map((u) => (
+            <div key={u.id} className="surface" style={{ padding: '9px 11px', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Avatar user={u} size={30} ring="var(--bg-elevated)" />
+              <input className="input" value={u.name} onChange={(e) => update(u.id, { name: e.target.value, initials: autoInitials(e.target.value) })} placeholder="Nombre" style={{ flex: '1 1 130px', padding: '6px 9px', fontSize: 13 }} />
+              <input className="input mono" value={u.email || ''} onChange={(e) => update(u.id, { email: e.target.value })} placeholder="email@insightsapps.tech" style={{ flex: '1 1 160px', padding: '6px 9px', fontSize: 12.5 }} />
+              <button className="btn btn-sm btn-ghost" onClick={() => remove(u.id)} title="Quitar del equipo" style={{ padding: 6, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
+            </div>
+          ))}
+        </div>
+        <hr className="divider" />
+        <div>
+          <div className="label" style={{ marginBottom: 8 }}>Agregar miembro</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre y apellido" style={{ flex: '1 1 130px' }} />
+            <input className="input mono" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }} placeholder="email (para auto-login)" style={{ flex: '1 1 160px' }} />
+            <button className="btn btn-accent" onClick={add}><I.plus width={15} height={15} /> Agregar</button>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 9 }}>
+            El <strong>email</strong> tiene que coincidir con el usuario de Supabase para que la persona se reconozca sola al iniciar sesión. Agregar un miembro acá <strong>no</strong> crea su login: eso se hace aparte en Supabase → Authentication.
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
   const { data, setData } = useApp()
   const [open, setOpen] = useState(false)
+  const [teamOpen, setTeamOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
   const team = data.team || []
@@ -3135,6 +3184,7 @@ function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
               </select>
             </Field>
             <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 7 }}>{me ? 'Tu foto se ve abajo a la derecha y en las tarjetas donde estés asignado.' : 'Elegí tu nombre para poder subir tu foto.'}</div>
+            <button className="btn" onClick={() => { setOpen(false); setTeamOpen(true) }} style={{ width: '100%', marginTop: 12, justifyContent: 'center' }}><I.users width={15} height={15} /> Gestionar equipo</button>
           </div>
 
           <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
@@ -3143,6 +3193,7 @@ function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
           </div>
         </div>
       </Modal>
+      <TeamManager open={teamOpen} onClose={() => setTeamOpen(false)} />
     </>
   )
 }
