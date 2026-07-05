@@ -135,6 +135,15 @@ table{border-collapse:collapse;width:100%}
 @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
 .skel{background:linear-gradient(90deg,var(--card) 25%,var(--card-hover) 50%,var(--card) 75%);
   background-size:800px 100%;animation:shimmer 1.4s infinite linear;border-radius:8px}
+
+/* --- responsive / mobile --- */
+@media (max-width: 760px){
+  .app-shell{ background-image:none }
+  .view{ padding:18px 14px 48px !important }
+  .tbl{ overflow-x:auto !important }
+  .tbl > table{ min-width:600px }
+  .hide-mobile{ display:none !important }
+}
 `
 
 /* ============================================================================
@@ -181,6 +190,7 @@ const I = {
   flag: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M5 21V4"/><path d="M5 4h12l-2.4 3.5L17 11H5z" fill="currentColor"/></svg>,
   bell: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>,
   at: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"/></svg>,
+  menu: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" {...p}><path d="M4 7h16M4 12h16M4 17h16"/></svg>,
 }
 
 /* ============================================================================
@@ -199,6 +209,20 @@ const pctColor = (p) => (p < 40 ? 'var(--red)' : p <= 70 ? 'var(--accent)' : 'va
 /* color de la barra de avance en las cards: verde ≥70, ámbar ≥40, naranja >0, gris en 0 */
 const cardPctColor = (p) => (p >= 70 ? 'var(--green)' : p >= 40 ? 'var(--yellow)' : p > 0 ? 'var(--accent)' : 'var(--text-faint)')
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
+/* detecta viewport de celular (para menú hamburguesa, grid 1 por fila, etc.) */
+function useIsMobile(bp = 760) {
+  const q = `(max-width:${bp}px)`
+  const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(q)
+    const on = () => setM(mq.matches)
+    on()
+    mq.addEventListener ? mq.addEventListener('change', on) : mq.addListener(on)
+    window.addEventListener('resize', on)
+    return () => { mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on); window.removeEventListener('resize', on) }
+  }, [bp])
+  return m
+}
 
 /* identidad visual del proyecto: iniciales (ignorando conectores) + color propio derivado del proyecto */
 const PROJECT_HUES = ['#6366F1', '#14B8A6', '#22C55E', '#F59E0B', '#0EA5E9', '#A855F7', '#EC4899', '#F43F5E', '#FB923C', '#84CC16', '#3B82F6', '#8B5CF6']
@@ -1760,7 +1784,7 @@ function Projects({ onOpenProject }) {
   if (prioFilter === 'sort') list = [...list].sort((a, b) => projPrioMeta(b.priority).rank - projPrioMeta(a.priority).rank)
 
   return (
-    <div style={{ padding: '28px 34px 60px' }}>
+    <div className="view" style={{ padding: '28px 34px 60px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginBottom: 22 }}>
         <div>
           <div className="label" style={{ marginBottom: 6 }}>Cartera</div>
@@ -1820,7 +1844,7 @@ function Projects({ onOpenProject }) {
       {list.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>{q ? <>Sin proyectos que coincidan con «{search.trim()}».</> : 'Sin proyectos en esta vista.'}</div>}
 
       {view === 'cards' ? (
-        <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(340px,1fr))', gap: 16 }}>
+        <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,340px),1fr))', gap: 16 }}>
           {list.map((p) => {
             const cl = clientOf(p.clientId)
             const dd = daysAgo(p.lastDeployDate)
@@ -1875,11 +1899,11 @@ function Projects({ onOpenProject }) {
           })}
         </motion.div>
       ) : (
-        <div className="surface" style={{ overflow: 'hidden' }}>
+        <div className="surface tbl" style={{ overflow: 'hidden' }}>
           <table>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Proyecto', 'Cliente', 'Equipo', 'Estado', 'Avance', 'Sprint actual', 'Últ. comunicación', 'Últ. avance'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+                {['Proyecto', 'Cliente', 'Equipo', 'Estado', 'Avance', 'Sprint actual', 'Últ. comunicación', 'Últ. avance'].map((h) =><th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -2224,12 +2248,12 @@ function Clients() {
   }
 
   return (
-    <div style={{ padding: '28px 34px 60px' }}>
+    <div className="view" style={{ padding: '28px 34px 60px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Cuentas</div><h1 style={{ fontSize: 32 }}>Clientes</h1></div>
         <button className="btn btn-accent" onClick={() => setCreating(true)}><I.plus width={15} height={15} /> Agregar cliente</button>
       </div>
-      <div className="surface" style={{ overflow: 'hidden' }}>
+      <div className="surface tbl" style={{ overflow: 'hidden' }}>
         <table>
           <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
             {['Cliente', 'Empresa', 'Email', 'Proyectos activos', 'Onboarding'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
@@ -2450,7 +2474,7 @@ function Calls() {
   )
 
   return (
-    <div style={{ padding: '28px 34px 60px' }}>
+    <div className="view" style={{ padding: '28px 34px 60px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Soporte & seguimiento</div><h1 style={{ fontSize: 32 }}>Calls</h1></div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -2483,7 +2507,7 @@ function Calls() {
       {filtered.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Sin llamadas. Cargá una cuenta de Fathom y tocá “Traer calls”, o agregá una manual.</div>}
 
       {filtered.length > 0 && (
-        <div className="surface" style={{ overflow: 'hidden' }}>
+        <div className="surface tbl" style={{ overflow: 'hidden' }}>
           <table>
             <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
               {['Asesor', 'Nombre', 'Tipo', 'Cliente', 'Proyecto', 'Fecha', 'Fathom', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
@@ -3008,13 +3032,34 @@ function AssistantView() {
 /* ============================================================================
    16c · TAREAS — tabla / kanban, simple: asignado · tarea · entrega · notas · comentarios
 ============================================================================ */
+/* fecha límite: chip que al clickear abre el calendario nativo (fondo negro/blanco según el tema vía color-scheme) */
+function DueDate({ value, onChange }) {
+  const ref = useRef(null)
+  const iso = value ? value.slice(0, 10) : ''
+  const today = new Date()
+  const tstr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const overdue = iso && iso < tstr
+  const openCal = (e) => { e.stopPropagation(); const el = ref.current; if (!el) return; try { el.showPicker() } catch (err) { el.focus() } }
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex' }} onClick={(e) => e.stopPropagation()}>
+      <button onClick={openCal} className="tag" title={iso ? 'Cambiar fecha límite' : 'Poner fecha límite'}
+        style={{ cursor: 'pointer', background: 'var(--bg-elevated)', borderColor: overdue ? 'var(--red)' : 'var(--border)', color: iso ? (overdue ? 'var(--red)' : 'var(--text)') : 'var(--text-faint)' }}>
+        <I.calendar width={13} height={13} />{iso ? fmtDate(value) : 'Fecha límite'}{overdue ? ' ⚠' : ''}
+      </button>
+      {iso && <button onClick={(e) => { e.stopPropagation(); onChange('') }} title="Quitar fecha" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 3, color: 'var(--text-faint)', background: 'transparent' }}><I.x width={12} height={12} /></button>}
+      <input ref={ref} type="date" value={iso} onChange={(e) => onChange(e.target.value ? dateInputISO(e.target.value) : '')}
+        style={{ position: 'absolute', left: 0, bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: 'none' }} />
+    </span>
+  )
+}
+
 function TaskDetailModal({ open, task, team, onClose, onPatch, onDelete }) {
   if (!task) return <Modal open={open} onClose={onClose} title="Tarea" />
   return (
     <Modal open={open} onClose={onClose} title={task.name || 'Tarea'} sub="Tarea" width={560}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Field label="Tarea"><input className="input" value={task.name} onChange={(e) => onPatch({ name: e.target.value })} /></Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
           <Field label="Asignado">
             <select className="input" value={task.assigneeId || ''} onChange={(e) => onPatch({ assigneeId: e.target.value })}>
               <option value="">— Sin asignar —</option>
@@ -3030,6 +3075,9 @@ function TaskDetailModal({ open, task, team, onClose, onPatch, onDelete }) {
             <select className="input" value={task.status || 'pendiente'} onChange={(e) => onPatch({ status: e.target.value })}>
               {TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
             </select>
+          </Field>
+          <Field label="Fecha límite">
+            <input className="input mono" type="date" value={task.dueDate ? task.dueDate.slice(0, 10) : ''} onChange={(e) => onPatch({ dueDate: e.target.value ? dateInputISO(e.target.value) : '' })} />
           </Field>
         </div>
         <Field label="Notas / info para hacer la tarea mejor"><textarea className="input" rows={4} value={task.notes || ''} onChange={(e) => onPatch({ notes: e.target.value })} placeholder="Contexto, links, detalles…" /></Field>
@@ -3077,8 +3125,8 @@ function TasksView() {
   }
 
   return (
-    <div style={{ padding: '28px 34px 60px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+    <div className="view" style={{ padding: '28px 34px 60px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Equipo</div><h1 style={{ fontSize: 32 }}>Tareas</h1></div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
@@ -3092,10 +3140,10 @@ function TasksView() {
       {tasks.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Sin tareas. Agregá la primera con “Agregar tarea”.</div>}
 
       {tasks.length > 0 && view === 'table' && (
-        <div className="surface" style={{ overflow: 'hidden' }}>
+        <div className="surface tbl" style={{ overflow: 'hidden' }}>
           <table>
             <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Asignado', 'Tarea', 'Prioridad', 'Estado', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+              {['Asignado', 'Tarea', 'Prioridad', 'Entrega', 'Estado', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
             </tr></thead>
             <tbody>
               {tasks.map((t) => (
@@ -3103,6 +3151,7 @@ function TasksView() {
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Assignee id={t.assigneeId} /></td>
                   <td style={{ padding: '12px 16px', fontWeight: 600 }}>{t.name}{(t.comments || []).length > 0 && <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{t.comments.length}</span>}</td>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><PrioFlag p={t.priority} withLabel /></td>
+                  <td style={{ padding: '8px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}><DueDate value={t.dueDate} onChange={(v) => updateTask(t.id, { dueDate: v })} /></td>
                   <td style={{ padding: '8px 16px' }} onClick={(e) => e.stopPropagation()}>
                     <select className="input" value={t.status} onChange={(e) => updateTask(t.id, { status: e.target.value })} style={{ width: 'auto', padding: '6px 8px', fontSize: 13 }}>
                       {TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -3138,6 +3187,7 @@ function TasksView() {
                       onClick={() => setOpenId(t.id)}
                       className="surface click" style={{ padding: 11, background: 'var(--card)', cursor: 'grab', opacity: dragId === t.id ? 0.5 : 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>{t.name}</div>
+                      <div style={{ marginBottom: 8 }}><DueDate value={t.dueDate} onChange={(v) => updateTask(t.id, { dueDate: v })} /></div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         {t.assigneeId ? <Avatar user={userOf(t.assigneeId)} size={24} ring="var(--card)" /> : <Avatar empty size={24} ring="var(--card)" />}
                         <PrioFlag p={t.priority} />
@@ -3270,7 +3320,7 @@ function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
   )
 }
 
-function Sidebar({ route, setRoute, collapsed, setCollapsed }) {
+function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClose }) {
   const items = [
     { key: 'projects', label: 'Projects', icon: I.folder },
     { key: 'tasks', label: 'Tareas', icon: I.tasks },
@@ -3278,31 +3328,55 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed }) {
     { key: 'calls', label: 'Calls', icon: I.phone },
     { key: 'assistant', label: 'IA Assistant', icon: I.spark },
   ]
-  return (
-    <motion.aside animate={{ width: collapsed ? 64 : 232 }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-      style={{ flexShrink: 0, borderRight: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+  const mini = !mobile && collapsed          // solo colapsa en desktop
+  const go = (key) => { setRoute({ view: key }); if (mobile && onClose) onClose() }
+  const inner = (
+    <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '18px 16px', height: 64 }}>
         <div style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--accent)', display: 'grid', placeItems: 'center', flexShrink: 0, fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: 17 }}>I</div>
-        {!collapsed && <div style={{ minWidth: 0 }}><div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 15, lineHeight: 1 }}>Insights</div><div style={{ fontSize: 10.5, color: 'var(--text-faint)', letterSpacing: '.04em' }}>SOFTWARE · OS</div></div>}
+        {!mini && <div style={{ minWidth: 0 }}><div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 15, lineHeight: 1 }}>Insights</div><div style={{ fontSize: 10.5, color: 'var(--text-faint)', letterSpacing: '.04em' }}>SOFTWARE · OS</div></div>}
+        {mobile && <button onClick={onClose} className="btn btn-sm btn-ghost" title="Cerrar" style={{ marginLeft: 'auto', padding: 6 }}><I.x width={16} height={16} /></button>}
       </div>
       <hr className="divider" />
       <nav style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 3, flex: 1 }}>
         {items.map((it) => {
           const active = route.view === it.key || (route.view === 'project' && it.key === 'projects')
           return (
-            <button key={it.key} onClick={() => setRoute({ view: it.key })} title={collapsed ? it.label : ''}
+            <button key={it.key} onClick={() => go(it.key)} title={mini ? it.label : ''}
               className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-soft)' : 'transparent', fontWeight: 600, fontSize: 14, position: 'relative' }}>
               {active && <span style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 9, background: 'var(--accent)' }} />}
               <it.icon width={18} height={18} style={{ flexShrink: 0 }} />
-              {!collapsed && it.label}
+              {!mini && it.label}
             </button>
           )
         })}
       </nav>
-      <hr className="divider" />
-      <button onClick={() => setCollapsed((v) => !v)} className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', color: 'var(--text-faint)', fontSize: 13 }}>
-        <I.panelLeft width={17} height={17} style={{ transform: collapsed ? 'scaleX(-1)' : 'none' }} />{!collapsed && 'Colapsar'}
-      </button>
+      {!mobile && (
+        <>
+          <hr className="divider" />
+          <button onClick={() => setCollapsed((v) => !v)} className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', color: 'var(--text-faint)', fontSize: 13 }}>
+            <I.panelLeft width={17} height={17} style={{ transform: collapsed ? 'scaleX(-1)' : 'none' }} />{!collapsed && 'Colapsar'}
+          </button>
+        </>
+      )}
+    </>
+  )
+
+  if (mobile) {
+    return createPortal(
+      <>
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)', zIndex: 150, opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none', transition: 'opacity .25s ease' }} />
+        <aside style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 236, zIndex: 151, borderRight: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: 'var(--shadow)', transform: open ? 'translateX(0)' : 'translateX(-260px)', transition: 'transform .28s cubic-bezier(.16,1,.3,1)' }}>
+          {inner}
+        </aside>
+      </>,
+      document.body
+    )
+  }
+  return (
+    <motion.aside animate={{ width: collapsed ? 64 : 232 }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+      style={{ flexShrink: 0, borderRight: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {inner}
     </motion.aside>
   )
 }
@@ -3392,17 +3466,18 @@ function NotificationCenter() {
   )
 }
 
-function Header({ theme, setTheme, onSettings, route, sync, onLogout }) {
+function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
   const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', assistant: 'IA Assistant', project: 'Projects / Detalle' }[route.view]
   return (
-    <header style={{ height: 64, flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', background: 'var(--bg-elevated)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-dim)', fontSize: 13 }}>
-        <span className="mono" style={{ color: 'var(--text-faint)' }}>insights-os</span><I.chevR width={14} height={14} style={{ color: 'var(--text-faint)' }} /><strong style={{ color: 'var(--text)' }}>{crumb}</strong>
+    <header style={{ height: 64, flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: mobile ? '0 12px' : '0 24px', background: 'var(--bg-elevated)', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-dim)', fontSize: 13, minWidth: 0 }}>
+        {mobile && <button onClick={onMenu} className="btn btn-sm btn-ghost" title="Menú" style={{ padding: 7 }}><I.menu width={18} height={18} /></button>}
+        <span className="mono hide-mobile" style={{ color: 'var(--text-faint)' }}>insights-os</span><I.chevR width={14} height={14} className="hide-mobile" style={{ color: 'var(--text-faint)' }} /><strong style={{ color: 'var(--text)' }}>{crumb}</strong>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <SyncBadge sync={sync} />
+        <span className="hide-mobile"><SyncBadge sync={sync} /></span>
         <NotificationCenter />
-        <button className="btn btn-sm btn-ghost" onClick={onSettings} title="Ajustes & API keys">⚙ <span style={{ marginLeft: 2 }}>Ajustes</span></button>
+        <button className="btn btn-sm btn-ghost" onClick={onSettings} title="Ajustes & API keys">⚙ <span className="hide-mobile" style={{ marginLeft: 2 }}>Ajustes</span></button>
         <button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Cambiar tema" style={{ padding: 8 }}>
           {theme === 'dark' ? <I.sun width={16} height={16} /> : <I.moon width={16} height={16} />}
         </button>
@@ -3495,6 +3570,9 @@ function AppShell({ session, onLogout }) {
   const [collapsed, setCollapsed] = useState(false)
   const [settings, setSettings] = useState(false)
   const [myId, setMyId] = useState(() => localStorage.getItem('my_team_id') || '')
+  const isMobile = useIsMobile()
+  const [navOpen, setNavOpen] = useState(false)
+  useEffect(() => { if (!isMobile) setNavOpen(false) }, [isMobile])
 
   useEffect(() => {
     const vars = THEMES[theme]
@@ -3536,9 +3614,9 @@ function AppShell({ session, onLogout }) {
   return (
     <AppCtx.Provider value={{ data, setData, logActivity }}>
       <div className="app-shell">
-        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} />
+        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+          <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} mobile={isMobile} onMenu={() => setNavOpen(true)} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
               style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' ? 'hidden' : 'auto' }}>
