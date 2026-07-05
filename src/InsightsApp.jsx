@@ -3475,12 +3475,27 @@ function AppShell({ session, onLogout }) {
     localStorage.setItem('theme', theme)
   }, [theme])
 
-  // remember "who am I"; auto-link by matching email the first time
+  // remember "who am I"; auto-vincular / auto-alta del usuario logueado en el equipo
   useEffect(() => { if (myId) localStorage.setItem('my_team_id', myId) }, [myId])
   useEffect(() => {
-    if (myId || !session?.user?.email) return
-    const m = (data.team || []).find((u) => u.email && u.email.toLowerCase() === session.user.email.toLowerCase())
-    if (m) setMyId(m.id)
+    if (!session?.user?.email) return
+    const email = session.user.email
+    const team = data.team || []
+    // 1) ya hay un miembro con ese email → vincular
+    const byEmail = team.find((u) => u.email && u.email.toLowerCase() === email.toLowerCase())
+    if (byEmail) { if (myId !== byEmail.id) setMyId(byEmail.id); return }
+    // 2) ya elegiste tu nombre ("Sos:") pero ese miembro no tiene email → completárselo (evita duplicar)
+    if (myId) {
+      const mine = team.find((u) => u.id === myId)
+      if (mine && !mine.email) setData((d) => ({ ...d, team: d.team.map((u) => (u.id === myId ? { ...u, email } : u)) }))
+      return
+    }
+    // 3) nadie coincide → dar de alta al usuario en el equipo desde su sesión de Supabase
+    const meta = session.user.user_metadata || {}
+    const name = meta.name || meta.full_name || email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    const nid = uid()
+    setData((d) => ({ ...d, team: [...(d.team || []), { id: nid, name, email, initials: autoInitials(name), color: AVATAR_COLORS[(d.team || []).length % AVATAR_COLORS.length] }] }))
+    setMyId(nid)
   }, [session, data.team, myId])
 
   const openProject = (id) => setRoute({ view: 'project', projectId: id })
