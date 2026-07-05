@@ -191,6 +191,9 @@ const I = {
   bell: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>,
   at: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"/></svg>,
   menu: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" {...p}><path d="M4 7h16M4 12h16M4 17h16"/></svg>,
+  gear: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+  eye: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>,
+  eyeOff: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M17.9 17.9A10.7 10.7 0 0 1 12 19c-7 0-11-7-11-7a19 19 0 0 1 5.1-5.9m3.3-1.6A10.7 10.7 0 0 1 12 5c7 0 11 7 11 7a19 19 0 0 1-2.2 3.2M9.9 4.2 21 21"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>,
 }
 
 /* ============================================================================
@@ -1168,6 +1171,51 @@ function CardLinks({ project, onSave }) {
   )
 }
 
+/* editor de la tarjeta del proyecto: links (testing/whatsapp) + qué accesos mostrar en la card */
+function CardConfigModal({ open, project, onClose, onSave }) {
+  const [t, setT] = useState('')
+  const [w, setW] = useState('')
+  const [show, setShow] = useState({ scope: true, testing: true, whatsapp: true })
+  useEffect(() => {
+    if (open && project) {
+      setT(project.testingUrl || project.productionUrl || '')
+      setW(project.whatsappUrl || '')
+      setShow({ scope: true, testing: true, whatsapp: true, ...(project.cardActions || {}) })
+    }
+  }, [open, project && project.id])
+  if (!project) return <Modal open={open} onClose={onClose} title="Tarjeta" />
+  const Toggle = ({ k, label, sub, Ico }) => (
+    <button onClick={() => setShow((s) => ({ ...s, [k]: !s[k] }))} className="row-hover"
+      style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 12px', borderRadius: 11, border: '1px solid var(--border)', background: show[k] ? 'var(--accent-soft)' : 'var(--bg-elevated)', width: '100%', textAlign: 'left' }}>
+      <Ico width={17} height={17} style={{ color: show[k] ? 'var(--accent)' : 'var(--text-faint)', flexShrink: 0 }} />
+      <span style={{ flex: 1, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{label}</span>{sub && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-faint)' }}>{sub}</span>}</span>
+      <span style={{ width: 38, height: 22, borderRadius: 99, background: show[k] ? 'var(--accent)' : 'var(--border-strong)', position: 'relative', flexShrink: 0, transition: 'background .15s' }}>
+        <span style={{ position: 'absolute', top: 2, left: show[k] ? 18 : 2, width: 18, height: 18, borderRadius: 99, background: '#fff', transition: 'left .15s' }} />
+      </span>
+    </button>
+  )
+  return (
+    <Modal open={open} onClose={onClose} title="Editar tarjeta" sub={project.name} width={470}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Field label="Testing / Deploy URL (Render, Vercel…)"><input className="input" value={t} onChange={(e) => setT(e.target.value)} placeholder="https://mi-app.onrender.com" /></Field>
+        <Field label="Grupo de WhatsApp"><input className="input" value={w} onChange={(e) => setW(e.target.value)} placeholder="https://chat.whatsapp.com/..." /></Field>
+        <div>
+          <div className="label" style={{ marginBottom: 8 }}>Accesos visibles en la tarjeta</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Toggle k="scope" label="Alcance" sub="PDFs, contexto, calls y notas" Ico={I.pdf} />
+            <Toggle k="testing" label="Testing / deploy" sub="Abre la URL de la app" Ico={I.gear} />
+            <Toggle k="whatsapp" label="WhatsApp" sub="Grupo del cliente" Ico={I.whatsapp} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button className="btn" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" onClick={() => { onSave({ testingUrl: t, whatsappUrl: w, cardActions: show }); onClose() }}><I.check width={15} height={15} /> Guardar</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 /* inline "add task" input used inside expanded sprints */
 function AddTaskInput({ onAdd }) {
   const [v, setV] = useState('')
@@ -1742,6 +1790,8 @@ function Projects({ onOpenProject }) {
   const [search, setSearch] = useState('')             // búsqueda en vivo (client-side): nombre, cliente, PM/Dev
   const [pendingFor, setPendingFor] = useState(null)   // id del proyecto al que se le pide fecha de ingreso
   const [logModal, setLogModal] = useState(null)       // { projectId, kind } | null
+  const [scopeFor, setScopeFor] = useState(null)       // id del proyecto para abrir Alcance (acceso directo)
+  const [cardCfgFor, setCardCfgFor] = useState(null)   // id del proyecto para editar la tarjeta (links + qué mostrar)
   const clientOf = (id) => data.clients.find((c) => c.id === id)
   const userOf = (id) => data.team.find((u) => u.id === id)
   const updateProject = (id, fields) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, ...fields } : p)) }))
@@ -1851,6 +1901,9 @@ function Projects({ onOpenProject }) {
             const currentSprint = p.sprints.find((s) => normSprint(s.status) === 'en proceso')
             const hue = projectHue(p)
             const pct = calcProgress(p)
+            const show = { scope: true, testing: true, whatsapp: true, ...(p.cardActions || {}) }
+            const testingUrl = p.testingUrl || p.productionUrl || ''
+            const waUrl = p.whatsappUrl || ''
             const mini = (label, Icon, kind, firstLabel) => {
               const t = trackInfo(p, kind)
               const bad = t.overdue
@@ -1874,7 +1927,10 @@ function Projects({ onOpenProject }) {
                     </div>
                     <div style={{ fontSize: 12.5, color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{cl?.company}</div>
                   </div>
-                  <span style={{ flex: 'none' }}><StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} /></span>
+                  <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />
+                    <button className="btn btn-sm btn-ghost" title="Editar tarjeta (links y qué mostrar)" onClick={(e) => { e.stopPropagation(); setCardCfgFor(p.id) }} style={{ padding: 5, color: 'var(--text-faint)' }}><I.pencil width={14} height={14} /></button>
+                  </div>
                 </div>
                 {p.status === 'pending' && (
                   <div onClick={(e) => { e.stopPropagation(); setPendingFor(p.id) }}>
@@ -1892,7 +1948,11 @@ function Projects({ onOpenProject }) {
                 <div style={{ height: 1, background: 'var(--border)' }} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                   <TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} />
-                  <CardLinks project={p} onSave={(f) => updateProject(p.id, f)} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                    {show.scope && <button className="btn btn-sm" title="Alcance · PDFs, contexto, notas" onClick={(e) => { e.stopPropagation(); setScopeFor(p.id) }} style={{ width: 36, height: 34, padding: 0, justifyContent: 'center', color: 'var(--accent)', borderColor: 'var(--accent-line)', background: 'var(--accent-soft)' }}><I.pdf width={17} height={17} /></button>}
+                    {show.testing && <a href={testingUrl || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!testingUrl) e.preventDefault() }} className="btn btn-sm" title="Testing / deploy" style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', opacity: testingUrl ? 1 : 0.45 }}><I.gear width={15} height={15} /></a>}
+                    {show.whatsapp && <a href={waUrl || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!waUrl) e.preventDefault() }} className="btn btn-sm" title="Grupo de WhatsApp" style={{ justifyContent: 'center', color: waUrl ? 'var(--green)' : undefined, opacity: waUrl ? 1 : 0.45 }}><I.whatsapp width={14} height={14} /> WhatsApp</a>}
+                  </div>
                 </div>
               </motion.div>
             )
@@ -1943,6 +2003,8 @@ function Projects({ onOpenProject }) {
 
       <PendingDatePrompt open={!!pendingFor} project={data.projects.find((p) => p.id === pendingFor)} onClose={() => setPendingFor(null)} onSave={(d) => { updateProject(pendingFor, { expectedStartDate: d }); setPendingFor(null) }} />
       <ProjectLogModal open={!!logModal} kind={logModal?.kind} project={data.projects.find((p) => p.id === logModal?.projectId)} onClose={() => setLogModal(null)} patch={(fn) => patchProject(logModal.projectId, fn)} />
+      <ScopeModal open={!!scopeFor} project={data.projects.find((p) => p.id === scopeFor)} onClose={() => setScopeFor(null)} patch={(fn) => patchProject(scopeFor, fn)} />
+      <CardConfigModal open={!!cardCfgFor} project={data.projects.find((p) => p.id === cardCfgFor)} onClose={() => setCardCfgFor(null)} onSave={(f) => updateProject(cardCfgFor, f)} />
     </div>
   )
 }
@@ -3517,6 +3579,7 @@ function Login() {
   const [mode, setMode] = useState('signin')
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const [msg, setMsg] = useState(null)
@@ -3545,7 +3608,15 @@ function Login() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label="Email"><input className="input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vos@insights.software" /></Field>
-          <Field label="Contraseña"><input className="input" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" /></Field>
+          <Field label="Contraseña">
+            <div style={{ position: 'relative' }}>
+              <input className="input" type={showPw ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" style={{ paddingRight: 40 }} />
+              <button type="button" onClick={() => setShowPw((v) => !v)} title={showPw ? 'Ocultar contraseña' : 'Ver contraseña'}
+                style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 6, display: 'flex', color: 'var(--text-faint)', background: 'transparent' }}>
+                {showPw ? <I.eyeOff width={17} height={17} /> : <I.eye width={17} height={17} />}
+              </button>
+            </div>
+          </Field>
           {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8 }}>{err}</div>}
           {msg && <div style={{ fontSize: 12.5, color: 'var(--green)', background: 'var(--green-soft)', padding: '8px 10px', borderRadius: 8 }}>{msg}</div>}
           <button type="submit" className="btn btn-accent" disabled={busy} style={{ justifyContent: 'center', padding: 11 }}>{busy ? 'Un momento…' : mode === 'signin' ? 'Iniciar sesión' : 'Crear cuenta'}</button>
