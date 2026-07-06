@@ -194,6 +194,7 @@ const I = {
   gear: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
   eye: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>,
   eyeOff: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M17.9 17.9A10.7 10.7 0 0 1 12 19c-7 0-11-7-11-7a19 19 0 0 1 5.1-5.9m3.3-1.6A10.7 10.7 0 0 1 12 5c7 0 11 7 11 7a19 19 0 0 1-2.2 3.2M9.9 4.2 21 21"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>,
+  gantt: (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" {...p}><path d="M4 6h9M4 12h13M4 18h6"/></svg>,
 }
 
 /* ============================================================================
@@ -601,6 +602,10 @@ function migrate(state) {
       scopeFiles: rest.scopeFiles || [],
       salesLinks: rest.salesLinks || [],
       scopeNotes: rest.scopeNotes || [],
+      risks: rest.risks || [],
+      pendingAgency: rest.pendingAgency || [],
+      pendingClient: rest.pendingClient || [],
+      chats: rest.chats || [],
       sprints: (rest.sprints || []).map((s) => ({
         ...s,
         status: normSprint(s.status),
@@ -1774,11 +1779,93 @@ function CommitChip({ repo, compact }) {
   )
 }
 
+/* alta de un proyecto nuevo: cliente + WhatsApp + testing (opcional). Los sprints se cargan luego dentro de la tarjeta. */
+function NewProjectModal({ open, clients, onClose, onCreate }) {
+  const [name, setName] = useState('')
+  const [clientId, setClientId] = useState('')
+  const [wa, setWa] = useState('')
+  const [testing, setTesting] = useState('')
+  useEffect(() => { if (open) { setName(''); setClientId((clients[0] && clients[0].id) || ''); setWa(''); setTesting('') } }, [open])
+  const create = () => { const n = name.trim(); if (!n || !clientId) return; onCreate({ name: n, clientId, whatsappUrl: wa.trim(), testingUrl: testing.trim() }) }
+  return (
+    <Modal open={open} onClose={onClose} title="Nuevo proyecto" sub="Creá la tarjeta; después cargás los sprints adentro" width={460}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Field label="Nombre del proyecto"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Chamber OS" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); create() } }} /></Field>
+        <Field label="Cliente">
+          <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+            {clients.length === 0 && <option value="">— No hay clientes cargados —</option>}
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
+          </select>
+        </Field>
+        <Field label="Grupo de WhatsApp"><input className="input" value={wa} onChange={(e) => setWa(e.target.value)} placeholder="https://chat.whatsapp.com/…" /></Field>
+        <Field label="Testing / Deploy URL (opcional)"><input className="input" value={testing} onChange={(e) => setTesting(e.target.value)} placeholder="https://mi-app.onrender.com" /></Field>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button className="btn" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" onClick={create} disabled={!name.trim() || !clientId}><I.plus width={15} height={15} /> Crear proyecto</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* vista Gantt / semanal: proyectos (filas) × semanas (columnas), con los sprints ubicados por su fecha estimada */
+function SprintGantt({ projects, clientOf, onOpen }) {
+  const monday = (d) => { const x = new Date(d); const day = (x.getDay() + 6) % 7; x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - day); return x }
+  const addD = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
+  const fmtWk = (mon) => { const sun = addD(mon, 6); const mm = mon.toLocaleDateString('es-AR', { month: 'short' }).replace('.', ''); const sm = sun.toLocaleDateString('es-AR', { month: 'short' }).replace('.', ''); return mm === sm ? `${mon.getDate()}–${sun.getDate()} ${sm}` : `${mon.getDate()} ${mm} – ${sun.getDate()} ${sm}` }
+  const items = []
+  projects.forEach((p) => (p.sprints || []).forEach((s) => { if (s.estimatedDate) items.push({ pid: p.id, s, mon: monday(s.estimatedDate) }) }))
+  const todayMon = monday(new Date())
+  let weeks = []
+  if (items.length) {
+    const minT = Math.min(...items.map((i) => i.mon.getTime()), todayMon.getTime())
+    const maxT = Math.max(...items.map((i) => i.mon.getTime()), todayMon.getTime())
+    let cur = new Date(minT), guard = 0
+    while (cur.getTime() <= maxT && guard < 30) { weeks.push(new Date(cur)); cur = addD(cur, 7); guard++ }
+  } else weeks = [todayMon]
+  const cell = {}
+  items.forEach(({ pid, s, mon }) => { const k = pid + '|' + mon.getTime(); (cell[k] = cell[k] || []).push(s) })
+  const colW = 148
+  const anyDated = items.length > 0
+  return (
+    <div className="surface tbl" style={{ overflowX: 'auto', padding: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `minmax(180px,200px) repeat(${weeks.length}, ${colW}px)`, minWidth: 'min-content' }}>
+        <div style={{ position: 'sticky', left: 0, zIndex: 2, background: 'var(--card)', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', padding: '12px 14px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>Proyecto</div>
+        {weeks.map((w, i) => { const now = w.getTime() === todayMon.getTime(); return (
+          <div key={'h' + i} style={{ borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', padding: '10px', fontSize: 11.5, fontWeight: 600, color: now ? 'var(--accent)' : 'var(--text-dim)', background: now ? 'var(--accent-soft)' : 'transparent', textAlign: 'center', whiteSpace: 'nowrap' }}>{fmtWk(w)}{now ? ' · hoy' : ''}</div>
+        )})}
+        {projects.flatMap((p) => {
+          const label = (
+            <div key={p.id + '-l'} onClick={() => onOpen(p.id)} className="click row-hover" style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--card)', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+              <div style={{ flex: 'none', width: 30, height: 30, borderRadius: 9, display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 11, background: hexA(projectHue(p), 0.16), color: projectHue(p) }}>{projectInitials(p.name)}</div>
+              <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div><div style={{ fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clientOf(p.clientId)?.company || ''}</div></div>
+            </div>
+          )
+          const cells = weeks.map((w, ci) => {
+            const sp = cell[p.id + '|' + w.getTime()] || []
+            const now = w.getTime() === todayMon.getTime()
+            return (
+              <div key={p.id + '-' + ci} onClick={() => onOpen(p.id)} className="click" style={{ borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', padding: 6, minHeight: 54, background: now ? 'var(--accent-soft)' : 'transparent', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {sp.map((s) => { const m = sprintMeta(s.status); const tone = m.tone; return (
+                  <span key={s.id} title={`${s.name} · ${m.label} · ${fmtDate(s.estimatedDate)}`} style={{ fontSize: 11, fontWeight: 600, padding: '3px 7px', borderRadius: 6, background: tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${tone}-soft)`, color: tone === 'neutral' ? 'var(--text-dim)' : `var(--${tone === 'accent' ? 'accent' : tone})`, border: `1px solid ${tone === 'accent' ? 'var(--accent-line)' : 'var(--border)'}`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                )})}
+              </div>
+            )
+          })
+          return [label, ...cells]
+        })}
+      </div>
+      {!anyDated && <div style={{ padding: 16, fontSize: 13, color: 'var(--text-faint)' }}>Todavía no hay sprints con fecha estimada. Entrá a cada proyecto y cargá la fecha de los sprints para verlos acá por semana.</div>}
+    </div>
+  )
+}
+
 /* ============================================================================
    12 · PROJECTS LIST
 ============================================================================ */
 function Projects({ onOpenProject }) {
-  const { data, setData } = useApp()
+  const { data, setData, logActivity } = useApp()
+  const [newOpen, setNewOpen] = useState(false)
   const qp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
   const [tab, setTab] = useState(qp.get('tab') || 'active')
   const [view, setView] = useState('cards')
@@ -1797,6 +1884,23 @@ function Projects({ onOpenProject }) {
   const updateProject = (id, fields) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, ...fields } : p)) }))
   const patchProject = (id, fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? fn(p) : p)) }))
   const setStatus = (id, status) => { updateProject(id, { status }); if (status === 'pending') setPendingFor(id) }
+  const createProject = ({ name, clientId, whatsappUrl, testingUrl }) => {
+    const id = uid()
+    const proj = {
+      id, name, clientId, status: 'active', priority: 'normal',
+      assignments: { pm: null, dev: null }, tags: [], sprints: [],
+      avances: [], comms: [], scopeFiles: [], salesLinks: [], scopeNotes: [],
+      risks: [], pendingAgency: [], pendingClient: [], chats: [],
+      createdAt: new Date().toISOString(),
+      testingUrl: testingUrl || '', whatsappUrl: whatsappUrl || '', productionUrl: '',
+      totalAmount: 0, paidAmount: 0, lastDeployDate: null, githubRepo: '', kickoff: '', stack: '',
+      cardActions: { scope: true, testing: true, whatsapp: true },
+    }
+    setData((d) => ({ ...d, projects: [proj, ...d.projects] }))
+    if (logActivity) logActivity({ type: 'project-add', text: `creó el proyecto "${name}"` })
+    setNewOpen(false)
+    onOpenProject(id)   // abre la tarjeta nueva para cargar los sprints
+  }
 
   // keep filters URL-friendly
   useEffect(() => {
@@ -1848,9 +1952,11 @@ function Projects({ onOpenProject }) {
             {search && <button onClick={() => setSearch('')} title="Limpiar búsqueda" style={{ display: 'flex', padding: 2, border: 'none', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer' }}><I.x width={14} height={14} /></button>}
           </label>
           <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
-            <button className="btn btn-sm btn-ghost" onClick={() => setView('cards')} style={{ background: view === 'cards' ? 'var(--card-hover)' : 'transparent', color: view === 'cards' ? 'var(--accent)' : 'var(--text-dim)' }}><I.cards width={15} height={15} /></button>
-            <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setView('cards')} title="Tarjetas" style={{ background: view === 'cards' ? 'var(--card-hover)' : 'transparent', color: view === 'cards' ? 'var(--accent)' : 'var(--text-dim)' }}><I.cards width={15} height={15} /></button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} title="Tabla" style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setView('gantt')} title="Gantt / semanal" style={{ background: view === 'gantt' ? 'var(--card-hover)' : 'transparent', color: view === 'gantt' ? 'var(--accent)' : 'var(--text-dim)' }}><I.gantt width={15} height={15} /></button>
           </div>
+          <button className="btn btn-accent" onClick={() => setNewOpen(true)} title="Nuevo proyecto" style={{ fontWeight: 800 }}><span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1, marginTop: -2 }}>+</span> Nuevo proyecto</button>
         </div>
       </div>
 
@@ -1958,6 +2064,8 @@ function Projects({ onOpenProject }) {
             )
           })}
         </motion.div>
+      ) : view === 'gantt' ? (
+        <SprintGantt projects={list} clientOf={clientOf} onOpen={onOpenProject} />
       ) : (
         <div className="surface tbl" style={{ overflow: 'hidden' }}>
           <table>
@@ -2005,6 +2113,7 @@ function Projects({ onOpenProject }) {
       <ProjectLogModal open={!!logModal} kind={logModal?.kind} project={data.projects.find((p) => p.id === logModal?.projectId)} onClose={() => setLogModal(null)} patch={(fn) => patchProject(logModal.projectId, fn)} />
       <ScopeModal open={!!scopeFor} project={data.projects.find((p) => p.id === scopeFor)} onClose={() => setScopeFor(null)} patch={(fn) => patchProject(scopeFor, fn)} />
       <CardConfigModal open={!!cardCfgFor} project={data.projects.find((p) => p.id === cardCfgFor)} onClose={() => setCardCfgFor(null)} onSave={(f) => updateProject(cardCfgFor, f)} />
+      <NewProjectModal open={newOpen} clients={data.clients} onClose={() => setNewOpen(false)} onCreate={createProject} />
     </div>
   )
 }
@@ -3476,7 +3585,7 @@ function NotificationCenter() {
   const userOf = (id) => team.find((u) => u.id === id)
   const unread = activity.filter((a) => a.date > lastSeen).length
   const mentionsForMe = activity.filter((a) => a.type === 'mention' && a.targetId === myId && a.date > lastSeen).length
-  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, comment: I.comment, avance: I.folder, comm: I.phone, mention: I.at }
+  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, 'project-add': I.folder, comment: I.comment, avance: I.folder, comm: I.phone, mention: I.at }
   const toggle = (e) => {
     e.stopPropagation()
     if (!open && btnRef.current) {
