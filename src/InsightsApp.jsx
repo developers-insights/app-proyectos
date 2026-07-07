@@ -606,11 +606,14 @@ function migrate(state) {
       pendingAgency: rest.pendingAgency || [],
       pendingClient: rest.pendingClient || [],
       chats: rest.chats || [],
+      activity: rest.activity || [],
+      driveUrl: rest.driveUrl || '',
       sprints: (rest.sprints || []).map((s) => ({
         ...s,
         status: normSprint(s.status),
         description: s.description || '',
         comments: s.comments || [],
+        assigneeIds: s.assigneeIds || [],
       })),
     }
   })
@@ -1604,39 +1607,28 @@ function SprintStatusBadge({ status, onChange, full }) {
   )
 }
 
-/* sprint detail card: descripción + comentarios + tareas */
-function SprintDetailModal({ open, sprint, onClose, onPatch }) {
+/* sprint detail card: estado · semana · asignados · fecha · descripción · comentarios */
+function SprintDetailModal({ open, sprint, team, defaultId, onClose, onPatch }) {
   if (!sprint) return <Modal open={open} onClose={onClose} title="Sprint" />
-  const setMod = (mid, fields) => onPatch({ modules: sprint.modules.map((m) => m.id === mid ? { ...m, ...fields } : m) })
-  const addMod = (name) => onPatch({ modules: [...sprint.modules, { id: uid(), name, status: 'pendiente' }] })
-  const delMod = (mid) => onPatch({ modules: sprint.modules.filter((m) => m.id !== mid) })
   return (
     <Modal open={open} onClose={onClose} title={sprint.name} sub="Detalle del sprint" width={640}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="label">Estado</span><SprintStatusBadge status={sprint.status} onChange={(v) => onPatch({ status: v })} /></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="label">Semana</span>
+            <input type="number" min="1" className="input mono" value={sprint.week || 1} onChange={(e) => onPatch({ week: Math.max(1, Number(e.target.value) || 1) })} style={{ width: 64, padding: '6px 8px', fontSize: 12.5 }} />
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="label">Fecha estimada</span>
             <input type="date" className="input mono" value={(sprint.estimatedDate || '').slice(0, 10)} onChange={(e) => onPatch({ estimatedDate: e.target.value ? new Date(e.target.value).toISOString() : null })} style={{ width: 'auto', padding: '6px 9px', fontSize: 12.5 }} />
           </div>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="label">Asignados</span>
+          <SprintAssignees ids={sprint.assigneeIds} team={team || []} defaultId={defaultId} onChange={(a) => onPatch({ assigneeIds: a })} size={28} />
+          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Por defecto el developer de la tarjeta; podés sumar más.</span>
+        </div>
         <Field label="Nombre del sprint"><input className="input" value={sprint.name} onChange={(e) => onPatch({ name: e.target.value })} /></Field>
         <Field label="Explicación detallada"><textarea className="input" rows={4} value={sprint.description || ''} onChange={(e) => onPatch({ description: e.target.value })} placeholder="Describí el alcance, objetivos y notas del sprint…" /></Field>
-
-        <div>
-          <div className="label" style={{ marginBottom: 8 }}>Tareas ({sprint.modules.length})</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {sprint.modules.map((m) => (
-              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input className="input" value={m.name} onChange={(e) => setMod(m.id, { name: e.target.value })} style={{ flex: 1, padding: '6px 9px', fontSize: 13 }} />
-                <button onClick={() => setMod(m.id, { status: nextModuleStatus(m.status) })} title="Cambiar estado" style={{ flexShrink: 0 }}>
-                  <span className="tag" style={{ cursor: 'pointer', color: `var(--${statusTone(m.status) === 'green' ? 'green' : statusTone(m.status) === 'accent' ? 'accent' : 'text-dim'})`, background: statusTone(m.status) === 'green' ? 'var(--green-soft)' : statusTone(m.status) === 'accent' ? 'var(--accent-soft)' : 'var(--bg-elevated)', borderColor: statusTone(m.status) === 'accent' ? 'var(--accent-line)' : statusTone(m.status) === 'neutral' ? 'var(--border)' : 'transparent', minWidth: 96, justifyContent: 'center' }}>{m.status}</span>
-                </button>
-                <button className="btn btn-sm btn-ghost" onClick={() => delMod(m.id)} title="Eliminar tarea" style={{ padding: 6, color: 'var(--text-faint)', flexShrink: 0 }}><I.trash width={14} height={14} /></button>
-              </div>
-            ))}
-            <AddTaskInput onAdd={addMod} />
-          </div>
-        </div>
 
         <CommentThread comments={sprint.comments} subject={`el sprint "${sprint.name}"`}
           onAdd={(c) => onPatch({ comments: [...(sprint.comments || []), c] })}
@@ -1647,18 +1639,54 @@ function SprintDetailModal({ open, sprint, onClose, onPatch }) {
 }
 
 /* sprint board: table (drag to reorder) or kanban (drag between status columns) */
+/* avatares (solapados) de los developers asignados a un sprint; editable. Default = dev de la tarjeta */
+function SprintAssignees({ ids, team, defaultId, onChange, size = 24 }) {
+  const [menu, setMenu] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const list = (ids && ids.length) ? ids : (defaultId ? [defaultId] : [])
+  const users = list.map((id) => team.find((u) => u.id === id)).filter(Boolean)
+  const toggle = (e) => { e.stopPropagation(); if (!menu && btnRef.current) { const r = btnRef.current.getBoundingClientRect(); setPos({ left: Math.min(Math.max(8, r.left), window.innerWidth - 228), top: r.bottom + 6 }) } setMenu((v) => !v) }
+  const toggleUser = (uid2) => { const next = list.includes(uid2) ? list.filter((x) => x !== uid2) : [...list, uid2]; onChange(next) }
+  return (
+    <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex' }}>
+      <button ref={btnRef} onClick={toggle} title="Asignar developers" className="row-hover" style={{ display: 'inline-flex', alignItems: 'center', padding: 2, borderRadius: 8 }}>
+        {users.length === 0 ? <Avatar empty size={size} ring="var(--card)" /> : users.map((u, i) => (
+          <span key={u.id} style={{ marginLeft: i === 0 ? 0 : -Math.round(size * 0.32), position: 'relative', zIndex: users.length - i }}><Avatar user={u} size={size} ring="var(--card)" title={u.name} /></span>
+        ))}
+      </button>
+      {menu && pos && createPortal(<>
+        <div onClick={(e) => { e.stopPropagation(); setMenu(false) }} style={{ position: 'fixed', inset: 0, zIndex: 300 }} />
+        <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 301, width: 220, padding: 6, boxShadow: 'var(--shadow)', maxHeight: 280, overflowY: 'auto' }}>
+          <div className="label" style={{ padding: '4px 8px 6px' }}>Developers del sprint</div>
+          {team.map((u) => { const on = list.includes(u.id); return (
+            <button key={u.id} className="row-hover" onClick={() => toggleUser(u.id)} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '6px 8px', borderRadius: 8 }}>
+              <Avatar user={u} size={22} ring="var(--card)" /><span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{u.name}</span>{on && <I.check width={14} height={14} style={{ color: 'var(--accent)' }} />}
+            </button>
+          )})}
+        </div>
+      </>, document.body)}
+    </span>
+  )
+}
+
 function SprintBoard({ project, patch, onOpenSprint }) {
-  const { logActivity } = useApp()
+  const { data, logActivity } = useApp()
   const [boardView, setBoardView] = useState('table')
   const [dragId, setDragId] = useState(null)
   const [overId, setOverId] = useState(null)
+  const [weekFilter, setWeekFilter] = useState('all')
   const sprints = project.sprints || []
+  const team = data.team || []
+  const devId = project.assignments?.dev?.userId || null
+  const weekOf = (s, i) => s.week || (i + 1)
+  const weeks = [...new Set(sprints.map((s, i) => weekOf(s, i)))].sort((a, b) => a - b)
   const setSprint = (sid, fields) => {
     const prev = sprints.find((s) => s.id === sid)
     patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
     if (fields.status && normSprint(fields.status) === 'terminado' && prev && normSprint(prev.status) !== 'terminado' && logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${prev.name}" de ${project.name}` })
   }
-  const addSprint = () => { patch((p) => ({ ...p, sprints: [...p.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', estimatedDate: NOW.toISOString(), actualDate: null, modules: [], description: '', comments: [] }] })); logActivity && logActivity({ type: 'sprint-add', text: `agregó un sprint a ${project.name}` }) }
+  const addSprint = () => { patch((p) => ({ ...p, sprints: [...p.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', week: (p.sprints.length + 1), estimatedDate: NOW.toISOString(), actualDate: null, assigneeIds: devId ? [devId] : [], description: '', comments: [] }] })); logActivity && logActivity({ type: 'sprint-add', text: `agregó un sprint a ${project.name}` }) }
 
   const reorder = (fromId, toId) => {
     if (fromId === toId) return
@@ -1672,46 +1700,61 @@ function SprintBoard({ project, patch, onOpenSprint }) {
       return { ...p, sprints: arr }
     })
   }
+  const rows = sprints.map((s, i) => ({ s, i, week: weekOf(s, i) })).filter((r) => weekFilter === 'all' || r.week === weekFilter)
+  const canDrag = weekFilter === 'all'
 
   return (
     <div style={{ marginBottom: 26 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 19 }}>Sprints</h2>
-        <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
-          <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('table')} title="Tabla" style={{ background: boardView === 'table' ? 'var(--card-hover)' : 'transparent', color: boardView === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
-          <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('kanban')} title="Kanban" style={{ background: boardView === 'kanban' ? 'var(--card-hover)' : 'transparent', color: boardView === 'kanban' ? 'var(--accent)' : 'var(--text-dim)' }}><I.kanban width={15} height={15} /></button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <select className="input" value={weekFilter} onChange={(e) => setWeekFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={{ width: 'auto', padding: '7px 9px', fontSize: 12.5 }}>
+            <option value="all">Todas las semanas</option>
+            {weeks.map((w) => <option key={w} value={w}>Semana {w}</option>)}
+          </select>
+          <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
+            <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('table')} title="Tabla" style={{ background: boardView === 'table' ? 'var(--card-hover)' : 'transparent', color: boardView === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('kanban')} title="Kanban" style={{ background: boardView === 'kanban' ? 'var(--card-hover)' : 'transparent', color: boardView === 'kanban' ? 'var(--accent)' : 'var(--text-dim)' }}><I.kanban width={15} height={15} /></button>
+          </div>
         </div>
       </div>
 
       {boardView === 'table' ? (
         <>
-          <div className="surface" style={{ overflow: 'hidden' }}>
+          <div className="surface tbl" style={{ overflow: 'hidden' }}>
             <table>
               <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['', '#', 'Nombre', 'Módulos', 'Estado', 'Estimada'].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+                {['', '#', 'Nombre', 'Semana', 'Asignado', 'Estado', 'Estimada'].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
               </tr></thead>
               <tbody>
-                {sprints.map((s, i) => (
-                  <tr key={s.id} draggable
-                    onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragId(s.id) }}
-                    onDragOver={(e) => { e.preventDefault(); setOverId(s.id) }}
+                {rows.map(({ s, i, week }) => (
+                  <tr key={s.id} draggable={canDrag}
+                    onDragStart={(e) => { if (!canDrag) return; e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragId(s.id) }}
+                    onDragOver={(e) => { if (!canDrag) return; e.preventDefault(); setOverId(s.id) }}
                     onDragEnd={() => { setDragId(null); setOverId(null) }}
-                    onDrop={(e) => { e.preventDefault(); reorder(e.dataTransfer.getData('text/plain') || dragId, s.id); setDragId(null); setOverId(null) }}
+                    onDrop={(e) => { if (!canDrag) return; e.preventDefault(); reorder(e.dataTransfer.getData('text/plain') || dragId, s.id); setDragId(null); setOverId(null) }}
                     style={{ borderBottom: '1px solid var(--border)', background: overId === s.id && dragId !== s.id ? 'var(--card-hover)' : dragId === s.id ? 'var(--bg-elevated)' : 'transparent', opacity: dragId === s.id ? 0.5 : 1 }}>
-                    <td style={{ padding: '12px 8px 12px 14px', width: 28, cursor: 'grab', color: 'var(--text-faint)' }} title="Arrastrá para reordenar"><I.grip width={16} height={16} /></td>
+                    <td style={{ padding: '12px 8px 12px 14px', width: 28, cursor: canDrag ? 'grab' : 'default', color: 'var(--text-faint)' }} title={canDrag ? 'Arrastrá para reordenar' : ''}><I.grip width={16} height={16} /></td>
                     <td style={{ padding: '12px 14px' }} className="mono">{i + 1}</td>
                     <td style={{ padding: '12px 14px' }}>
                       <button className="click" onClick={() => onOpenSprint(s.id)} title="Ver detalle" style={{ fontWeight: 600, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, color: 'var(--text)' }}>
                         {s.name}{(s.comments || []).length > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{s.comments.length}</span>}
                       </button>
                     </td>
-                    <td style={{ padding: '12px 14px', color: 'var(--text-dim)' }} className="mono">{s.modules.length}</td>
+                    <td style={{ padding: '8px 14px' }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Sem</span>
+                        <input type="number" min="1" className="input mono" value={week} onChange={(e) => setSprint(s.id, { week: Math.max(1, Number(e.target.value) || 1) })} style={{ width: 52, padding: '5px 6px', fontSize: 12.5 }} />
+                      </div>
+                    </td>
+                    <td style={{ padding: '10px 14px' }} onClick={(e) => e.stopPropagation()}><SprintAssignees ids={s.assigneeIds} team={team} defaultId={devId} onChange={(a) => setSprint(s.id, { assigneeIds: a })} /></td>
                     <td style={{ padding: '12px 14px' }}><SprintStatusBadge status={s.status} onChange={(v) => setSprint(s.id, { status: v })} /></td>
                     <td style={{ padding: '8px 14px' }}>
                       <input type="date" className="input mono" value={(s.estimatedDate || '').slice(0, 10)} onChange={(e) => setSprint(s.id, { estimatedDate: e.target.value ? new Date(e.target.value).toISOString() : null })} onClick={(e) => e.stopPropagation()} style={{ width: 'auto', padding: '5px 8px', fontSize: 12, background: 'transparent', border: '1px solid transparent' }} onFocus={(e) => (e.target.style.borderColor = 'var(--border)')} onBlur={(e) => (e.target.style.borderColor = 'transparent')} />
                     </td>
                   </tr>
                 ))}
+                {rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>Sin sprints en esta semana.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1740,9 +1783,10 @@ function SprintBoard({ project, patch, onOpenSprint }) {
                       className="surface click" style={{ padding: 11, background: 'var(--card)', cursor: 'grab', opacity: dragId === s.id ? 0.5 : 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, lineHeight: 1.3 }}>{s.name}</div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-faint)' }} className="mono">
-                        <span>{s.modules.length} tareas</span>
+                        <span>Semana {s.week || (sprints.indexOf(s) + 1)}</span>
                         <span>{fmtDate(s.estimatedDate)}</span>
                       </div>
+                      <div style={{ marginTop: 7 }} onClick={(e) => e.stopPropagation()}><SprintAssignees ids={s.assigneeIds} team={team} defaultId={devId} onChange={(a) => setSprint(s.id, { assigneeIds: a })} size={22} /></div>
                       {(s.comments || []).length > 0 && <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{s.comments.length}</div>}
                     </div>
                   ))}
@@ -2750,6 +2794,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [editOpen, setEditOpen] = useState(false)
   const [pendingPrompt, setPendingPrompt] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
+  const [driveOpen, setDriveOpen] = useState(false)
 
   if (!project) return null
   const patch = (fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === projectId ? fn(p) : p)) }))
@@ -2758,23 +2803,10 @@ function ProjectDetail({ projectId, onBack }) {
   const openSprint = project.sprints.find((s) => s.id === openSprintId)
 
   const sprintProgress = calcProgress(project)
-  const counts = moduleCounts(project)
   const sprintsTotal = project.sprints.length
   const sprintsDone = project.sprints.filter((s) => normSprint(s.status) === 'terminado').length
   const sprintsProg = project.sprints.filter((s) => normSprint(s.status) === 'en proceso').length
-
-  const allModules = project.sprints.flatMap((s) => s.modules.map((m) => ({ ...m, sprint: s.name })))
-  const kpiDetails = {
-    scope: { title: 'Módulos en scope', rows: allModules.map((m) => [m.sprint, m.name, m.status]) },
-    delivered: { title: 'Módulos entregados', rows: allModules.filter((m) => m.status === 'completado').map((m) => [m.sprint, m.name, m.status]) },
-    partial: { title: 'Módulos parciales', rows: allModules.filter((m) => m.status === 'en progreso').map((m) => [m.sprint, m.name, m.status]) },
-    pending: { title: 'Módulos pendientes', rows: allModules.filter((m) => m.status === 'pendiente').map((m) => [m.sprint, m.name, m.status]) },
-    paid: { title: 'Desglose de pagos', rows: [['Contrato total', '', money(project.totalAmount)], ['Pagado', '', money(project.paidAmount)], ['Saldo por cobrar', '', money(project.totalAmount - project.paidAmount)]] },
-    due: { title: 'Por cobrar', rows: [['Por cobrar', '', money(project.totalAmount - project.paidAmount)], ['% cobrado', '', Math.round((project.paidAmount / project.totalAmount) * 100) + '%']] },
-  }
-
-  const dd = daysAgo(project.lastDeployDate)
-  const billedPct = Math.round((project.paidAmount / project.totalAmount) * 100)
+  const kpiDetails = {}
 
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -2800,9 +2832,7 @@ function ProjectDetail({ projectId, onBack }) {
           <a href={project.testingUrl || project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm btn-accent" onClick={(e) => { if (!(project.testingUrl || project.productionUrl)) e.preventDefault() }}><I.ext width={14} height={14} /> Testing</a>
           <a href={project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm" onClick={(e) => { if (!project.productionUrl) e.preventDefault() }}><I.rocket width={14} height={14} /> Producción</a>
           <button className="btn btn-sm" onClick={() => setScopeOpen(true)}><I.pdf width={14} height={14} /> Alcance{(() => { const n = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0); return n ? ` · ${n}` : '' })()}</button>
-          <div className="btn btn-sm" style={{ cursor: 'default', color: 'var(--red)', borderColor: 'var(--red)', background: 'var(--red-soft)', fontWeight: 700 }}>
-            <I.rocket width={14} height={14} /> Último deploy{project.lastDeployDate ? ` · ${fmtDate(project.lastDeployDate)} (${dd}d)` : ' · —'}
-          </div>
+          <button className="btn btn-sm" onClick={() => setDriveOpen(true)} title="Carpeta de Drive compartida con el cliente" style={{ color: project.driveUrl ? 'var(--accent)' : undefined }}><I.folder width={14} height={14} /> Drive</button>
         </div>
 
         {/* KPI GRID — solo sprints */}
@@ -2812,48 +2842,6 @@ function ProjectDetail({ projectId, onBack }) {
           <KpiCard label="Sprints en proceso" value={sprintsProg} tone="var(--accent)" sub="ver detalle" onClick={() => setKpiModal('progress')} />
           <KpiCard label="% Avance" value={`${sprintProgress}%`} tone={pctColor(sprintProgress)} sub="por sprints" onClick={() => setKpiModal('progress')} />
         </motion.div>
-
-        {/* KICK-OFF */}
-        <div className="surface" style={{ marginBottom: 26, overflow: 'hidden' }}>
-          <button onClick={() => setKickoffOpen((v) => !v)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}><I.spark width={17} height={17} style={{ color: 'var(--accent)' }} /><strong style={{ fontFamily: 'Bricolage Grotesque', fontSize: 16 }}>Kick-off del proyecto</strong></span>
-            <I.chevD width={18} height={18} style={{ transform: kickoffOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s', color: 'var(--text-faint)' }} />
-          </button>
-          <AnimatePresence>
-            {kickoffOpen && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
-                <div style={{ padding: '0 18px 18px' }}>
-                  {editKickoff ? (
-                    <>
-                      <textarea className="input" rows={5} value={project.kickoff} onChange={(e) => patch((p) => ({ ...p, kickoff: e.target.value }))} />
-                      <button className="btn btn-sm btn-accent" style={{ marginTop: 10 }} onClick={() => setEditKickoff(false)}><I.check width={13} height={13} /> Listo</button>
-                    </>
-                  ) : (
-                    <>
-                      <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-dim)', margin: '0 0 14px' }}>{project.kickoff}</p>
-                      <button className="btn btn-sm btn-ghost" onClick={() => setEditKickoff(true)} style={{ marginBottom: 14 }}><I.doc width={13} height={13} /> Editar</button>
-                    </>
-                  )}
-                  <div className="label" style={{ marginBottom: 8 }}>Avance por sprints</div>
-                  <Progress value={sprintProgress} showLabel height={10} />
-                  {/* Sprint timeline */}
-                  <div style={{ display: 'flex', gap: 0, marginTop: 18, overflowX: 'auto', paddingBottom: 6 }}>
-                    {project.sprints.map((s, i) => (
-                      <div key={s.id} style={{ flex: 1, minWidth: 120, position: 'relative', paddingTop: 22 }}>
-                        <div style={{ position: 'absolute', top: 8, left: 0, right: 0, height: 2, background: 'var(--border)' }} />
-                        <div style={{ position: 'absolute', top: 3, left: '50%', transform: 'translateX(-50%)', width: 12, height: 12, borderRadius: 999, background: normSprint(s.status) === 'terminado' ? 'var(--green)' : normSprint(s.status) === 'en proceso' ? 'var(--accent)' : normSprint(s.status) === 'pausado' ? 'var(--yellow)' : 'var(--bg-elevated)', border: '2px solid var(--border-strong)' }} />
-                        <div style={{ textAlign: 'center', padding: '0 6px' }}>
-                          <div style={{ fontSize: 12, fontWeight: 600 }}>{s.name}</div>
-                          <div style={{ fontSize: 10.5, color: 'var(--text-faint)' }} className="mono">{fmtDate(s.estimatedDate)}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
 
         {/* SPRINTS — tabla (drag para reordenar) o kanban */}
         <SprintBoard project={project} patch={patch} onOpenSprint={(id) => setOpenSprintId(id)} />
@@ -2892,20 +2880,11 @@ function ProjectDetail({ projectId, onBack }) {
         </div>
       </div>
 
-      {/* RIGHT 30% — AI CHAT */}
-      <ProjectChat project={project} client={client} patch={patch} />
+      {/* RIGHT 30% — REGISTRO DE ACTIVIDAD (calls · notas · looms) */}
+      <ActivityRegistry project={project} patch={patch} />
 
       {/* KPI MODAL */}
-      <Modal open={!!kpiModal} onClose={() => setKpiModal(null)} title={kpiModal === 'deploy' ? 'Last deploy' : kpiModal === 'progress' ? 'Avance por sprints' : kpiDetails[kpiModal]?.title} width={640}>
-        {kpiModal === 'deploy' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div className="surface" style={{ padding: 14, background: 'var(--bg-elevated)' }}>
-              <div className="label">Último commit en {project.githubRepo}</div>
-              {gh.data ? <div style={{ marginTop: 8 }}><div className="mono" style={{ fontWeight: 600 }}>{gh.data.sha} · {gh.data.author}</div><div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 4 }}>{gh.data.message}</div><div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 6 }}>{fmtDate(gh.data.date)} · hace {daysAgo(gh.data.date)}d</div></div> : <div style={{ marginTop: 8, color: 'var(--text-faint)' }}>{gh.error || 'cargando…'}</div>}
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text-dim)' }}>Last deploy registrado: <strong>{fmtDate(project.lastDeployDate)}</strong> (hace {dd} días). {dd > 7 && <span style={{ color: 'var(--red)' }}>⚠ Más de 7 días sin deploy.</span>}</div>
-          </div>
-        )}
+      <Modal open={!!kpiModal} onClose={() => setKpiModal(null)} title="Avance por sprints" width={640}>
         {kpiModal === 'progress' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <Progress value={sprintProgress} showLabel height={12} />
@@ -2931,15 +2910,120 @@ function ProjectDetail({ projectId, onBack }) {
       </Modal>
 
       <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} />
-      <SprintDetailModal open={!!openSprint} sprint={openSprint} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprint(openSprintId, fields)} />
+      <SprintDetailModal open={!!openSprint} sprint={openSprint} team={data.team} defaultId={project.assignments?.dev?.userId || null} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprint(openSprintId, fields)} />
       <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
+      <Modal open={driveOpen} onClose={() => setDriveOpen(false)} title="Drive del proyecto" sub={project.name} width={440}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Field label="Enlace de Google Drive (compartido con el cliente)">
+            <input className="input" value={project.driveUrl || ''} onChange={(e) => patch((p) => ({ ...p, driveUrl: e.target.value }))} placeholder="https://drive.google.com/…" autoFocus />
+          </Field>
+          {project.driveUrl && <a href={project.driveUrl} target="_blank" rel="noreferrer" className="btn btn-accent" style={{ justifyContent: 'center' }}><I.ext width={14} height={14} /> Abrir Drive</a>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={() => setDriveOpen(false)}><I.check width={15} height={15} /> Listo</button></div>
+        </div>
+      </Modal>
     </div>
   )
 }
 
 /* ============================================================================
-   16 · PROJECT AI CHAT (Anthropic, project-scoped, persisted)
+   16 · REGISTRO DE ACTIVIDAD DEL PROYECTO (calls · notas · looms)
+============================================================================ */
+const ACTIVITY_TYPES = [
+  { key: 'llamada', label: 'Llamada', color: '#38BDF8', icon: I.phone },
+  { key: 'nota', label: 'Nota', color: '#F59E0B', icon: I.comment },
+  { key: 'loom', label: 'Loom', color: '#A855F7', icon: I.ext },
+]
+const actTypeMeta = (t) => ACTIVITY_TYPES.find((x) => x.key === t) || ACTIVITY_TYPES[0]
+
+function ActivityRegistry({ project, patch }) {
+  const { data } = useApp()
+  const team = data.team || []
+  const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
+  const userOf = (id) => team.find((u) => u.id === id)
+  const [type, setType] = useState('nota')
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [link, setLink] = useState('')
+  const [note, setNote] = useState('')
+  const [photos, setPhotos] = useState([])
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef(null)
+
+  const manual = project.activity || []
+  // calls de la sección Calls asignadas a este proyecto → integradas automáticamente
+  const projectCalls = (data.calls || []).filter((c) => c.projectId === project.id).map((c) => ({
+    id: 'call-' + c.id, fromCalls: true, type: 'llamada', date: c.date, authorId: '', authorName: c.advisor, note: c.summary || '', link: c.fathomUrl || '',
+  }))
+  const entries = [...manual, ...projectCalls].sort((a, b) => new Date(b.date) - new Date(a.date))
+
+  const onFiles = async (e) => {
+    const files = [...(e.target.files || [])]; if (!files.length) return
+    setBusy(true)
+    for (const f of files) { if (!f.type.startsWith('image/')) continue; try { const url = await fileToImageDataURL(f); setPhotos((s) => [...s, url]) } catch (err) { /* ignore */ } }
+    setBusy(false); e.target.value = ''
+  }
+  const add = () => {
+    if (type === 'nota' ? (!note.trim() && photos.length === 0) : !link.trim()) return
+    const entry = { id: uid(), type, date: dateInputISO(date), authorId: myId || '', link: type === 'nota' ? '' : link.trim(), note: note.trim(), photos: type === 'nota' ? photos : [] }
+    patch((p) => ({ ...p, activity: [entry, ...(p.activity || [])] }))
+    setLink(''); setNote(''); setPhotos([]); setDate(new Date().toISOString().slice(0, 10))
+  }
+  const del = (id) => patch((p) => ({ ...p, activity: (p.activity || []).filter((x) => x.id !== id) }))
+
+  return (
+    <div style={{ flex: '0 0 34%', minWidth: 300, maxWidth: 460, borderLeft: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: '18px 18px 14px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3 }}><I.phone width={16} height={16} style={{ color: 'var(--accent)' }} /><strong style={{ fontSize: 15 }}>Registro de actividad</strong></div>
+        <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>Calls, notas y looms del proyecto</div>
+      </div>
+
+      <div style={{ padding: 14, borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          {ACTIVITY_TYPES.map((t) => (
+            <button key={t.key} onClick={() => setType(t.key)} className="tag" style={{ cursor: 'pointer', flex: 1, justifyContent: 'center', color: type === t.key ? '#fff' : t.color, background: type === t.key ? t.color : t.color + '1f', borderColor: 'transparent' }}><t.icon width={12} height={12} /> {t.label}</button>
+          ))}
+        </div>
+        {type === 'nota' ? (
+          <>
+            <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Escribí una nota importante…" style={{ resize: 'none' }} />
+            {photos.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>{photos.map((s, i) => <div key={i} style={{ position: 'relative' }}><img src={s} alt="" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 7, border: '1px solid var(--border)' }} /><button onClick={() => setPhotos((a) => a.filter((_, j) => j !== i))} style={{ position: 'absolute', top: -6, right: -6, width: 17, height: 17, borderRadius: 99, background: 'var(--red)', color: '#fff', display: 'grid', placeItems: 'center' }}><I.x width={10} height={10} /></button></div>)}</div>}
+          </>
+        ) : (
+          <input className="input mono" value={link} onChange={(e) => setLink(e.target.value)} placeholder={type === 'loom' ? 'https://loom.com/share/…' : 'https://fathom.video/… (link de la call)'} style={{ fontSize: 12.5 }} />
+        )}
+        <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} style={{ display: 'none' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+          <input type="date" className="input mono" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 'auto', padding: '6px 8px', fontSize: 12 }} />
+          {type === 'nota' && <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()} title="Adjuntar foto" style={{ padding: '6px 9px' }}><I.paperclip width={14} height={14} /></button>}
+          <button className="btn btn-sm btn-accent" onClick={add} style={{ marginLeft: 'auto' }}><I.check width={14} height={14} /> Registrar</button>
+        </div>
+      </div>
+
+      <div className="scroll-y" style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {entries.length === 0 && <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--text-faint)' }}>Sin registros todavía. Dejá una call, nota o loom arriba.</div>}
+        {entries.map((en) => { const m = actTypeMeta(en.type); const u = userOf(en.authorId); return (
+          <div key={en.id} className="surface" style={{ padding: 11, background: 'var(--card)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: (en.note || (en.photos || []).length || en.link) ? 7 : 0 }}>
+              <span className="tag" style={{ color: m.color, background: m.color + '1f', borderColor: 'transparent' }}><m.icon width={11} height={11} /> {m.label}</span>
+              {en.fromCalls && <span className="tag" style={{ color: 'var(--text-faint)', background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>desde Calls</span>}
+              <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fmtDate(en.date)}</span>
+              {!en.fromCalls && <button className="btn btn-sm btn-ghost" onClick={() => del(en.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>}
+            </div>
+            {en.note && <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--text-dim)' }}>{en.note}</div>}
+            {(en.photos || []).length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>{en.photos.map((s, i) => <a key={i} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 7, border: '1px solid var(--border)' }} /></a>)}</div>}
+            {en.link && <a href={en.link} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ marginTop: 8, color: m.color }}><I.ext width={13} height={13} /> Abrir {en.type === 'loom' ? 'Loom' : 'call'}</a>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 11, color: 'var(--text-faint)' }}>
+              {u ? <Avatar user={u} size={18} ring="var(--card)" /> : null}<span>{u ? u.name : (en.authorName || 'Alguien')}</span>
+            </div>
+          </div>
+        )})}
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================================
+   16b · PROJECT AI CHAT (deprecado — el asistente ahora vive en el menú)
 ============================================================================ */
 function buildSystemPrompt(project, client) {
   const sprintTxt = project.sprints.map((s) => `  - ${s.name} [${s.status}] módulos: ${s.modules.map((m) => `${m.name}(${m.status})`).join(', ')}`).join('\n')
