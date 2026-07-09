@@ -2190,6 +2190,106 @@ function PendingDatePrompt({ open, project, onClose, onSave }) {
 }
 
 /* registro de Último avance / Última comunicación: entradas con texto + capturas + días hábiles */
+/* selector de persona (para corregir/asignar quién registró algo) */
+function PersonPicker({ value, team, onChange, size = 22, placeholder = 'Alguien' }) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const u = team.find((x) => x.id === value)
+  const toggle = (e) => { e.stopPropagation(); if (!open && btnRef.current) { const r = btnRef.current.getBoundingClientRect(); setPos({ left: Math.min(Math.max(8, r.left), window.innerWidth - 228), top: r.bottom + 6 }) } setOpen((v) => !v) }
+  return (
+    <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex' }}>
+      <button ref={btnRef} onClick={toggle} className="row-hover" title="Cambiar quién lo registró" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '2px 6px', borderRadius: 8 }}>
+        {u ? <Avatar user={u} size={size} ring="var(--bg-elevated)" /> : <Avatar empty size={size} ring="var(--bg-elevated)" />}
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: u ? 'var(--text)' : 'var(--text-faint)' }}>{u ? u.name : placeholder}</span>
+        <I.chevD width={11} height={11} style={{ color: 'var(--text-faint)' }} />
+      </button>
+      {open && pos && createPortal(<>
+        <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 300 }} />
+        <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 301, width: 220, padding: 6, boxShadow: 'var(--shadow)', maxHeight: 280, overflowY: 'auto' }}>
+          <div className="label" style={{ padding: '4px 8px 6px' }}>Quién lo registró</div>
+          {team.map((x) => (
+            <button key={x.id} className="row-hover" onClick={() => { onChange(x.id); setOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '6px 8px', borderRadius: 8 }}>
+              <Avatar user={x} size={22} ring="var(--card)" /><span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{x.name}</span>{value === x.id && <I.check width={14} height={14} style={{ color: 'var(--accent)' }} />}
+            </button>
+          ))}
+        </div>
+      </>, document.body)}
+    </span>
+  )
+}
+
+/* una entrada del historial de avance/comunicación: autor editable + reacciones + respuestas */
+const LOG_EMOJIS = ['👍', '❤️', '😂', '🎉', '✅']
+function LogEntry({ entry, team, myId, projectName, onUpdate, onDelete, logActivity }) {
+  const [picker, setPicker] = useState(false)
+  const [replyOpen, setReplyOpen] = useState(false)
+  const [replyText, setReplyText] = useState('')
+  const userOf = (id) => team.find((u) => u.id === id)
+  const reactions = entry.reactions || {}
+  const me = myId || 'anon'
+  const notify = (verb) => { if (entry.authorId && entry.authorId !== myId && logActivity) logActivity({ type: 'reply', text: `${verb} tu registro en ${projectName}`, targetId: entry.authorId }) }
+  const react = (em) => {
+    const next = { ...reactions }
+    const arr = next[em] || []
+    const has = arr.includes(me)
+    next[em] = has ? arr.filter((x) => x !== me) : [...arr, me]
+    if (!next[em].length) delete next[em]
+    onUpdate(entry.id, { reactions: next })
+    if (!has) notify('reaccionó a')
+  }
+  const addReply = () => { const t = replyText.trim(); if (!t) return; onUpdate(entry.id, { replies: [...(entry.replies || []), { id: uid(), authorId: myId || '', text: t, date: new Date().toISOString() }] }); setReplyText(''); setReplyOpen(false); notify('respondió') }
+  return (
+    <div className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <PersonPicker value={entry.authorId} team={team} onChange={(id) => onUpdate(entry.id, { authorId: id })} />
+        <input type="date" className="input mono" title="Editar fecha del registro" value={(entry.date || '').slice(0, 10)} onChange={(e) => onUpdate(entry.id, { date: dateInputISO(e.target.value) })} style={{ width: 'auto', padding: '4px 7px', fontSize: 11, marginLeft: 'auto' }} />
+        <button className="btn btn-sm btn-ghost" onClick={() => onDelete(entry.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
+      </div>
+      {entry.text && <MentionText text={entry.text} style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', display: 'block' }} />}
+      {(entry.shots || []).length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>{entry.shots.map((s, i) => <a key={i} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></a>)}</div>}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+        {Object.entries(reactions).map(([em, arr]) => arr.length > 0 && (
+          <button key={em} onClick={() => react(em)} title={arr.map((id) => userOf(id)?.name || 'alguien').join(', ')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 12.5, cursor: 'pointer', border: '1px solid ' + (arr.includes(me) ? 'var(--accent-line)' : 'var(--border)'), background: arr.includes(me) ? 'var(--accent-soft)' : 'var(--card)' }}>
+            <span>{em}</span><span className="mono" style={{ fontSize: 11, color: 'var(--text-dim)' }}>{arr.length}</span>
+          </button>
+        ))}
+        <span style={{ position: 'relative', display: 'inline-flex' }}>
+          <button onClick={() => setPicker((v) => !v)} title="Reaccionar" className="btn btn-sm btn-ghost" style={{ padding: '2px 8px', fontSize: 15, lineHeight: 1 }}>🙂</button>
+          {picker && <div className="surface" style={{ position: 'absolute', bottom: '118%', left: 0, zIndex: 5, display: 'flex', gap: 2, padding: 5, boxShadow: 'var(--shadow)' }}>
+            {LOG_EMOJIS.map((em) => <button key={em} onClick={() => { react(em); setPicker(false) }} className="row-hover" style={{ fontSize: 18, padding: '3px 5px', borderRadius: 7 }}>{em}</button>)}
+          </div>}
+        </span>
+        <button onClick={() => setReplyOpen((v) => !v)} className="btn btn-sm btn-ghost" style={{ padding: '3px 8px', fontSize: 12, color: 'var(--text-dim)' }}><I.comment width={12} height={12} /> Responder{(entry.replies || []).length ? ` (${entry.replies.length})` : ''}</button>
+      </div>
+
+      {(entry.replies || []).length > 0 && (
+        <div style={{ marginTop: 8, paddingLeft: 10, borderLeft: '2px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {entry.replies.map((r) => { const ru = userOf(r.authorId); return (
+            <div key={r.id}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                {ru ? <Avatar user={ru} size={16} ring="var(--bg-elevated)" /> : <Avatar empty size={16} ring="var(--bg-elevated)" />}
+                <span style={{ fontSize: 11.5, fontWeight: 600 }}>{ru ? ru.name : 'Alguien'}</span>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--text-faint)' }}>{fmtDate(r.date)}</span>
+                <button onClick={() => onUpdate(entry.id, { replies: entry.replies.filter((x) => x.id !== r.id) })} title="Eliminar respuesta" style={{ marginLeft: 'auto', color: 'var(--text-faint)', display: 'flex', background: 'transparent' }}><I.x width={11} height={11} /></button>
+              </div>
+              <MentionText text={r.text} style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.45, display: 'block' }} />
+            </div>
+          )})}
+        </div>
+      )}
+      {replyOpen && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <input className="input" value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addReply() } }} placeholder="Responder…" autoFocus style={{ padding: '7px 10px', fontSize: 13 }} />
+          <button className="btn btn-sm btn-accent" onClick={addReply}><I.send width={14} height={14} /></button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ProjectLogModal({ open, kind, project, onClose, patch }) {
   const { data, logActivity } = useApp()
   const [text, setText] = useState('')
@@ -2268,25 +2368,9 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
           <div className="label" style={{ marginBottom: 8 }}>Historial ({entries.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {entries.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin registros todavía.</div>}
-            {entries.map((en) => {
-              const u = userOf(en.authorId)
-              return (
-                <div key={en.id} className="surface" style={{ padding: 11, background: 'var(--bg-elevated)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    {u ? <Avatar user={u} size={22} ring="var(--bg-elevated)" /> : <Avatar empty size={22} ring="var(--bg-elevated)" />}
-                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{u ? u.name : 'Alguien'}</span>
-                    <input type="date" className="input mono" title="Editar fecha del registro" value={(en.date || '').slice(0, 10)} onChange={(e) => updateEntry(en.id, { date: dateInputISO(e.target.value) })} style={{ width: 'auto', padding: '4px 7px', fontSize: 11, marginLeft: 'auto' }} />
-                    <button className="btn btn-sm btn-ghost" onClick={() => delEntry(en.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
-                  </div>
-                  {en.text && <MentionText text={en.text} style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: (en.shots || []).length ? 8 : 0, display: 'block' }} />}
-                  {(en.shots || []).length > 0 && (
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {en.shots.map((s, i) => <a key={i} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></a>)}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+            {entries.map((en) => (
+              <LogEntry key={en.id} entry={en} team={data.team || []} myId={myId} projectName={project.name} onUpdate={updateEntry} onDelete={delEntry} logActivity={logActivity} />
+            ))}
           </div>
         </div>
       </div>
@@ -3668,8 +3752,8 @@ function NotificationCenter() {
   const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
   const userOf = (id) => team.find((u) => u.id === id)
   const unread = activity.filter((a) => a.date > lastSeen).length
-  const mentionsForMe = activity.filter((a) => a.type === 'mention' && a.targetId === myId && a.date > lastSeen).length
-  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, 'project-add': I.folder, comment: I.comment, avance: I.folder, comm: I.phone, mention: I.at }
+  const mentionsForMe = activity.filter((a) => a.targetId === myId && a.date > lastSeen).length
+  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, 'project-add': I.folder, comment: I.comment, avance: I.folder, comm: I.phone, mention: I.at, reply: I.comment, react: I.comment }
   const toggle = (e) => {
     e.stopPropagation()
     if (!open && btnRef.current) {
@@ -3697,7 +3781,7 @@ function NotificationCenter() {
               {activity.length === 0 && <div style={{ padding: 18, textAlign: 'center', fontSize: 13, color: 'var(--text-faint)' }}>Sin actividad todavía.</div>}
               {activity.map((a) => {
                 const u = userOf(a.actorId); const Ico = ICONS[a.type] || I.spark
-                const mine = a.type === 'mention' && a.targetId === myId
+                const mine = !!a.targetId && a.targetId === myId
                 const body = a.type === 'mention'
                   ? (mine ? <span style={{ color: 'var(--text-dim)' }}>te mencionó {a.text}</span>
                           : <span style={{ color: 'var(--text-dim)' }}>mencionó a <strong style={{ color: 'var(--text)' }}>{userOf(a.targetId)?.name || 'alguien'}</strong> {a.text}</span>)
