@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 
 /* ============================================================================
    ONBOARDING · 3 landings públicas (estilo editorial Insights + animaciones Apple)
@@ -54,7 +54,7 @@ function Wizard({ supabase, cloudEnabled }) {
   const [done, setDone] = useState(false)
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
   const go = (n) => { setDir(n > step ? 1 : -1); setStep(n); setErr(null) }
-  const TOTAL = 4
+  const TOTAL = 3
   const submit = async () => {
     if (!f.projectName.trim()) return
     if (!cloudEnabled) { setErr('No hay conexión con el servidor. Probá de nuevo en un momento.'); return }
@@ -123,23 +123,12 @@ function Wizard({ supabase, cloudEnabled }) {
           )}
           {step === 3 && (
             <motion.div key="3" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -18 }} transition={{ duration: 0.4, ease }}>
-              <h2 className="onb-serif" style={{ fontSize: 'clamp(26px,5vw,36px)', marginBottom: 8 }}>Contanos de tu negocio</h2>
-              <p style={{ color: C.dim, marginBottom: 26, fontSize: 16 }}>Así llegamos preparados a la llamada.</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div><label className="onb-label">¿A qué se dedica tu negocio?</label><textarea className="onb-input" value={f.businessDescription} onChange={set('businessDescription')} placeholder="Describí brevemente qué hacés…" rows={3} autoFocus /></div>
-                <div><label className="onb-label">¿Qué querés lograr con el proyecto?</label><textarea className="onb-input" value={f.goals} onChange={set('goals')} placeholder="Tus objetivos principales…" rows={3} /></div>
-              </div>
-              <Nav onBack={() => go(2)} onNext={() => go(4)} />
-            </motion.div>
-          )}
-          {step === 4 && (
-            <motion.div key="4" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -18 }} transition={{ duration: 0.4, ease }}>
               <h2 className="onb-serif" style={{ fontSize: 'clamp(26px,5vw,36px)', marginBottom: 8 }}>Ponele nombre a tu proyecto</h2>
               <p style={{ color: C.dim, marginBottom: 26, fontSize: 16 }}>¿Cómo querés que lo llamemos?</p>
               <div><label className="onb-label">Nombre del proyecto</label><input className="onb-input" value={f.projectName} onChange={set('projectName')} placeholder="Ej: Real Deal Exchange AI" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') submit() }} /></div>
               {err && <div style={{ marginTop: 14, fontSize: 13.5, color: C.red, background: `${C.red}14`, padding: '10px 12px', borderRadius: 10 }}>{err}</div>}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 30 }}>
-                <button className="onb-btn onb-btn-ghost" onClick={() => go(3)}>← Atrás</button>
+                <button className="onb-btn onb-btn-ghost" onClick={() => go(2)}>← Atrás</button>
                 <button className="onb-btn" onClick={submit} disabled={busy || !f.projectName.trim()}>{busy ? 'Creando…' : 'Crear mi proyecto ✦'}</button>
               </div>
             </motion.div>
@@ -190,27 +179,26 @@ function Presentacion() {
           </motion.div>
         )}
 
-        <AnimatePresence>
-          {unlocked && (
-            <motion.div key="cal" initial={{ opacity: 0, y: 20, height: 0 }} animate={{ opacity: 1, y: 0, height: 'auto' }} transition={{ ease, duration: 0.6 }} style={{ overflow: 'hidden' }}>
-              <div style={{ marginTop: 44, textAlign: 'center' }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.ok + '18', color: C.ok, fontWeight: 700, fontSize: 13.5, padding: '6px 14px', borderRadius: 99, marginBottom: 14 }}>✓ Desbloqueado</div>
-                <div className="onb-kicker" style={{ marginBottom: 10 }}>Siguiente paso</div>
-                <h2 className="onb-serif" style={{ fontSize: 'clamp(26px,5.5vw,40px)', marginBottom: 8 }}>Agendá tu llamada de arranque</h2>
-                <p style={{ color: C.dim, fontSize: 'clamp(15px,3.4vw,16px)', maxWidth: 520, margin: '0 auto 24px', lineHeight: 1.6 }}>Elegí un horario para hablar con Nacho, tu Project Manager. En esa llamada definimos el plan de trabajo.</p>
-              </div>
-              <div className="onb-card" style={{ overflow: 'hidden', padding: 4 }}>
-                <iframe src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" style={{ width: '100%', border: 'none', overflow: 'hidden', minHeight: 680, borderRadius: 14 }} scrolling="no" title="Agendar llamada" />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {unlocked && (
+          <motion.div key="cal" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.6 }}>
+            <div style={{ marginTop: 44, textAlign: 'center' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.ok + '18', color: C.ok, fontWeight: 700, fontSize: 13.5, padding: '6px 14px', borderRadius: 99, marginBottom: 14 }}>✓ Desbloqueado</div>
+              <div className="onb-kicker" style={{ marginBottom: 10 }}>Siguiente paso</div>
+              <h2 className="onb-serif" style={{ fontSize: 'clamp(26px,5.5vw,40px)', marginBottom: 8 }}>Agendá tu llamada de arranque</h2>
+              <p style={{ color: C.dim, fontSize: 'clamp(15px,3.4vw,16px)', maxWidth: 520, margin: '0 auto 24px', lineHeight: 1.6 }}>Elegí un horario para hablar con Nacho, tu Project Manager. En esa llamada definimos el plan de trabajo.</p>
+            </div>
+            <div className="onb-card" style={{ padding: 4 }}>
+              <iframe src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" id="vsD3uHw8TYyGAH2CMcL2_onb" style={{ width: '100%', border: 'none', overflow: 'hidden', minHeight: 920, display: 'block', borderRadius: 14 }} scrolling="no" title="Agendar llamada" />
+            </div>
+          </motion.div>
+        )}
       </div>
     </div>
   )
 }
 
 /* ---------- LANDING 3: gracias + qué preparar ---------- */
+const WA_URL = 'https://wa.me/16187090987?text=' + encodeURIComponent('Hola Nacho, ya termine el proceso de onboarding y agende mi llamada.')
 function Gracias() {
   const prep = [
     { n: 1, title: 'Creá tu cuenta de Supabase', desc: 'Es donde va a vivir la base de datos de tu proyecto. Registrate gratis con tu email o con Google.', href: 'https://supabase.com/dashboard/sign-up', cta: 'Crear cuenta en Supabase', logo: 'https://supabase.com/favicon/favicon-32x32.png' },
@@ -235,22 +223,39 @@ function Gracias() {
           </div>
         </motion.div>
 
-        <motion.h2 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.2 }} className="onb-serif" style={{ fontSize: 'clamp(24px,4.5vw,32px)', marginTop: 48, marginBottom: 6 }}>Lo que tenés que llevar preparado</motion.h2>
-        <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.24 }} style={{ color: C.dim, fontSize: 16, marginBottom: 24, lineHeight: 1.6 }}>Antes de la llamada, dejá creadas estas dos cuentas (son gratis y toman 2 minutos cada una):</motion.p>
+        {/* CTA principal — Finalizar onboarding (WhatsApp de Nacho), en movimiento */}
+        <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.18 }} style={{ marginTop: 34, textAlign: 'center' }}>
+          <div className="onb-kicker" style={{ marginBottom: 14 }}>Último paso</div>
+          <motion.a href={WA_URL} target="_blank" rel="noreferrer"
+            animate={{ scale: [1, 1.045, 1], boxShadow: [`0 10px 30px ${C.ok}44`, `0 16px 44px ${C.ok}77`, `0 10px 30px ${C.ok}44`] }}
+            transition={{ duration: 1.7, repeat: Infinity, ease: 'easeInOut' }}
+            whileHover={{ scale: 1.07 }} whileTap={{ scale: 0.97 }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 11, padding: '17px 34px', borderRadius: 99, background: '#25D366', color: '#fff', fontWeight: 800, fontSize: 'clamp(16px,3.6vw,19px)', textDecoration: 'none', border: 'none' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.002-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+            Finalizar onboarding
+          </motion.a>
+          <div style={{ marginTop: 12, color: C.dim, fontSize: 14, lineHeight: 1.55, maxWidth: 420, margin: '12px auto 0' }}>Tocá el botón para avisarle a Nacho por WhatsApp que ya terminaste el proceso y agendaste tu llamada.</div>
+        </motion.div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Preparación (menos prominente, más abajo) */}
+        <div style={{ height: 1, background: C.line, margin: '46px 0 34px' }} />
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.24 }} className="onb-kicker" style={{ textAlign: 'center', marginBottom: 8 }}>Para más adelante</motion.div>
+        <motion.h2 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.28 }} className="onb-serif" style={{ fontSize: 'clamp(19px,3.8vw,24px)', textAlign: 'center', color: C.dim, marginBottom: 6 }}>Dejá creadas estas dos cuentas</motion.h2>
+        <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.3 }} style={{ color: C.faint, fontSize: 14, marginBottom: 22, lineHeight: 1.6, textAlign: 'center', maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>Son gratis y toman 2 minutos cada una. Las vas a necesitar para tu proyecto.</motion.p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 560, margin: '0 auto' }}>
           {prep.map((s, i) => (
-            <motion.div key={s.n} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.3 + i * 0.1 }} className="onb-card" style={{ padding: 20, display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-              <div style={{ flexShrink: 0, width: 40, height: 40, borderRadius: 12, background: C.accent, color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 18 }}>{s.n}</div>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>{s.title}</div>
-                <div style={{ color: C.dim, fontSize: 14.5, lineHeight: 1.55 }}>{s.desc}</div>
+            <motion.div key={s.n} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.34 + i * 0.08 }} style={{ padding: 15, display: 'flex', alignItems: 'center', gap: 13, flexWrap: 'wrap', background: 'transparent', border: `1px solid ${C.line}`, borderRadius: 14 }}>
+              <div style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, background: C.line2, color: C.dim, display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14 }}>{s.n}</div>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>{s.title}</div>
+                <div style={{ color: C.faint, fontSize: 13, lineHeight: 1.5 }}>{s.desc}</div>
               </div>
-              <a href={s.href} target="_blank" rel="noreferrer" className="onb-btn" style={{ fontSize: 14.5, padding: '11px 20px', flexShrink: 0 }}>{s.cta} ↗</a>
+              <a href={s.href} target="_blank" rel="noreferrer" className="onb-btn onb-btn-ghost" style={{ fontSize: 13.5, padding: '9px 16px', flexShrink: 0 }}>{s.cta} ↗</a>
             </motion.div>
           ))}
         </div>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 30, textAlign: 'center', color: C.faint, fontSize: 13.5 }} className="onb-mono">Con eso alcanza. Nos vemos en la llamada. — Insights Software</motion.div>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 30, textAlign: 'center', color: C.faint, fontSize: 13.5 }} className="onb-mono">Nos vemos en la llamada. — Insights Software</motion.div>
       </div>
     </div>
   )

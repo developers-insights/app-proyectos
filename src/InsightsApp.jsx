@@ -2660,10 +2660,16 @@ function Clients() {
     setEdit(null); setCreating(false)
   }
 
-  const Form = ({ initial, onSave, onCancel }) => {
+  const deleteClient = (id) => {
+    setData((d) => ({ ...d, clients: d.clients.filter((x) => x.id !== id) }))
+    setEdit(null)
+  }
+
+  const Form = ({ initial, onSave, onCancel, onDelete }) => {
     const [f, setF] = useState(JSON.parse(JSON.stringify(initial)))
     const set = (k, v) => setF((s) => ({ ...s, [k]: v }))
     const setO = (k, v) => setF((s) => ({ ...s, onboarding: { ...s.onboarding, [k]: v } }))
+    const activeProjs = projectsOf(f.id)
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -2675,9 +2681,12 @@ function Clients() {
         <Field label="Descripción del negocio"><textarea className="input" rows={3} value={f.onboarding.businessDescription} onChange={(e) => setO('businessDescription', e.target.value)} /></Field>
         <Field label="Objetivos"><textarea className="input" rows={2} value={f.onboarding.goals} onChange={(e) => setO('goals', e.target.value)} /></Field>
         <Field label="Observaciones"><textarea className="input" rows={2} value={f.onboarding.notes} onChange={(e) => setO('notes', e.target.value)} /></Field>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
-          <button className="btn" onClick={onCancel}>Cancelar</button>
-          <button className="btn btn-accent" onClick={() => onSave(f)}><I.check width={15} height={15} /> Guardar</button>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+          {onDelete && f.id ? <button className="btn" onClick={() => { if (window.confirm(`¿Eliminar el cliente "${f.name || f.company}"?${activeProjs ? ` Tiene ${activeProjs} proyecto(s) activo(s); esos proyectos no se borran.` : ''} No se puede deshacer.`)) onDelete(f.id) }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I.trash width={15} height={15} /> Eliminar cliente</button> : <span />}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn" onClick={onCancel}>Cancelar</button>
+            <button className="btn btn-accent" onClick={() => onSave(f)}><I.check width={15} height={15} /> Guardar</button>
+          </div>
         </div>
       </div>
     )
@@ -2714,7 +2723,7 @@ function Clients() {
       </div>
 
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.name} sub={`${edit?.company} · respuestas de onboarding`}>
-        {edit && <Form initial={edit} onSave={saveClient} onCancel={() => setEdit(null)} />}
+        {edit && <Form initial={edit} onSave={saveClient} onCancel={() => setEdit(null)} onDelete={deleteClient} />}
       </Modal>
       <Modal open={creating} onClose={() => setCreating(false)} title="Nuevo cliente" sub="Formulario de onboarding">
         {creating && <Form initial={blank} onSave={saveClient} onCancel={() => setCreating(false)} />}
