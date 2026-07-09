@@ -619,6 +619,26 @@ function migrate(state) {
       })),
     }
   })
+  // import de una sola vez: sprints de "Real Deal Exchange AI" (reemplaza los actuales)
+  const RDE = [
+    ['Investigación de extracción de datos', 1, 'en proceso', '2026-07-10'],
+    ['Modelo de datos y backlog', 2, 'pendiente', '2026-07-17'],
+    ['Validación de lógica y plan técnico', 3, 'pendiente', '2026-07-24'],
+    ['Infraestructura base (Hito 1)', 4, 'pendiente', '2026-07-31'],
+    ['Importación y enriquecimiento', 5, 'pendiente', '2026-08-07'],
+    ['SMS outbound y WhatsApp inbound', 6, 'pendiente', '2026-08-14'],
+    ['Revisión formal de Hito 1', 7, 'pendiente', '2026-08-21'],
+    ['Agente de pre-ofertas (Hito 2)', 8, 'pendiente', '2026-08-28'],
+    ['Review Panel, Marketplace y Meta', 9, 'pendiente', '2026-09-04'],
+    ['Revisión formal de Hito 2', 10, 'pendiente', '2026-09-11'],
+    ['Producción y white-label (Hito 3)', 11, 'pendiente', '2026-09-18'],
+    ['Handover completo (Hito 3)', 12, 'pendiente', '2026-09-25'],
+  ]
+  const rde = state.projects.find((p) => p.id === 'p8' || p.name === 'Real Deal Exchange AI')
+  if (rde && !rde._sprintsImportRDE1) {
+    rde.sprints = RDE.map(([name, week, status, d]) => ({ id: 'rde-s' + week, name, status, week, estimatedDate: new Date(d + 'T12:00:00').toISOString(), actualDate: null, assigneeIds: ['u3'], description: '', comments: [] }))
+    rde._sprintsImportRDE1 = true
+  }
   return state
 }
 function loadState() {
