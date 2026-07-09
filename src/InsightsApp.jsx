@@ -1692,6 +1692,103 @@ function SprintAssignees({ ids, team, defaultId, onChange, size = 24 }) {
   )
 }
 
+/* parsea texto pegado con el formato: "# -- Nombre -- Sem N -- Asignado -- Estado -- DD/MM/YYYY" */
+function parseSprintImport(text, team) {
+  const out = []
+  const normStatus = (s) => { const x = (s || '').toLowerCase(); if (/proceso|progreso|curso|haciendo/.test(x)) return 'en proceso'; if (/termin|hecho|complet|listo|finaliz/.test(x)) return 'terminado'; if (/pausa|frenad|espera/.test(x)) return 'pausado'; return 'pendiente' }
+  const findUser = (name) => { const n = (name || '').toLowerCase().trim(); if (!n) return null; return team.find((u) => u.name && (u.name.toLowerCase() === n || u.name.toLowerCase().includes(n) || n.includes(u.name.toLowerCase()))) || null }
+  const parseDate = (d) => {
+    const s = (d || '').trim()
+    let m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/) // DD/MM/YYYY
+    if (m) { let yy = m[3]; if (yy.length === 2) yy = '20' + yy; return new Date(`${yy}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}T12:00:00`).toISOString() }
+    m = s.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/) // YYYY-MM-DD
+    if (m) return new Date(`${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}T12:00:00`).toISOString()
+    return null
+  }
+  for (const raw of (text || '').split('\n')) {
+    const line = raw.trim()
+    if (!line) continue
+    if (/nombre/i.test(line) && /(semana|estado|estimad|asignad)/i.test(line)) continue // header
+    let parts = line.split(/\s*--\s*|\t+|\s*\|\s*/).map((x) => x.trim()).filter((x) => x !== '')
+    if (parts.length < 2) continue
+    if (/^\d+$/.test(parts[0]) && parts.length > 2) parts = parts.slice(1) // saca el "#"
+    const [name, weekRaw, assigneeRaw, statusRaw, dateRaw] = parts
+    if (!name) continue
+    const wm = String(weekRaw || '').match(/\d+/)
+    const u = findUser(assigneeRaw)
+    out.push({ name, week: wm ? Number(wm[0]) : null, assigneeName: (assigneeRaw || '').trim(), assigneeUser: u, assigneeIds: u ? [u.id] : [], status: normStatus(statusRaw), estimatedDate: parseDate(dateRaw), dateStr: (dateRaw || '').trim() })
+  }
+  return out
+}
+
+const IMPORT_EXAMPLE = `# -- Nombre -- Semana -- Asignado -- Estado -- Estimado
+1 -- Investigación de datos -- Sem 1 -- Manuel Navarro -- En proceso -- 10/07/2026
+2 -- Modelo de datos -- Sem 2 -- Manuel Navarro -- Pendiente -- 17/07/2026`
+
+function ImportSprintsModal({ open, team, defaultDevId, hasSprints, onClose, onImport }) {
+  const [text, setText] = useState('')
+  const [replace, setReplace] = useState(true)
+  useEffect(() => { if (open) { setText(''); setReplace(true) } }, [open])
+  const parsed = parseSprintImport(text, team)
+  const unmatched = parsed.filter((r) => r.assigneeName && !r.assigneeUser).map((r) => r.assigneeName)
+  const create = () => {
+    if (!parsed.length) return
+    const list = parsed.map((r, i) => ({ id: uid(), name: r.name, status: r.status, week: r.week || (i + 1), estimatedDate: r.estimatedDate || NOW.toISOString(), actualDate: null, assigneeIds: r.assigneeIds.length ? r.assigneeIds : (defaultDevId ? [defaultDevId] : []), description: '', comments: [] }))
+    onImport(list, replace)
+    onClose()
+  }
+  return (
+    <Modal open={open} onClose={onClose} title="Importar sprints" sub="Pegá la lista y revisá la vista previa antes de crear" width={720}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.6, background: 'var(--bg-elevated)', padding: 12, borderRadius: 10, border: '1px solid var(--border)' }}>
+          Formato (una fila por sprint, columnas separadas por <span className="mono">--</span>):<br />
+          <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 11.5 }}># -- Nombre -- Semana -- Asignado -- Estado -- DD/MM/YYYY</span>
+        </div>
+        <Field label="Pegá acá los sprints">
+          <textarea className="input mono" rows={7} value={text} onChange={(e) => setText(e.target.value)} placeholder={IMPORT_EXAMPLE} style={{ resize: 'vertical', fontSize: 12.5, lineHeight: 1.5 }} />
+        </Field>
+
+        <div>
+          <div className="label" style={{ marginBottom: 8 }}>Vista previa ({parsed.length} sprint{parsed.length === 1 ? '' : 's'})</div>
+          {parsed.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text-faint)', padding: '8px 2px' }}>Pegá la lista arriba para ver cómo va a quedar.</div>
+          ) : (
+            <div className="surface" style={{ overflow: 'auto', maxHeight: 260 }}>
+              <table>
+                <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>{['#', 'Nombre', 'Semana', 'Asignado', 'Estado', 'Estimada'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '9px 12px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600, position: 'sticky', top: 0, background: 'var(--card)' }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {parsed.map((r, i) => { const m = sprintMeta(r.status); return (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '9px 12px' }} className="mono">{i + 1}</td>
+                      <td style={{ padding: '9px 12px', fontWeight: 600, fontSize: 13 }}>{r.name}</td>
+                      <td style={{ padding: '9px 12px', fontSize: 12.5, color: 'var(--text-dim)' }}>Sem {r.week || (i + 1)}</td>
+                      <td style={{ padding: '9px 12px' }}>{r.assigneeUser ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Avatar user={r.assigneeUser} size={20} ring="var(--card)" /><span style={{ fontSize: 12.5 }}>{r.assigneeUser.name}</span></span> : <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }} title="No coincide con ningún miembro — se usará el dev de la tarjeta">{r.assigneeName || '—'} {r.assigneeName ? '⚠' : ''}</span>}</td>
+                      <td style={{ padding: '9px 12px' }}><span className="tag" style={{ color: `var(--${m.tone === 'neutral' ? 'text-dim' : m.tone === 'accent' ? 'accent' : m.tone})`, background: m.tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${m.tone}-soft)`, borderColor: 'transparent' }}>{m.label}</span></td>
+                      <td style={{ padding: '9px 12px', fontSize: 12, color: r.estimatedDate ? 'var(--text-dim)' : 'var(--red)' }} className="mono">{r.estimatedDate ? fmtDate(r.estimatedDate) : (r.dateStr ? 'fecha ?' : '—')}</td>
+                    </tr>
+                  )})}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {unmatched.length > 0 && <div style={{ fontSize: 12, color: 'var(--yellow)', marginTop: 8 }}>⚠ No encontré a: {[...new Set(unmatched)].join(', ')}. A esos sprints se les va a asignar el developer de la tarjeta (podés cambiarlo después).</div>}
+        </div>
+
+        {hasSprints && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
+            <span>Reemplazar los sprints actuales <span style={{ color: 'var(--text-faint)' }}>(si lo destildás, se agregan a los existentes)</span></span>
+          </label>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button className="btn" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" onClick={create} disabled={!parsed.length}><I.check width={15} height={15} /> Crear {parsed.length || ''} sprint{parsed.length === 1 ? '' : 's'}</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function SprintBoard({ project, patch, onOpenSprint }) {
   const { data, logActivity } = useApp()
   const [boardView, setBoardView] = useState('table')
@@ -1699,6 +1796,7 @@ function SprintBoard({ project, patch, onOpenSprint }) {
   const [overId, setOverId] = useState(null)
   const [weekFilter, setWeekFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('encurso')   // encurso (default, archiva terminados) | terminados | todos
+  const [importOpen, setImportOpen] = useState(false)
   const sprints = project.sprints || []
   const team = data.team || []
   const devId = project.assignments?.dev?.userId || null
@@ -1742,12 +1840,15 @@ function SprintBoard({ project, patch, onOpenSprint }) {
             <option value="all">Todas las semanas</option>
             {weeks.map((w) => <option key={w} value={w}>Semana {w}</option>)}
           </select>
+          <button className="btn btn-sm" onClick={() => setImportOpen(true)} title="Importar sprints desde una lista"><I.download width={14} height={14} /> Importar</button>
           <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
             <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('table')} title="Tabla" style={{ background: boardView === 'table' ? 'var(--card-hover)' : 'transparent', color: boardView === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
             <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('kanban')} title="Kanban" style={{ background: boardView === 'kanban' ? 'var(--card-hover)' : 'transparent', color: boardView === 'kanban' ? 'var(--accent)' : 'var(--text-dim)' }}><I.kanban width={15} height={15} /></button>
           </div>
         </div>
       </div>
+      <ImportSprintsModal open={importOpen} team={team} defaultDevId={devId} hasSprints={sprints.length > 0} onClose={() => setImportOpen(false)}
+        onImport={(list, replace) => { patch((p) => ({ ...p, sprints: replace ? list : [...(p.sprints || []), ...list] })); logActivity && logActivity({ type: 'sprint-add', text: `importó ${list.length} sprints a ${project.name}` }) }} />
 
       {boardView === 'table' ? (
         <>
