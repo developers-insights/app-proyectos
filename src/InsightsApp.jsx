@@ -18,6 +18,7 @@ import React, {
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@supabase/supabase-js'
+import OnboardingLanding from './Onboarding'
 
 /* ============================================================================
    0 · SUPABASE (cloud persistence + auth) — optional, enabled via env vars
@@ -4348,7 +4349,9 @@ function ClientView({ shareId }) {
 
 export default function InsightsApp() {
   const [session, setSession] = useState(cloudEnabled ? undefined : null) // undefined=loading
-  const shareId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('share') : null
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
+  const shareId = params.get('share')
+  const onbStep = params.get('onb')
 
   // inject global css once
   useEffect(() => {
@@ -4375,6 +4378,7 @@ export default function InsightsApp() {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  if (onbStep) return <OnboardingLanding step={onbStep} supabase={supabase} cloudEnabled={cloudEnabled} />
   if (shareId) return <ClientView shareId={shareId} />
   if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
   if (cloudEnabled && !session) return <Login />
