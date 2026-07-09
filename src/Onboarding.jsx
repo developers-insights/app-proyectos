@@ -41,7 +41,8 @@ function useInjectCss() {
   }, [])
 }
 const goTo = (step) => { const u = new URL(window.location.href); u.searchParams.set('onb', step); window.location.href = u.toString() }
-const Logo = ({ h = 30 }) => <img src="/insights-logo.png" alt="Insights Software" style={{ height: h, width: 'auto' }} onError={(e) => { e.target.style.display = 'none' }} />
+const Logo = ({ h = 30 }) => <img src="/insights-logo.png" alt="Insights Software" style={{ height: h, width: 'auto', display: 'inline-block' }} onError={(e) => { e.target.style.display = 'none' }} />
+const LogoBar = ({ h = 30 }) => <div style={{ paddingTop: 30, textAlign: 'center', position: 'relative', zIndex: 1 }}><Logo h={h} /></div>
 
 /* ---------- LANDING 1: bienvenida + wizard ---------- */
 function Wizard({ supabase, cloudEnabled }) {
@@ -81,11 +82,11 @@ function Wizard({ supabase, cloudEnabled }) {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div className="onb-wrap" style={{ paddingTop: 34, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Logo />
-        {step > 0 && <div className="onb-mono" style={{ fontSize: 12, color: C.faint }}>Paso {step}/{TOTAL}</div>}
-      </div>
-      {step > 0 && <div className="onb-wrap" style={{ marginTop: 16 }}><div style={{ height: 4, borderRadius: 99, background: C.line2, overflow: 'hidden' }}><motion.div animate={{ width: `${(step / TOTAL) * 100}%` }} transition={{ ease }} style={{ height: '100%', background: C.accent, borderRadius: 99 }} /></div></div>}
+      <LogoBar />
+      {step > 0 && <div className="onb-wrap" style={{ marginTop: 18 }}>
+        <div className="onb-mono" style={{ fontSize: 11, color: C.faint, textAlign: 'center', marginBottom: 8 }}>Paso {step} de {TOTAL}</div>
+        <div style={{ height: 4, borderRadius: 99, background: C.line2, overflow: 'hidden' }}><motion.div animate={{ width: `${(step / TOTAL) * 100}%` }} transition={{ ease }} style={{ height: '100%', background: C.accent, borderRadius: 99 }} /></div>
+      </div>}
 
       <div className="onb-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '40px 22px 60px' }}>
         <motion.div key={step} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.28, ease }}>
@@ -157,30 +158,53 @@ function Nav({ onBack, onNext, nextDisabled }) {
   )
 }
 
-/* ---------- LANDING 2: presentación (video + calendario) ---------- */
+/* ---------- LANDING 2: presentación (video + calendario que se desbloquea a los 4 min) ---------- */
+const LOCK_SECS = 240 // 4 minutos
 function Presentacion() {
+  const [left, setLeft] = useState(LOCK_SECS)
   useEffect(() => { const s = document.createElement('script'); s.src = 'https://link.msgsndr.com/js/form_embed.js'; s.async = true; document.body.appendChild(s); return () => { try { document.body.removeChild(s) } catch (e) {} } }, [])
+  useEffect(() => { if (left <= 0) return; const iv = setInterval(() => setLeft((s) => Math.max(0, s - 1)), 1000); return () => clearInterval(iv) }, [left <= 0])
+  const unlocked = left <= 0
+  const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, '0')
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 80 }}>
-      <div className="onb-wrap" style={{ paddingTop: 34, maxWidth: 860 }}>
-        <Logo />
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5 }} style={{ marginTop: 40, textAlign: 'center' }}>
-          <span style={{ display: 'inline-block', background: C.red, color: '#fff', fontWeight: 800, fontSize: 'clamp(16px,3vw,20px)', padding: '8px 18px', borderRadius: 10, letterSpacing: '.02em', boxShadow: `0 8px 24px ${C.red}55`, transform: 'rotate(-1.2deg)' }}>▶ MIRÁ ESTE VIDEO IMPORTANTE</span>
+      <LogoBar />
+      <div className="onb-wrap" style={{ maxWidth: 820, paddingTop: 6 }}>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5 }} style={{ marginTop: 34, textAlign: 'center' }}>
+          <span style={{ display: 'inline-block', background: C.red, color: '#fff', fontWeight: 800, fontSize: 'clamp(15px,3.4vw,20px)', padding: '8px 16px', borderRadius: 10, letterSpacing: '.02em', boxShadow: `0 8px 24px ${C.red}55`, transform: 'rotate(-1.2deg)' }}>▶ MIRÁ ESTE VIDEO IMPORTANTE</span>
         </motion.div>
-        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ ease, duration: 0.6, delay: 0.1 }} className="onb-card" style={{ marginTop: 24, padding: 12, overflow: 'hidden' }}>
+        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ ease, duration: 0.6, delay: 0.1 }} className="onb-card" style={{ marginTop: 22, padding: 'clamp(8px,2vw,12px)', overflow: 'hidden' }}>
           <div style={{ position: 'relative', paddingBottom: '64.7482%', height: 0, borderRadius: 12, overflow: 'hidden' }}>
             <iframe src="https://www.loom.com/embed/20a4804d7a314053beb013ae101425b3" frameBorder="0" allowFullScreen style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} title="Presentación Insights" />
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.2 }} style={{ marginTop: 56, textAlign: 'center' }}>
-          <div className="onb-kicker" style={{ marginBottom: 10 }}>Siguiente paso</div>
-          <h2 className="onb-serif" style={{ fontSize: 'clamp(28px,5vw,40px)', marginBottom: 8 }}>Agendá tu llamada de arranque</h2>
-          <p style={{ color: C.dim, fontSize: 16, maxWidth: 520, margin: '0 auto 26px', lineHeight: 1.6 }}>Elegí un horario para hablar con Nacho, tu Project Manager. En esa llamada definimos el plan de trabajo.</p>
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.28 }} className="onb-card" style={{ overflow: 'hidden', padding: 4 }}>
-          <iframe src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" style={{ width: '100%', border: 'none', overflow: 'hidden', minHeight: 720, borderRadius: 14 }} scrolling="no" title="Agendar llamada" />
-        </motion.div>
+        {/* alerta timer — distinta a la roja (naranja/branding) */}
+        {!unlocked && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.4, delay: 0.2 }}
+            style={{ marginTop: 30, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'center', textAlign: 'center', background: `linear-gradient(90deg, ${C.accent}, ${C.accentHi})`, color: '#fff', padding: '14px 20px', borderRadius: 14, boxShadow: `0 10px 30px ${C.accent}44` }}>
+            <span style={{ fontSize: 20 }}>⏳</span>
+            <span style={{ fontWeight: 700, fontSize: 'clamp(14px,3.4vw,16px)' }}>El siguiente paso se desbloquea en</span>
+            <span className="onb-mono" style={{ fontSize: 22, fontWeight: 700, background: 'rgba(255,255,255,.22)', padding: '2px 12px', borderRadius: 8, letterSpacing: '.04em' }}>{mm}:{ss}</span>
+            <span style={{ fontSize: 13.5, opacity: .92, width: '100%' }}>Mirá el video completo — al terminar los 4 minutos vas a poder agendar tu llamada.</span>
+          </motion.div>
+        )}
+
+        <AnimatePresence>
+          {unlocked && (
+            <motion.div key="cal" initial={{ opacity: 0, y: 20, height: 0 }} animate={{ opacity: 1, y: 0, height: 'auto' }} transition={{ ease, duration: 0.6 }} style={{ overflow: 'hidden' }}>
+              <div style={{ marginTop: 44, textAlign: 'center' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.ok + '18', color: C.ok, fontWeight: 700, fontSize: 13.5, padding: '6px 14px', borderRadius: 99, marginBottom: 14 }}>✓ Desbloqueado</div>
+                <div className="onb-kicker" style={{ marginBottom: 10 }}>Siguiente paso</div>
+                <h2 className="onb-serif" style={{ fontSize: 'clamp(26px,5.5vw,40px)', marginBottom: 8 }}>Agendá tu llamada de arranque</h2>
+                <p style={{ color: C.dim, fontSize: 'clamp(15px,3.4vw,16px)', maxWidth: 520, margin: '0 auto 24px', lineHeight: 1.6 }}>Elegí un horario para hablar con Nacho, tu Project Manager. En esa llamada definimos el plan de trabajo.</p>
+              </div>
+              <div className="onb-card" style={{ overflow: 'hidden', padding: 4 }}>
+                <iframe src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" style={{ width: '100%', border: 'none', overflow: 'hidden', minHeight: 680, borderRadius: 14 }} scrolling="no" title="Agendar llamada" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )
@@ -194,9 +218,9 @@ function Gracias() {
   ]
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 90 }}>
-      <div className="onb-wrap" style={{ paddingTop: 34, maxWidth: 720 }}>
-        <Logo />
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5 }} style={{ marginTop: 44, textAlign: 'center' }}>
+      <LogoBar />
+      <div className="onb-wrap" style={{ paddingTop: 6, maxWidth: 720 }}>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5 }} style={{ marginTop: 34, textAlign: 'center' }}>
           <div className="onb-kicker" style={{ marginBottom: 14 }}>Reunión agendada ✓</div>
           <h1 className="onb-serif" style={{ fontSize: 'clamp(34px,7vw,52px)', lineHeight: 1.06, marginBottom: 14 }}>¡Gracias por agendar!</h1>
           <p style={{ color: C.dim, fontSize: 17, maxWidth: 520, margin: '0 auto', lineHeight: 1.6 }}>Nacho te va a estar esperando en la llamada. Mientras tanto, mirá este mensaje y dejá listo lo de abajo.</p>

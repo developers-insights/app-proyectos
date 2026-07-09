@@ -1261,7 +1261,7 @@ function AddTaskInput({ onAdd }) {
 }
 
 /* full project editor (meta · URLs · financials · sprints) */
-function EditProjectModal({ open, project, onClose, onSave }) {
+function EditProjectModal({ open, project, onClose, onSave, onDelete }) {
   const [d, setD] = useState(null)
   useEffect(() => { if (open && project) setD(JSON.parse(JSON.stringify(project))) }, [open, project && project.id])
   const set = (k, v) => setD((s) => ({ ...s, [k]: v }))
@@ -1313,9 +1313,12 @@ function EditProjectModal({ open, project, onClose, onSave }) {
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 8 }}>Las tareas de cada sprint se editan desde la tabla de Sprints (clic en un sprint para expandir y agregar/renombrar/cambiar estado).</div>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-            <button className="btn" onClick={onClose}>Cancelar</button>
-            <button className="btn btn-accent" onClick={() => { onSave(d); onClose() }}><I.check width={15} height={15} /> Guardar cambios</button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            {onDelete ? <button className="btn" onClick={() => { if (window.confirm(`¿Eliminar el proyecto "${d.name}"? Se borran sus sprints, registro y datos. No se puede deshacer.`)) { onDelete(d.id); onClose() } }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I.trash width={15} height={15} /> Eliminar proyecto</button> : <span />}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn" onClick={onClose}>Cancelar</button>
+              <button className="btn btn-accent" onClick={() => { onSave(d); onClose() }}><I.check width={15} height={15} /> Guardar cambios</button>
+            </div>
           </div>
         </div>
       )}
@@ -2671,10 +2674,6 @@ function Clients() {
         </div>
         <Field label="Descripción del negocio"><textarea className="input" rows={3} value={f.onboarding.businessDescription} onChange={(e) => setO('businessDescription', e.target.value)} /></Field>
         <Field label="Objetivos"><textarea className="input" rows={2} value={f.onboarding.goals} onChange={(e) => setO('goals', e.target.value)} /></Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Tecnologías existentes"><input className="input" value={f.onboarding.existingTech} onChange={(e) => setO('existingTech', e.target.value)} /></Field>
-          <Field label="Presupuesto aprobado (USD)"><input className="input mono" type="number" value={f.onboarding.approvedBudget} onChange={(e) => setO('approvedBudget', Number(e.target.value))} /></Field>
-        </div>
         <Field label="Observaciones"><textarea className="input" rows={2} value={f.onboarding.notes} onChange={(e) => setO('notes', e.target.value)} /></Field>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
           <button className="btn" onClick={onCancel}>Cancelar</button>
@@ -3178,7 +3177,7 @@ function ProjectDetail({ projectId, onBack }) {
         )}
       </Modal>
 
-      <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} />
+      <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} onDelete={(id) => { setData((dd) => ({ ...dd, projects: dd.projects.filter((p) => p.id !== id) })); onBack() }} />
       <SprintDetailModal open={!!openSprint} sprint={openSprint} team={data.team} defaultId={project.assignments?.dev?.userId || null} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprint(openSprintId, fields)} />
       <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
