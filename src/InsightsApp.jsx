@@ -4244,7 +4244,7 @@ function ClientView({ shareId }) {
     if (!cloudEnabled) { setErr('El link necesita conexión con el servidor.'); return }
     setBusy(true); setErr(null)
     try {
-      const { data: res, error } = await supabase.functions.invoke('project-share', { body: { shareId, password } })
+      const { data: res, error } = await supabase.functions.invoke('project-share-', { body: { shareId, password } })
       if (error) throw error
       if (res && res.error) throw new Error(res.error)
       savedPw.current = password; setPayload(res)
