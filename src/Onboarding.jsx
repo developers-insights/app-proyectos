@@ -215,11 +215,9 @@ function Gracias() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ ease, duration: 0.6, delay: 0.1 }} className="onb-card" style={{ marginTop: 30, padding: 12 }}>
-          {/* Video de Nacho — reemplazar el embed cuando lo tengas */}
-          <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, borderRadius: 12, overflow: 'hidden', background: 'repeating-linear-gradient(45deg,#f0ece5,#f0ece5 12px,#eae5dd 12px,#eae5dd 24px)', display: 'grid' }}>
-            <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center', color: C.dim, padding: 20 }}>
-              <div><div style={{ fontSize: 40, marginBottom: 8 }}>🎬</div><div className="onb-mono" style={{ fontSize: 12.5 }}>VIDEO DE NACHO · pendiente<br /><span style={{ color: C.faint }}>(pegá acá el embed de Loom cuando lo tengas)</span></div></div>
-            </div>
+          {/* Video de Nacho */}
+          <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, borderRadius: 12, overflow: 'hidden' }}>
+            <iframe src="https://www.loom.com/embed/fd1f44d59370479eb5e7544afbd37bc5" frameBorder="0" allowFullScreen style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} title="Video de Nacho" />
           </div>
         </motion.div>
 
