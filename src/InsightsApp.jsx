@@ -28,6 +28,8 @@ const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || 'https://otowpbkhcjpdqowpq
 const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '' // ← pegá acá tu publishable key (sb_publishable_…) y el login funciona sin tocar Render
 const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY) : null
 const cloudEnabled = !!supabase
+/* versión de la app — bumpeá esto en cada release para que se vea en el botón "Actualizar" */
+const APP_VERSION = '1.1.0'
 
 /* ============================================================================
    1 · THEME TOKENS + GLOBAL STYLE INJECTION
@@ -3805,6 +3807,49 @@ function NotificationCenter() {
   )
 }
 
+/* detecta si el server tiene un bundle nuevo (deploy nuevo) comparando el hash del index-*.js */
+function useAppUpdate() {
+  const [ready, setReady] = useState(false)
+  const current = useRef(null)
+  useEffect(() => {
+    const src = [...document.querySelectorAll('script[src]')].map((s) => s.getAttribute('src') || '').find((s) => /assets\/index-[\w-]+\.js/.test(s))
+    current.current = src ? src.split('/').pop() : null
+    if (!current.current) return   // dev / sin bundle hasheado → no chequea
+    let alive = true
+    const check = async () => {
+      try {
+        const html = await fetch('/index.html?ts=' + Date.now(), { cache: 'no-store' }).then((r) => r.text())
+        const m = html.match(/assets\/index-[\w-]+\.js/)
+        if (alive && m && m[0].split('/').pop() !== current.current) setReady(true)
+      } catch (e) { /* ignore */ }
+    }
+    const iv = setInterval(check, 60000)
+    const onFocus = () => check()
+    window.addEventListener('focus', onFocus)
+    return () => { alive = false; clearInterval(iv); window.removeEventListener('focus', onFocus) }
+  }, [])
+  return ready
+}
+/* recarga limpiando caché (y service workers si hubiera) — como un F5 forzado */
+async function hardRefresh() {
+  try { if ('caches' in window) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))) } } catch (e) { /* ignore */ }
+  try { if ('serviceWorker' in navigator) { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map((r) => r.unregister())) } } catch (e) { /* ignore */ }
+  window.location.reload()
+}
+function UpdateButton({ mobile }) {
+  const ready = useAppUpdate()
+  const [busy, setBusy] = useState(false)
+  const go = async () => { setBusy(true); await hardRefresh() }
+  return (
+    <button className="btn btn-sm" onClick={go} disabled={busy}
+      title={ready ? `Hay una versión nueva. Tocá para actualizar (recarga + limpia caché). Actual: v${APP_VERSION}` : `App v${APP_VERSION} · recargar y limpiar caché (F5 forzado)`}
+      style={ready ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)', fontWeight: 700 } : { padding: mobile ? 8 : undefined }}>
+      <I.refresh width={15} height={15} style={busy ? { animation: 'spin 1s linear infinite' } : {}} />
+      {ready ? <span>Actualizar</span> : <span className="hide-mobile mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>v{APP_VERSION}</span>}
+    </button>
+  )
+}
+
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
   const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', assistant: 'IA Assistant', project: 'Projects / Detalle' }[route.view]
   return (
@@ -3815,6 +3860,7 @@ function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, on
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span className="hide-mobile"><SyncBadge sync={sync} /></span>
+        <UpdateButton mobile={mobile} />
         <NotificationCenter />
         <button className="btn btn-sm btn-ghost" onClick={onSettings} title="Ajustes & API keys">⚙ <span className="hide-mobile" style={{ marginLeft: 2 }}>Ajustes</span></button>
         <button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Cambiar tema" style={{ padding: 8 }}>
