@@ -1698,6 +1698,7 @@ function SprintBoard({ project, patch, onOpenSprint }) {
   const [dragId, setDragId] = useState(null)
   const [overId, setOverId] = useState(null)
   const [weekFilter, setWeekFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('encurso')   // encurso (default, archiva terminados) | terminados | todos
   const sprints = project.sprints || []
   const team = data.team || []
   const devId = project.assignments?.dev?.userId || null
@@ -1722,14 +1723,21 @@ function SprintBoard({ project, patch, onOpenSprint }) {
       return { ...p, sprints: arr }
     })
   }
-  const rows = sprints.map((s, i) => ({ s, i, week: weekOf(s, i) })).filter((r) => weekFilter === 'all' || r.week === weekFilter)
-  const canDrag = weekFilter === 'all'
+  const doneCount = sprints.filter((s) => normSprint(s.status) === 'terminado').length
+  const statusOk = (s) => { const done = normSprint(s.status) === 'terminado'; return statusFilter === 'terminados' ? done : statusFilter === 'todos' ? true : !done }
+  const rows = sprints.map((s, i) => ({ s, i, week: weekOf(s, i) })).filter((r) => (weekFilter === 'all' || r.week === weekFilter) && statusOk(r.s))
+  const canDrag = weekFilter === 'all' && statusFilter !== 'terminados'
 
   return (
     <div style={{ marginBottom: 26 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 19 }}>Sprints</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 'auto', padding: '7px 9px', fontSize: 12.5 }} title="Filtrar por estado">
+            <option value="encurso">En curso</option>
+            <option value="terminados">Terminados{doneCount ? ` (${doneCount})` : ''}</option>
+            <option value="todos">Todos</option>
+          </select>
           <select className="input" value={weekFilter} onChange={(e) => setWeekFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={{ width: 'auto', padding: '7px 9px', fontSize: 12.5 }}>
             <option value="all">Todas las semanas</option>
             {weeks.map((w) => <option key={w} value={w}>Semana {w}</option>)}
@@ -1749,18 +1757,23 @@ function SprintBoard({ project, patch, onOpenSprint }) {
                 {['', '#', 'Nombre', 'Semana', 'Asignado', 'Estado', 'Estimada'].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
               </tr></thead>
               <tbody>
-                {rows.map(({ s, i, week }) => (
+                {rows.map(({ s, i, week }) => {
+                  const inProc = normSprint(s.status) === 'en proceso'
+                  const done = normSprint(s.status) === 'terminado'
+                  return (
                   <tr key={s.id} draggable={canDrag}
                     onDragStart={(e) => { if (!canDrag) return; e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragId(s.id) }}
                     onDragOver={(e) => { if (!canDrag) return; e.preventDefault(); setOverId(s.id) }}
                     onDragEnd={() => { setDragId(null); setOverId(null) }}
                     onDrop={(e) => { if (!canDrag) return; e.preventDefault(); reorder(e.dataTransfer.getData('text/plain') || dragId, s.id); setDragId(null); setOverId(null) }}
-                    style={{ borderBottom: '1px solid var(--border)', background: overId === s.id && dragId !== s.id ? 'var(--card-hover)' : dragId === s.id ? 'var(--bg-elevated)' : 'transparent', opacity: dragId === s.id ? 0.5 : 1 }}>
+                    style={{ borderBottom: '1px solid var(--border)', borderLeft: inProc ? '3px solid var(--accent)' : '3px solid transparent', background: overId === s.id && dragId !== s.id ? 'var(--card-hover)' : dragId === s.id ? 'var(--bg-elevated)' : inProc ? 'var(--accent-soft)' : 'transparent', opacity: dragId === s.id ? 0.5 : done ? 0.5 : 1 }}>
                     <td style={{ padding: '12px 8px 12px 14px', width: 28, cursor: canDrag ? 'grab' : 'default', color: 'var(--text-faint)' }} title={canDrag ? 'Arrastrá para reordenar' : ''}><I.grip width={16} height={16} /></td>
                     <td style={{ padding: '12px 14px' }} className="mono">{i + 1}</td>
                     <td style={{ padding: '12px 14px' }}>
                       <button className="click" onClick={() => onOpenSprint(s.id)} title="Ver detalle" style={{ fontWeight: 600, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, color: 'var(--text)' }}>
-                        {s.name}{(s.comments || []).length > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{s.comments.length}</span>}
+                        {s.name}
+                        {done && <span className="tag" style={{ color: 'var(--text-faint)', background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>archivado</span>}
+                        {(s.comments || []).length > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{s.comments.length}</span>}
                       </button>
                     </td>
                     <td style={{ padding: '8px 14px' }} onClick={(e) => e.stopPropagation()}>
@@ -1775,8 +1788,8 @@ function SprintBoard({ project, patch, onOpenSprint }) {
                       <input type="date" className="input mono" value={(s.estimatedDate || '').slice(0, 10)} onChange={(e) => setSprint(s.id, { estimatedDate: e.target.value ? new Date(e.target.value).toISOString() : null })} onClick={(e) => e.stopPropagation()} style={{ width: 'auto', padding: '5px 8px', fontSize: 12, background: 'transparent', border: '1px solid transparent' }} onFocus={(e) => (e.target.style.borderColor = 'var(--border)')} onBlur={(e) => (e.target.style.borderColor = 'transparent')} />
                     </td>
                   </tr>
-                ))}
-                {rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>Sin sprints en esta semana.</td></tr>}
+                )})}
+                {rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>{statusFilter === 'terminados' ? 'No hay sprints terminados todavía.' : 'Sin sprints para este filtro.'}</td></tr>}
               </tbody>
             </table>
           </div>
