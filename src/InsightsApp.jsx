@@ -610,6 +610,7 @@ function migrate(state) {
       chats: rest.chats || [],
       activity: rest.activity || [],
       driveUrl: rest.driveUrl || '',
+      clientTasks: rest.clientTasks || [],
       sprints: (rest.sprints || []).map((s) => ({
         ...s,
         status: normSprint(s.status),
@@ -3002,6 +3003,43 @@ function KpiCard({ label, value, sub, tone, onClick }) {
   )
 }
 
+/* configurar el link público del proyecto para el cliente (solo lectura, con contraseña) */
+function ShareModal({ open, project, onClose, patch }) {
+  const [copied, setCopied] = useState(false)
+  const enabled = !!project.shareEnabled
+  const link = project.shareId ? `${window.location.origin}${window.location.pathname}?share=${project.shareId}` : ''
+  const enable = () => patch((p) => ({ ...p, shareEnabled: true, shareId: p.shareId || (uid() + uid()), sharePassword: p.sharePassword || '' }))
+  const copy = () => { try { navigator.clipboard.writeText(link) } catch (e) { /* ignore */ } setCopied(true); setTimeout(() => setCopied(false), 1500) }
+  return (
+    <Modal open={open} onClose={onClose} title="Compartir con el cliente" sub={project.name} width={500}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.6, background: 'var(--bg-elevated)', padding: 12, borderRadius: 10, border: '1px solid var(--border)' }}>
+          El cliente entra con la contraseña y ve una página de <strong>solo lectura</strong> en tiempo real: dashboard, sprints por semana, tareas y el registro (calls, looms y notas <strong>públicas</strong>). Las notas privadas y lo interno no se muestran.
+        </div>
+        {!enabled ? (
+          <button className="btn btn-accent" onClick={enable} style={{ justifyContent: 'center' }}><I.eye width={15} height={15} /> Activar link para el cliente</button>
+        ) : (
+          <>
+            <Field label="Contraseña de acceso (dásela al cliente)">
+              <input className="input" value={project.sharePassword || ''} onChange={(e) => patch((p) => ({ ...p, sharePassword: e.target.value }))} placeholder="ej: real1234" autoFocus />
+            </Field>
+            <Field label="Link público">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input className="input mono" readOnly value={link} style={{ fontSize: 12 }} onFocus={(e) => e.target.select()} />
+                <button className="btn btn-sm" onClick={copy} style={{ flexShrink: 0 }}>{copied ? <I.check width={14} height={14} /> : <I.link width={14} height={14} />} {copied ? 'Copiado' : 'Copiar'}</button>
+              </div>
+            </Field>
+            {!(project.sharePassword || '').trim() && <div style={{ fontSize: 12, color: 'var(--yellow)' }}>⚠ Poné una contraseña — sin ella el cliente no puede entrar.</div>}
+            <a href={link} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ justifyContent: 'center' }}><I.ext width={14} height={14} /> Previsualizar como cliente</a>
+            <button className="btn btn-sm btn-ghost" onClick={() => patch((p) => ({ ...p, shareEnabled: false }))} style={{ color: 'var(--red)', justifyContent: 'center' }}><I.eyeOff width={14} height={14} /> Desactivar el link</button>
+          </>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button></div>
+      </div>
+    </Modal>
+  )
+}
+
 function ProjectDetail({ projectId, onBack }) {
   const { data, setData } = useApp()
   const project = data.projects.find((p) => p.id === projectId)
@@ -3015,12 +3053,22 @@ function ProjectDetail({ projectId, onBack }) {
   const [pendingPrompt, setPendingPrompt] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
   const [driveOpen, setDriveOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
 
   if (!project) return null
   const patch = (fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === projectId ? fn(p) : p)) }))
   const saveProject = (draft) => patch((p) => ({ ...draft, chats: p.chats }))
   const patchSprint = (sid, fields) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
   const openSprint = project.sprints.find((s) => s.id === openSprintId)
+  // tareas del equipo (vienen de la sección Tareas, filtradas por proyecto) y tareas/dependencias del cliente
+  const userOf = (id) => (data.team || []).find((u) => u.id === id)
+  const teamTasks = (data.tasks || []).filter((t) => t.projectId === projectId)
+  const clientTasks = project.clientTasks || []
+  const addTeamTask = (name) => setData((d) => ({ ...d, tasks: [{ id: uid(), name, projectId, assigneeId: project.assignments?.dev?.userId || '', priority: 'normal', status: 'pendiente', notes: '', comments: [] }, ...(d.tasks || [])] }))
+  const setTeamStatus = (id, status) => setData((d) => ({ ...d, tasks: d.tasks.map((t) => (t.id === id ? { ...t, status } : t)) }))
+  const addClientTask = (text) => patch((p) => ({ ...p, clientTasks: [...(p.clientTasks || []), { id: uid(), text, done: false, date: new Date().toISOString() }] }))
+  const toggleClient = (id) => patch((p) => ({ ...p, clientTasks: (p.clientTasks || []).map((c) => (c.id === id ? { ...c, done: !c.done } : c)) }))
+  const delClient = (id) => patch((p) => ({ ...p, clientTasks: (p.clientTasks || []).filter((c) => c.id !== id) }))
 
   const sprintProgress = calcProgress(project)
   const sprintsTotal = project.sprints.length
@@ -3053,6 +3101,7 @@ function ProjectDetail({ projectId, onBack }) {
           <a href={project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm" onClick={(e) => { if (!project.productionUrl) e.preventDefault() }}><I.rocket width={14} height={14} /> Producción</a>
           <button className="btn btn-sm" onClick={() => setScopeOpen(true)}><I.pdf width={14} height={14} /> Alcance{(() => { const n = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0); return n ? ` · ${n}` : '' })()}</button>
           <button className="btn btn-sm" onClick={() => setDriveOpen(true)} title="Carpeta de Drive compartida con el cliente" style={{ color: project.driveUrl ? 'var(--accent)' : undefined }}><I.folder width={14} height={14} /> Drive</button>
+          <button className="btn btn-sm" onClick={() => setShareOpen(true)} title="Compartir vista con el cliente (link + contraseña)" style={{ color: project.shareEnabled ? 'var(--green)' : undefined }}><I.eye width={14} height={14} /> Compartir</button>
         </div>
 
         {/* KPI GRID — solo sprints */}
@@ -3066,37 +3115,36 @@ function ProjectDetail({ projectId, onBack }) {
         {/* SPRINTS — tabla (drag para reordenar) o kanban */}
         <SprintBoard project={project} patch={patch} onOpenSprint={(id) => setOpenSprintId(id)} />
 
-        {/* PENDING ITEMS */}
-        <h2 style={{ fontSize: 19, marginBottom: 12 }}>Pendientes</h2>
+        {/* TAREAS DEL EQUIPO (sincronizadas con Tareas) + DEL CLIENTE (dependencias) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 26 }}>
-          {[['Pendiente agencia', project.pendingAgency], ['Pendiente cliente', project.pendingClient]].map(([title, items]) => (
-            <div key={title}>
-              <div className="label" style={{ marginBottom: 10 }}>{title}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {items.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Sin pendientes ✓</div>}
-                {items.map((it) => (
-                  <div key={it.id} className="surface" style={{ padding: 13, borderLeft: `3px solid ${it.priority === 'alta' ? 'var(--red)' : it.priority === 'media' ? 'var(--yellow)' : 'var(--border-strong)'}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                      <strong style={{ fontSize: 13.5 }}>{it.title}</strong><Badge tone={prioTone(it.priority)}>{it.priority}</Badge>
-                    </div>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>{it.description}</div>
-                  </div>
-                ))}
-              </div>
+          <div>
+            <div className="label" style={{ marginBottom: 10 }}>Tareas del equipo <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-faint)' }}>· sincronizadas con la sección Tareas</span></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {teamTasks.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Sin tareas del equipo. Agregá una acá o asignale este proyecto a una tarea en la sección Tareas.</div>}
+              {teamTasks.map((t) => (
+                <div key={t.id} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {t.assigneeId ? <Avatar user={userOf(t.assigneeId)} size={22} ring="var(--card)" /> : <Avatar empty size={22} ring="var(--card)" />}
+                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, textDecoration: t.status === 'terminado' ? 'line-through' : 'none', color: t.status === 'terminado' ? 'var(--text-faint)' : 'var(--text)' }}>{t.name}</span>
+                  <select className="input" value={t.status || 'pendiente'} onChange={(e) => setTeamStatus(t.id, e.target.value)} style={{ width: 'auto', padding: '5px 8px', fontSize: 12 }}>{TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
+                </div>
+              ))}
+              <AddTaskInput onAdd={addTeamTask} />
             </div>
-          ))}
-        </div>
-
-        {/* RISKS */}
-        <h2 style={{ fontSize: 19, marginBottom: 12 }}>Riesgos activos</h2>
-        <div className="surface" style={{ padding: 6 }}>
-          {project.risks.map((r) => (
-            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', borderBottom: '1px solid var(--border)' }}>
-              <I.alert width={17} height={17} style={{ color: r.severity === 'alta' ? 'var(--red)' : r.severity === 'media' ? 'var(--yellow)' : 'var(--text-faint)', flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 13.5 }}>{r.description}</span>
-              <Badge tone={sevTone(r.severity)}>{r.severity}</Badge>
+          </div>
+          <div>
+            <div className="label" style={{ marginBottom: 10 }}>Tareas del cliente <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-faint)' }}>· dependencias por hacer</span></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {clientTasks.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Sin dependencias del cliente.</div>}
+              {clientTasks.map((c) => (
+                <div key={c.id} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button onClick={() => toggleClient(c.id)} title="Marcar" style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (c.done ? 'var(--green)' : 'var(--border-strong)'), background: c.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{c.done && <I.check width={13} height={13} style={{ color: '#fff' }} />}</button>
+                  <span style={{ flex: 1, fontSize: 13.5, textDecoration: c.done ? 'line-through' : 'none', color: c.done ? 'var(--text-faint)' : 'var(--text)' }}>{c.text}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => delClient(c.id)} style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={13} height={13} /></button>
+                </div>
+              ))}
+              <AddTaskInput onAdd={addClientTask} />
             </div>
-          ))}
+          </div>
         </div>
       </div>
 
@@ -3142,6 +3190,7 @@ function ProjectDetail({ projectId, onBack }) {
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={() => setDriveOpen(false)}><I.check width={15} height={15} /> Listo</button></div>
         </div>
       </Modal>
+      <ShareModal open={shareOpen} project={project} onClose={() => setShareOpen(false)} patch={patch} />
     </div>
   )
 }
@@ -3166,6 +3215,7 @@ function ActivityRegistry({ project, patch }) {
   const [link, setLink] = useState('')
   const [note, setNote] = useState('')
   const [photos, setPhotos] = useState([])
+  const [priv, setPriv] = useState(false)   // nota privada (solo equipo) vs pública (la ve el cliente)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
 
@@ -3184,9 +3234,9 @@ function ActivityRegistry({ project, patch }) {
   }
   const add = () => {
     if (type === 'nota' ? (!note.trim() && photos.length === 0) : !link.trim()) return
-    const entry = { id: uid(), type, date: dateInputISO(date), authorId: myId || '', link: type === 'nota' ? '' : link.trim(), note: note.trim(), photos: type === 'nota' ? photos : [] }
+    const entry = { id: uid(), type, date: dateInputISO(date), authorId: myId || '', link: type === 'nota' ? '' : link.trim(), note: note.trim(), photos: type === 'nota' ? photos : [], visibility: type === 'nota' && priv ? 'private' : 'public' }
     patch((p) => ({ ...p, activity: [entry, ...(p.activity || [])] }))
-    setLink(''); setNote(''); setPhotos([]); setDate(new Date().toISOString().slice(0, 10))
+    setLink(''); setNote(''); setPhotos([]); setPriv(false); setDate(new Date().toISOString().slice(0, 10))
   }
   const del = (id) => patch((p) => ({ ...p, activity: (p.activity || []).filter((x) => x.id !== id) }))
 
@@ -3212,6 +3262,12 @@ function ActivityRegistry({ project, patch }) {
           <input className="input mono" value={link} onChange={(e) => setLink(e.target.value)} placeholder={type === 'loom' ? 'https://loom.com/share/…' : 'https://fathom.video/… (link de la call)'} style={{ fontSize: 12.5 }} />
         )}
         <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} style={{ display: 'none' }} />
+        {type === 'nota' && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <button onClick={() => setPriv(false)} className="tag" style={{ cursor: 'pointer', flex: 1, justifyContent: 'center', color: !priv ? 'var(--green)' : 'var(--text-faint)', background: !priv ? 'var(--green-soft)' : 'var(--bg-elevated)', borderColor: !priv ? 'transparent' : 'var(--border)' }}><I.eye width={12} height={12} /> Pública (cliente)</button>
+            <button onClick={() => setPriv(true)} className="tag" style={{ cursor: 'pointer', flex: 1, justifyContent: 'center', color: priv ? 'var(--accent)' : 'var(--text-faint)', background: priv ? 'var(--accent-soft)' : 'var(--bg-elevated)', borderColor: priv ? 'transparent' : 'var(--border)' }}><I.eyeOff width={12} height={12} /> Privada (equipo)</button>
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
           <input type="date" className="input mono" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 'auto', padding: '6px 8px', fontSize: 12 }} />
           {type === 'nota' && <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()} title="Adjuntar foto" style={{ padding: '6px 9px' }}><I.paperclip width={14} height={14} /></button>}
@@ -3225,6 +3281,7 @@ function ActivityRegistry({ project, patch }) {
           <div key={en.id} className="surface" style={{ padding: 11, background: 'var(--card)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: (en.note || (en.photos || []).length || en.link) ? 7 : 0 }}>
               <span className="tag" style={{ color: m.color, background: m.color + '1f', borderColor: 'transparent' }}><m.icon width={11} height={11} /> {m.label}</span>
+              {en.type === 'nota' && en.visibility === 'private' && <span className="tag" title="Solo el equipo la ve" style={{ color: 'var(--accent)', background: 'var(--accent-soft)', borderColor: 'transparent' }}><I.eyeOff width={11} height={11} /> Privada</span>}
               {en.fromCalls && <span className="tag" style={{ color: 'var(--text-faint)', background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>desde Calls</span>}
               <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fmtDate(en.date)}</span>
               {!en.fromCalls && <button className="btn btn-sm btn-ghost" onClick={() => del(en.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>}
@@ -3528,7 +3585,7 @@ function DueDate({ value, onChange }) {
   )
 }
 
-function TaskDetailModal({ open, task, team, onClose, onPatch, onDelete }) {
+function TaskDetailModal({ open, task, team, projects, onClose, onPatch, onDelete }) {
   if (!task) return <Modal open={open} onClose={onClose} title="Tarea" />
   return (
     <Modal open={open} onClose={onClose} title={task.name || 'Tarea'} sub="Tarea" width={560}>
@@ -3544,6 +3601,12 @@ function TaskDetailModal({ open, task, team, onClose, onPatch, onDelete }) {
           <Field label="Prioridad">
             <select className="input" value={task.priority || 'normal'} onChange={(e) => onPatch({ priority: e.target.value })}>
               {TASK_PRIORITY.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Proyecto">
+            <select className="input" value={task.projectId || ''} onChange={(e) => onPatch({ projectId: e.target.value })}>
+              <option value="">— Sin proyecto —</option>
+              {(projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </Field>
           <Field label="Estado">
@@ -3677,7 +3740,7 @@ function TasksView() {
         </div>
       )}
 
-      <TaskDetailModal open={!!openTask} task={openTask} team={team} onClose={() => setOpenId(null)} onPatch={(fields) => updateTask(openId, fields)} onDelete={delTask} />
+      <TaskDetailModal open={!!openTask} task={openTask} team={team} projects={data.projects} onClose={() => setOpenId(null)} onPatch={(fields) => updateTask(openId, fields)} onDelete={delTask} />
     </div>
   )
 }
@@ -4165,8 +4228,127 @@ function AppShell({ session, onLogout }) {
   )
 }
 
+/* ============================================================================
+   20 · VISTA PÚBLICA DEL CLIENTE (solo lectura, con contraseña · via Edge Function)
+============================================================================ */
+function ClientView({ shareId }) {
+  const [pw, setPw] = useState('')
+  const [payload, setPayload] = useState(null)
+  const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const savedPw = useRef('')
+
+  useEffect(() => { const vars = THEMES.dark; Object.entries(vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v)); document.documentElement.style.colorScheme = 'dark' }, [])
+
+  const load = async (password) => {
+    if (!cloudEnabled) { setErr('El link necesita conexión con el servidor.'); return }
+    setBusy(true); setErr(null)
+    try {
+      const { data: res, error } = await supabase.functions.invoke('project-share', { body: { shareId, password } })
+      if (error) throw error
+      if (res && res.error) throw new Error(res.error)
+      savedPw.current = password; setPayload(res)
+    } catch (e) { setErr(e.message || 'No se pudo acceder'); setPayload(null) } finally { setBusy(false) }
+  }
+  useEffect(() => { if (!payload) return; const iv = setInterval(() => load(savedPw.current), 45000); return () => clearInterval(iv) }, [payload])
+
+  if (!payload) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg)' }}>
+        <form onSubmit={(e) => { e.preventDefault(); load(pw) }} className="surface" style={{ width: '100%', maxWidth: 380, padding: 28, boxShadow: 'var(--shadow)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: 18 }}>I</div>
+            <div><div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 16, lineHeight: 1 }}>Seguimiento del proyecto</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Ingresá la contraseña para ver el avance</div></div>
+          </div>
+          <Field label="Contraseña"><input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" autoFocus /></Field>
+          {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8, marginTop: 10 }}>{err}</div>}
+          <button type="submit" className="btn btn-accent" disabled={busy} style={{ justifyContent: 'center', padding: 11, width: '100%', marginTop: 12 }}>{busy ? 'Verificando…' : 'Ver el proyecto'}</button>
+        </form>
+      </div>
+    )
+  }
+
+  const p = payload
+  const stat = (label, value, color) => <div className="surface" style={{ padding: '14px 16px', flex: 1, minWidth: 130 }}><div className="label" style={{ marginBottom: 6 }}>{label}</div><div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'Bricolage Grotesque', color: color || 'var(--text)' }}>{value}</div></div>
+  const actMeta = (t) => ACTIVITY_TYPES.find((x) => x.key === t) || ACTIVITY_TYPES[0]
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
+      <div style={{ maxWidth: 1080, margin: '0 auto', padding: '30px 22px 70px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: 15 }}>I</div>
+          <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>Seguimiento en tiempo real · solo lectura</span>
+        </div>
+        <h1 style={{ fontSize: 30 }}>{p.name}</h1>
+        <div style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 22 }}>{p.client}{p.stack ? ` · ${p.stack}` : ''}</div>
+
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
+          {stat('Sprints totales', p.kpis.total)}
+          {stat('Terminados', p.kpis.done, 'var(--green)')}
+          {stat('En proceso', p.kpis.inProc, 'var(--accent)')}
+          {stat('% Avance', p.kpis.progress + '%', pctColor(p.kpis.progress))}
+        </div>
+
+        <h2 style={{ fontSize: 19, marginBottom: 12 }}>Sprints</h2>
+        <div className="surface tbl" style={{ overflow: 'auto', marginBottom: 28 }}>
+          <table>
+            <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>{['#', 'Nombre', 'Semana', 'Asignado', 'Estado', 'Estimada'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {(p.sprints || []).map((s, i) => { const m = sprintMeta(s.status); const inProc = s.status === 'en proceso'; return (
+                <tr key={s.id || i} style={{ borderBottom: '1px solid var(--border)', borderLeft: inProc ? '3px solid var(--accent)' : '3px solid transparent', background: inProc ? 'var(--accent-soft)' : 'transparent', opacity: s.status === 'terminado' ? 0.6 : 1 }}>
+                  <td style={{ padding: '11px 14px' }} className="mono">{i + 1}</td>
+                  <td style={{ padding: '11px 14px', fontWeight: 600, fontSize: 13.5 }}>{s.name}</td>
+                  <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text-dim)' }}>Sem {s.week || (i + 1)}</td>
+                  <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text-dim)' }}>{(s.assignees || []).join(', ') || '—'}</td>
+                  <td style={{ padding: '11px 14px' }}><span className="tag" style={{ color: `var(--${m.tone === 'neutral' ? 'text-dim' : m.tone === 'accent' ? 'accent' : m.tone})`, background: m.tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${m.tone}-soft)`, borderColor: 'transparent' }}>{m.label}</span></td>
+                  <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--text-dim)' }} className="mono">{s.date ? fmtDate(s.date) : '—'}</td>
+                </tr>
+              )})}
+              {(p.sprints || []).length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>Sin sprints todavía.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 16, marginBottom: 28 }}>
+          <div>
+            <h2 style={{ fontSize: 17, marginBottom: 10 }}>Tareas del equipo</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {(p.teamTasks || []).length === 0 && <div className="surface" style={{ padding: 13, color: 'var(--text-faint)', fontSize: 13 }}>—</div>}
+              {(p.teamTasks || []).map((t, i) => <div key={i} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5 }}><span style={{ flex: 1, textDecoration: t.status === 'terminado' ? 'line-through' : 'none', color: t.status === 'terminado' ? 'var(--text-faint)' : 'var(--text)' }}>{t.name}</span><span className="tag" style={{ color: 'var(--text-dim)', background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>{t.status}</span></div>)}
+            </div>
+          </div>
+          <div>
+            <h2 style={{ fontSize: 17, marginBottom: 10 }}>Tareas del cliente</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {(p.clientTasks || []).length === 0 && <div className="surface" style={{ padding: 13, color: 'var(--text-faint)', fontSize: 13 }}>—</div>}
+              {(p.clientTasks || []).map((c, i) => <div key={i} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5 }}><span style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px solid ' + (c.done ? 'var(--green)' : 'var(--border-strong)'), background: c.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{c.done && <I.check width={12} height={12} style={{ color: '#fff' }} />}</span><span style={{ textDecoration: c.done ? 'line-through' : 'none', color: c.done ? 'var(--text-faint)' : 'var(--text)' }}>{c.text}</span></div>)}
+            </div>
+          </div>
+        </div>
+
+        <h2 style={{ fontSize: 19, marginBottom: 12 }}>Registro de actividad</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {(p.activity || []).length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Sin actividad todavía.</div>}
+          {(p.activity || []).map((en, i) => { const m = actMeta(en.type); return (
+            <div key={i} className="surface" style={{ padding: 13 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                <span className="tag" style={{ color: m.color, background: m.color + '1f', borderColor: 'transparent' }}><m.icon width={11} height={11} /> {m.label}</span>
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fmtDate(en.date)}</span>
+              </div>
+              {en.note && <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--text-dim)' }}>{en.note}</div>}
+              {(en.photos || []).length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>{en.photos.map((s, j) => <a key={j} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></a>)}</div>}
+              {en.link && <a href={en.link} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ marginTop: 8, color: m.color }}><I.ext width={13} height={13} /> Abrir {en.type === 'loom' ? 'Loom' : 'call'}</a>}
+              {en.author && <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>{en.author}</div>}
+            </div>
+          )})}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function InsightsApp() {
   const [session, setSession] = useState(cloudEnabled ? undefined : null) // undefined=loading
+  const shareId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('share') : null
 
   // inject global css once
   useEffect(() => {
@@ -4193,6 +4375,7 @@ export default function InsightsApp() {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  if (shareId) return <ClientView shareId={shareId} />
   if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
   if (cloudEnabled && !session) return <Login />
   return <AppShell session={session} onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
