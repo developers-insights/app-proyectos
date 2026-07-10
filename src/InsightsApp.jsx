@@ -695,6 +695,12 @@ function migrate(state) {
   if (!state.tasks) state.tasks = seedTasks()
   state.tasks = state.tasks.map((t) => ({ ...t, priority: t.priority || 'normal', assigneeId: REMOVED_MEMBER_IDS.includes(t.assigneeId) ? '' : t.assigneeId }))
   if (!state.activity) state.activity = []
+  // actividad sin autor (actorId vacío o de un miembro que ya no está) → atribuir a Nacho Cachaza
+  const _nacho = state.team.find((u) => /nacho/i.test(u.name || '') || String(u.email || '').toLowerCase() === 'nachocachaza@insightsapps.tech')
+  if (_nacho) {
+    const _teamIds = new Set(state.team.map((u) => u.id))
+    state.activity = state.activity.map((a) => (!a.actorId || !_teamIds.has(a.actorId)) ? { ...a, actorId: _nacho.id } : a)
+  }
   // SOPs (procesos documentados) — mergea semillas nuevas por id sin pisar ediciones del usuario
   if (!state.sops || Array.isArray(state.sops)) state.sops = { categories: [], processes: [] }
   if (!state.sops.categories) state.sops.categories = []
@@ -4683,7 +4689,11 @@ function AppShell({ session, onLogout }) {
   }, [session, data.team, myId])
 
   const openProject = (id) => setRoute({ view: 'project', projectId: id })
-  const logActivity = (entry) => setData((d) => ({ ...d, activity: [{ id: uid(), date: new Date().toISOString(), actorId: localStorage.getItem('my_team_id') || '', ...entry }, ...(d.activity || [])].slice(0, 200) }))
+  const logActivity = (entry) => setData((d) => {
+    const nacho = (d.team || []).find((u) => /nacho/i.test(u.name || '') || String(u.email || '').toLowerCase() === 'nachocachaza@insightsapps.tech')
+    const actorId = localStorage.getItem('my_team_id') || (nacho ? nacho.id : '')
+    return { ...d, activity: [{ id: uid(), date: new Date().toISOString(), actorId, ...entry }, ...(d.activity || [])].slice(0, 200) }
+  })
 
   // pop-up de inicio para el PM con el estado de seguimiento de sus proyectos
   const [pmAlertSeen, setPmAlertSeen] = useState(false)
