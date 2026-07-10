@@ -558,6 +558,121 @@ function seedTasks() {
   ]
 }
 
+/* SOPs (procesos documentados) — categorías tipo carpeta + procesos.
+   Para agregar un SOP desde el código: sumá una entrada acá (id único) y migrate lo mergea. */
+const SOP_ONBOARDING_CALL = `# Proceso de kick off
+### Llamada inicial con cliente post-pago
+
+## Descripción general
+**Duración:** 20 a 30 minutos
+**Objetivo:** validar que el cliente entiende exactamente qué se va a hacer, confirmar el alcance del proyecto, identificar dudas y solicitudes extras, y establecer la cadencia de comunicación y avances.
+**Participantes:** Cliente + Nacho (Dev Lead) + quien lleva la relación
+
+---
+
+## Paso a paso detallado
+
+### Paso 1 · Bienvenida & rapport (1-2 min)
+- Saludar de forma cálida y genuina
+- "Hola [Nombre], ¿cómo estás? ¿Todo bien?"
+- Presentarse brevemente si no se conocen
+
+### Paso 2 · Preguntar sobre motivación (2-3 min)
+Preguntas clave:
+- "¿Qué fue lo que te llevó a decidir trabajar con nosotros?"
+- "¿Por qué decidiste hacer esta app ahora?"
+- "¿Qué es lo que esperás lograr con esto?"
+
+**IMPORTANTE:** esta información es oro para marketing. Anotar la respuesta exacta del cliente porque después la usamos en anuncios y testimonios.
+
+### Paso 3 · Explicar el propósito de la llamada (30-45 seg)
+"La idea de esta llamada es bien simple: en unos 20-30 minutos vamos a repasar exactamente qué vamos a hacer, verificar que estemos en el camino correcto, aclarar cualquier duda que tengas, y presentarte cómo vamos a comunicarnos durante el proyecto. Lo más importante es que confirmes que todo está OK para comenzar con el pie derecho."
+
+### Paso 4 · Scope review — screen share (10-15 min)
+**Responsable:** Nacho (Dev Lead)
+
+Qué mostrar y explicar:
+- Documento o presentación del proyecto
+- Cada módulo que se va a desarrollar (explicar brevemente qué hace)
+- Semanas de entrega (indicar cuándo termina cada fase)
+- Stack tecnológico (si es relevante para el cliente)
+
+Al final de la explicación: "¿Está todo OK? ¿Es exactamente lo que esperabas?"
+**✓ ESPERAR CONFIRMACIÓN DEL CLIENTE — esto es crítico.**
+
+### Paso 5 · Capturar dudas y solicitudes extras (3-5 min)
+"¿Hay algo que no haya quedado claro o que querés que cambiemos?"
+
+Cómo proceder:
+- **Dudas:** responder directamente en la llamada si es simple. Si requiere análisis, anotar para responder después.
+- **Solicitudes extras:** no agregarlas al alcance. Anotar y decir: "Bueno, eso es un extra que requiere trabajo adicional. Lo vamos a presupuestar por separado y lo charlás con nosotros si querés incluirlo."
+
+### Paso 6 · Explicar cadencia de comunicación (2-3 min)
+Decirle exactamente cómo se va a comunicar el equipo:
+- **Avances viernes:** todos los viernes mandamos un resumen de qué hicimos esa semana. Según el día que entró al proyecto, el primer avance lo recibe el viernes de esa semana (si fue martes/miércoles/jueves) o el viernes siguiente (si fue lunes).
+- **Durante la semana:** puede haber screenshots, actualizaciones o dudas. Este tiempo lo usamos principalmente para desarrollar, no para meetings. Todo está documentado en el app de sprints.
+- **Sprints en app:** le compartimos un enlace por WhatsApp donde ve todos los sprints en tiempo real. Todo en un mismo lugar, visual y simple.
+- **WhatsApp:** es nuestro canal rápido si hay algo urgente.
+
+### Paso 7 · Próximos pasos & cierre (30 seg - 1 min)
+"Listo, empezamos a laburar. Te vamos a estar mandando actualizaciones, y cualquier duda nos contactás por WhatsApp. Nos vemos en el primer avance."
+
+---
+
+## Consideraciones especiales
+
+### Proyectos que requieren investigación inicial
+Ejemplo: Real Deal Exchange AI (necesita investigar qué API usar, cómo extraer datos, cómo estructurar la BD).
+- "Vamos a comenzar con una fase de investigación en paralelo al desarrollo del frontend. Esto nos permite conocer exactamente qué datos vamos a necesitar y cómo los vamos a representar."
+- Ser honesto sobre el timeline: la investigación toma tiempo, pero simultáneamente avanzamos en la UI.
+
+### Proyectos directos (sin investigación inicial)
+- "Empezamos de una vez. Todo está claro, así que vamos directo al desarrollo."
+
+### Documentación durante la llamada
+- Tener una hoja abierta para anotar: dudas, extras, decisiones clave.
+- Esto después se documenta en el ticket/proyecto en InsightsOps.
+
+---
+
+## Checklist durante la llamada
+[ ] Cliente confirma que el scope está OK
+[ ] Se anotaron todas las dudas
+[ ] Se identificaron solicitudes extras (y se aclaró que van por separado)
+[ ] Cliente entiende la cadencia de avances (viernes + sprints)
+[ ] Se capturó la respuesta de motivación (para marketing)
+[ ] Se compartió el enlace de WhatsApp
+[ ] El cliente tiene el enlace de sprints (si aplica)
+
+---
+
+## Después de la llamada (tareas post-kick off)
+- **Dentro de 24h:** mandar mail resumen con puntos clave (scope confirmado, timeline, enlaces).
+- Responder cualquier duda que requería investigación.
+- Si hay extras: mandar propuesta separada de precio.
+- Actualizar ticket/proyecto en InsightsOps con decisiones y cambios.
+- Comenzar desarrollo (o investigación, según el proyecto).
+
+---
+
+## Notas finales
+La clave de esta llamada es la **confirmación**. No es una charla de ventas, es una charla de alineación. El cliente debe irse seguro de que sabemos exactamente qué va a recibir.
+
+**Tono:** cálido pero profesional. Directo y claro (nada de jargon técnico innecesario). Escuchar más que hablar.
+
+No prometas más de lo que está en el presupuesto. Los extras son exactamente eso: extras. Esto protege tanto al cliente como a nosotros.`
+
+function seedSops() {
+  return {
+    categories: [
+      { id: 'sopc-onboarding', name: 'Onboarding', parentId: null, createdAt: '2026-07-09T12:00:00.000Z' },
+    ],
+    processes: [
+      { id: 'sop-onboarding-call', categoryId: 'sopc-onboarding', title: 'Llamada de onboarding', description: 'Proceso de kick off — llamada inicial con el cliente post-pago para confirmar alcance y cadencia.', content: SOP_ONBOARDING_CALL, links: [], images: [], createdAt: '2026-07-09T12:00:00.000Z', updatedAt: '2026-07-09T12:00:00.000Z' },
+    ],
+  }
+}
+
 /* ============================================================================
    5 · PERSISTED STATE HOOK
 ============================================================================ */
@@ -580,6 +695,16 @@ function migrate(state) {
   if (!state.tasks) state.tasks = seedTasks()
   state.tasks = state.tasks.map((t) => ({ ...t, priority: t.priority || 'normal', assigneeId: REMOVED_MEMBER_IDS.includes(t.assigneeId) ? '' : t.assigneeId }))
   if (!state.activity) state.activity = []
+  // SOPs (procesos documentados) — mergea semillas nuevas por id sin pisar ediciones del usuario
+  if (!state.sops || Array.isArray(state.sops)) state.sops = { categories: [], processes: [] }
+  if (!state.sops.categories) state.sops.categories = []
+  if (!state.sops.processes) state.sops.processes = []
+  const seededSops = seedSops()
+  const sopcIds = new Set(state.sops.categories.map((c) => c.id))
+  seededSops.categories.forEach((c) => { if (!sopcIds.has(c.id)) state.sops.categories.push(c) })
+  const soppIds = new Set(state.sops.processes.map((p) => p.id))
+  seededSops.processes.forEach((p) => { if (!soppIds.has(p.id)) state.sops.processes.push(p) })
+  state.sops.processes = state.sops.processes.map((p) => ({ ...p, links: p.links || [], images: p.images || [] }))
   // add new clients/projects that aren't present yet (by id)
   const cIds = new Set(state.clients.map((c) => c.id))
   seedClients().forEach((c) => { if (!cIds.has(c.id)) state.clients.push(c) })
@@ -2736,6 +2861,358 @@ function Field({ label, children }) {
 }
 
 /* ============================================================================
+   13b · SOP · PROCESOS DOCUMENTADOS (carpetas estilo Windows + buscador)
+============================================================================ */
+/* --- markdown mínimo: #/##/### títulos, **negrita**, [txt](url), - listas, [ ] checklist, --- --- */
+function sopInline(text, kp) {
+  const nodes = []; const re = /(\*\*([^*]+)\*\*)|(\[([^\]]+)\]\((https?:[^)]+)\))/g
+  let last = 0, m, i = 0
+  while ((m = re.exec(text))) {
+    if (m.index > last) nodes.push(text.slice(last, m.index))
+    if (m[1]) nodes.push(<strong key={kp + 'b' + i}>{m[2]}</strong>)
+    else nodes.push(<a key={kp + 'a' + i} href={m[5]} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', fontWeight: 600 }}>{m[4]}</a>)
+    last = m.index + m[0].length; i++
+  }
+  if (last < text.length) nodes.push(text.slice(last))
+  return nodes
+}
+function SopMarkdown({ text }) {
+  const lines = (text || '').split('\n'); const out = []; let i = 0
+  const H = { color: 'var(--text)', fontFamily: 'Bricolage Grotesque' }
+  while (i < lines.length) {
+    const t = lines[i].trim()
+    if (!t) { i++; continue }
+    if (t === '---') { out.push(<hr key={'h' + i} className="divider" style={{ margin: '18px 0' }} />); i++; continue }
+    if (t.startsWith('### ')) { out.push(<h4 key={'t' + i} style={{ ...H, fontSize: 15, marginTop: 18, marginBottom: 6 }}>{sopInline(t.slice(4), 't' + i)}</h4>); i++; continue }
+    if (t.startsWith('## ')) { out.push(<h3 key={'t' + i} style={{ ...H, fontSize: 18, marginTop: 24, marginBottom: 8 }}>{sopInline(t.slice(3), 't' + i)}</h3>); i++; continue }
+    if (t.startsWith('# ')) { out.push(<h2 key={'t' + i} style={{ ...H, fontSize: 23, marginTop: 8, marginBottom: 10 }}>{sopInline(t.slice(2), 't' + i)}</h2>); i++; continue }
+    if (/^\[[ xX]\]/.test(t)) {
+      const items = []
+      while (i < lines.length && /^\[[ xX]\]/.test(lines[i].trim())) { const l = lines[i].trim(); items.push({ checked: /^\[[xX]\]/.test(l), text: l.replace(/^\[[ xX]\]\s?/, '') }); i++ }
+      out.push(<div key={'c' + i} style={{ display: 'flex', flexDirection: 'column', gap: 7, margin: '10px 0' }}>{items.map((it, k) => (
+        <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, fontSize: 14.5, color: 'var(--text-dim)' }}>
+          <span style={{ flexShrink: 0, width: 17, height: 17, marginTop: 1, borderRadius: 5, border: '1.5px solid var(--border-strong, var(--border))', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}>{it.checked ? <I.check width={12} height={12} /> : null}</span>
+          <span>{sopInline(it.text, 'c' + i + k)}</span>
+        </div>))}</div>)
+      continue
+    }
+    if (t.startsWith('- ')) {
+      const items = []
+      while (i < lines.length && lines[i].trim().startsWith('- ')) { items.push(lines[i].trim().slice(2)); i++ }
+      out.push(<ul key={'u' + i} style={{ margin: '8px 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 5 }}>{items.map((it, k) => <li key={k} style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--text-dim)' }}>{sopInline(it, 'u' + i + k)}</li>)}</ul>)
+      continue
+    }
+    out.push(<p key={'p' + i} style={{ fontSize: 14.5, lineHeight: 1.65, color: 'var(--text-dim)', margin: '8px 0' }}>{sopInline(t, 'p' + i)}</p>); i++
+  }
+  return <div>{out}</div>
+}
+function sopEmbedSrc(url) {
+  let m = url.match(/loom\.com\/(?:share|embed)\/([a-zA-Z0-9]+)/); if (m) return 'https://www.loom.com/embed/' + m[1]
+  m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/); if (m) return 'https://www.youtube.com/embed/' + m[1]
+  m = url.match(/vimeo\.com\/(\d+)/); if (m) return 'https://player.vimeo.com/video/' + m[1]
+  return null
+}
+function SopLink({ link }) {
+  const src = sopEmbedSrc(link.url || '')
+  if (src) return (
+    <div style={{ marginBottom: 12 }}>
+      {link.label && <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-dim)', marginBottom: 6 }}>{link.label}</div>}
+      <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
+        <iframe src={src} frameBorder="0" allowFullScreen style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} title={link.label || 'embed'} />
+      </div>
+    </div>
+  )
+  return (
+    <a href={link.url} target="_blank" rel="noreferrer" className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', marginBottom: 8, color: 'var(--text)', textDecoration: 'none' }}>
+      <I.link width={16} height={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+      <div style={{ minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{link.label || link.url}</div><div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link.url}</div></div>
+      <I.ext width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--text-faint)', flexShrink: 0 }} />
+    </a>
+  )
+}
+
+function Sops() {
+  const { data, setData } = useApp()
+  const sops = data.sops || { categories: [], processes: [] }
+  const cats = sops.categories || []
+  const procs = sops.processes || []
+  const [folder, setFolder] = useState(null)   // categoryId actual (null = raíz)
+  const [viewMode, setViewMode] = useState('folders')
+  const [q, setQ] = useState('')
+  const [openId, setOpenId] = useState(null)    // proceso abierto (lectura)
+  const [editProc, setEditProc] = useState(null) // objeto proceso (nuevo o existente) en edición
+  const [catModal, setCatModal] = useState(null) // {id?,name,parentId} en edición
+
+  const childrenCats = (pid) => cats.filter((c) => (c.parentId || null) === pid)
+  const procsIn = (cid) => procs.filter((p) => (p.categoryId || null) === cid)
+  const catById = (id) => cats.find((c) => c.id === id)
+  const pathOf = (cid) => { const out = []; let c = catById(cid); while (c) { out.unshift(c); c = c.parentId ? catById(c.parentId) : null }; return out }
+
+  const query = q.trim().toLowerCase()
+  const searching = query.length > 0
+  const searchResults = searching ? procs.filter((p) => (p.title + ' ' + (p.description || '') + ' ' + (p.content || '')).toLowerCase().includes(query)) : []
+
+  // mutaciones
+  const saveProcess = (p) => setData((d) => {
+    const list = d.sops.processes; const exists = list.some((x) => x.id === p.id)
+    const now = new Date().toISOString()
+    const next = exists ? list.map((x) => (x.id === p.id ? { ...p, updatedAt: now } : x)) : [...list, { ...p, id: p.id || ('sop-' + uid()), createdAt: now, updatedAt: now }]
+    return { ...d, sops: { ...d.sops, processes: next } }
+  })
+  const deleteProcess = (id) => setData((d) => ({ ...d, sops: { ...d.sops, processes: d.sops.processes.filter((x) => x.id !== id) } }))
+  const saveCategory = (c) => setData((d) => {
+    const list = d.sops.categories; const exists = c.id && list.some((x) => x.id === c.id)
+    const next = exists ? list.map((x) => (x.id === c.id ? { ...x, name: c.name, parentId: c.parentId } : x)) : [...list, { id: 'sopc-' + uid(), name: c.name, parentId: c.parentId || null, createdAt: new Date().toISOString() }]
+    return { ...d, sops: { ...d.sops, categories: next } }
+  })
+  const deleteCategory = (id) => setData((d) => {
+    const cat = d.sops.categories.find((x) => x.id === id); const parent = cat ? (cat.parentId || null) : null
+    return { ...d, sops: {
+      categories: d.sops.categories.filter((x) => x.id !== id).map((x) => x.parentId === id ? { ...x, parentId: parent } : x),
+      processes: d.sops.processes.map((x) => x.categoryId === id ? { ...x, categoryId: parent } : x),
+    } }
+  })
+
+  const openProc = procs.find((p) => p.id === openId)
+  const subFolders = childrenCats(folder)
+  const folderProcs = procsIn(folder)
+  const crumbs = folder ? pathOf(folder) : []
+
+  const FolderCard = ({ c }) => (
+    <div className="surface-hover click" onClick={() => setFolder(c.id)} style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
+      <div style={{ width: 40, height: 40, borderRadius: 11, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', flexShrink: 0 }}><I.folder width={20} height={20} /></div>
+      <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div><div style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{childrenCats(c.id).length + procsIn(c.id).length} elemento(s)</div></div>
+      <div className="sop-actions" style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
+        <button className="btn btn-sm btn-ghost" title="Renombrar" onClick={() => setCatModal({ id: c.id, name: c.name, parentId: c.parentId || null })} style={{ padding: 5 }}><I.pencil width={14} height={14} /></button>
+        <button className="btn btn-sm btn-ghost" title="Eliminar carpeta" onClick={() => { if (window.confirm(`¿Eliminar la carpeta "${c.name}"? Su contenido se mueve a la carpeta superior.`)) deleteCategory(c.id) }} style={{ padding: 5, color: 'var(--red)' }}><I.trash width={14} height={14} /></button>
+      </div>
+    </div>
+  )
+  const ProcCard = ({ p }) => (
+    <div className="surface-hover click" onClick={() => setOpenId(p.id)} style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 11, background: 'var(--card-hover)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', color: 'var(--text-dim)', flexShrink: 0 }}><I.doc width={19} height={19} /></div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{p.title}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.description}</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Actualizado {fmtDate(p.updatedAt || p.createdAt)}</span>
+        <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
+          <button className="btn btn-sm btn-ghost" title="Editar" onClick={() => setEditProc(p)} style={{ padding: 5 }}><I.pencil width={14} height={14} /></button>
+          <button className="btn btn-sm btn-ghost" title="Eliminar" onClick={() => { if (window.confirm(`¿Eliminar el proceso "${p.title}"?`)) deleteProcess(p.id) }} style={{ padding: 5, color: 'var(--red)' }}><I.trash width={14} height={14} /></button>
+        </div>
+      </div>
+    </div>
+  )
+
+  const tableRows = searching ? searchResults.map((p) => ({ kind: 'proc', p })) : [...subFolders.map((c) => ({ kind: 'cat', c })), ...folderProcs.map((p) => ({ kind: 'proc', p }))]
+
+  return (
+    <div className="view" style={{ padding: '28px 34px 60px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div><div className="label" style={{ marginBottom: 6 }}>Segmento de procesos</div><h1 style={{ fontSize: 32 }}>SOP · Procesos</h1><div style={{ fontSize: 13.5, color: 'var(--text-dim)', marginTop: 4 }}>Documentá cómo se hacen las cosas. Carpetas por área, procesos adentro.</div></div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn" onClick={() => setCatModal({ name: '', parentId: folder })}><I.folder width={15} height={15} /> Nueva carpeta</button>
+          <button className="btn btn-accent" onClick={() => setEditProc({ id: '', title: '', description: '', categoryId: folder, content: '', links: [], images: [] })}><I.plus width={15} height={15} /> Nuevo proceso</button>
+        </div>
+      </div>
+
+      {/* toolbar: buscador + toggle vista */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 220, maxWidth: 460 }}>
+          <I.search width={15} height={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)' }} />
+          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar procesos…" style={{ paddingLeft: 34 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+          <button className="btn btn-sm btn-ghost" title="Carpetas" onClick={() => setViewMode('folders')} style={{ background: viewMode === 'folders' ? 'var(--card-hover)' : 'transparent', color: viewMode === 'folders' ? 'var(--accent)' : 'var(--text-dim)' }}><I.cards width={15} height={15} /></button>
+          <button className="btn btn-sm btn-ghost" title="Tabla" onClick={() => setViewMode('table')} style={{ background: viewMode === 'table' ? 'var(--card-hover)' : 'transparent', color: viewMode === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
+        </div>
+      </div>
+
+      {/* breadcrumb */}
+      {!searching && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 16, fontSize: 13.5 }}>
+          <button className="row-hover" onClick={() => setFolder(null)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 8px', borderRadius: 8, color: folder ? 'var(--text-dim)' : 'var(--text)', fontWeight: 600 }}><I.folder width={14} height={14} /> Inicio</button>
+          {crumbs.map((c) => (<React.Fragment key={c.id}><I.chevR width={13} height={13} style={{ color: 'var(--text-faint)' }} /><button className="row-hover" onClick={() => setFolder(c.id)} style={{ padding: '4px 8px', borderRadius: 8, color: c.id === folder ? 'var(--text)' : 'var(--text-dim)', fontWeight: 600 }}>{c.name}</button></React.Fragment>))}
+        </div>
+      )}
+      {searching && <div style={{ marginBottom: 16, fontSize: 13.5, color: 'var(--text-dim)' }}>{searchResults.length} resultado(s) para «{q}»</div>}
+
+      {/* contenido */}
+      {(searching ? searchResults.length === 0 : subFolders.length === 0 && folderProcs.length === 0) ? (
+        <div className="surface" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-faint)' }}>
+          <I.doc width={30} height={30} style={{ opacity: .5 }} />
+          <div style={{ marginTop: 10, fontSize: 14 }}>{searching ? 'No se encontraron procesos.' : 'Esta carpeta está vacía. Creá una carpeta o un proceso nuevo.'}</div>
+        </div>
+      ) : viewMode === 'folders' ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {!searching && subFolders.map((c) => <FolderCard key={c.id} c={c} />)}
+          {(searching ? searchResults : folderProcs).map((p) => <ProcCard key={p.id} p={p} />)}
+        </div>
+      ) : (
+        <div className="surface tbl" style={{ overflow: 'hidden' }}>
+          <table>
+            <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
+              {['Nombre', 'Tipo', 'Categoría', 'Actualizado', ''].map((h, k) => <th key={k} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {tableRows.map((r, k) => r.kind === 'cat' ? (
+                <tr key={'c' + r.c.id} className="row-hover click" onClick={() => setFolder(r.c.id)} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '12px 16px', fontWeight: 600 }}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><I.folder width={16} height={16} style={{ color: 'var(--accent)' }} />{r.c.name}</div></td>
+                  <td style={{ padding: '12px 16px' }}><Badge tone="accent">Carpeta</Badge></td>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-faint)' }}>—</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-faint)' }}>—</td>
+                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}><button className="btn btn-sm btn-ghost" onClick={() => setCatModal({ id: r.c.id, name: r.c.name, parentId: r.c.parentId || null })} style={{ padding: 5 }}><I.pencil width={14} height={14} /></button><button className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm(`¿Eliminar la carpeta "${r.c.name}"?`)) deleteCategory(r.c.id) }} style={{ padding: 5, color: 'var(--red)' }}><I.trash width={14} height={14} /></button></div></td>
+                </tr>
+              ) : (
+                <tr key={'p' + r.p.id} className="row-hover click" onClick={() => setOpenId(r.p.id)} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '12px 16px', fontWeight: 600 }}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><I.doc width={16} height={16} style={{ color: 'var(--text-dim)' }} />{r.p.title}</div></td>
+                  <td style={{ padding: '12px 16px' }}><Badge>Proceso</Badge></td>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{catById(r.p.categoryId)?.name || 'Sin categoría'}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{fmtDate(r.p.updatedAt || r.p.createdAt)}</td>
+                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}><button className="btn btn-sm btn-ghost" onClick={() => setEditProc(r.p)} style={{ padding: 5 }}><I.pencil width={14} height={14} /></button><button className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm(`¿Eliminar el proceso "${r.p.title}"?`)) deleteProcess(r.p.id) }} style={{ padding: 5, color: 'var(--red)' }}><I.trash width={14} height={14} /></button></div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* lectura de proceso */}
+      <Modal open={!!openProc} onClose={() => setOpenId(null)} title={openProc?.title} sub={openProc ? (catById(openProc.categoryId)?.name || 'Sin categoría') + ' · actualizado ' + fmtDate(openProc.updatedAt || openProc.createdAt) : ''} width={840}>
+        {openProc && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 14 }}>
+              <button className="btn" onClick={() => { setEditProc(openProc); setOpenId(null) }}><I.pencil width={14} height={14} /> Editar</button>
+            </div>
+            {openProc.description && <p style={{ fontSize: 15, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 8, paddingBottom: 14, borderBottom: '1px solid var(--border)' }}>{openProc.description}</p>}
+            {(openProc.images || []).length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 10, margin: '14px 0' }}>
+                {openProc.images.map((im) => <a key={im.id} href={im.src} target="_blank" rel="noreferrer"><img src={im.src} alt={im.name || ''} style={{ width: '100%', borderRadius: 10, border: '1px solid var(--border)', display: 'block' }} /></a>)}
+              </div>
+            )}
+            {(openProc.links || []).length > 0 && <div style={{ margin: '14px 0' }}>{openProc.links.map((l) => <SopLink key={l.id} link={l} />)}</div>}
+            <SopMarkdown text={openProc.content} />
+          </div>
+        )}
+      </Modal>
+
+      {editProc && <SopEditor proc={editProc} cats={cats} onClose={() => setEditProc(null)} onSave={(p, newCatName) => {
+        let cid = p.categoryId
+        if (newCatName && newCatName.trim()) { cid = 'sopc-' + uid(); setData((d) => ({ ...d, sops: { ...d.sops, categories: [...d.sops.categories, { id: cid, name: newCatName.trim(), parentId: null, createdAt: new Date().toISOString() }] } })) }
+        saveProcess({ ...p, categoryId: cid }); setEditProc(null)
+      }} />}
+
+      {catModal && <SopCatModal cat={catModal} cats={cats} onClose={() => setCatModal(null)} onSave={(c) => { saveCategory(c); setCatModal(null) }} />}
+    </div>
+  )
+}
+
+function SopEditor({ proc, cats, onClose, onSave }) {
+  const [f, setF] = useState(() => JSON.parse(JSON.stringify({ ...proc, links: proc.links || [], images: proc.images || [] })))
+  const [newCat, setNewCat] = useState('')
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }))
+  const depth = (id) => { let d = 0, c = cats.find((x) => x.id === id); while (c && c.parentId) { d++; c = cats.find((x) => x.id === c.parentId) } return d }
+  const addLink = () => set('links', [...f.links, { id: uid(), label: '', url: '' }])
+  const setLink = (id, k, v) => set('links', f.links.map((l) => l.id === id ? { ...l, [k]: v } : l))
+  const rmLink = (id) => set('links', f.links.filter((l) => l.id !== id))
+  const onFiles = (e) => {
+    const files = Array.from(e.target.files || [])
+    files.forEach((file) => { const r = new FileReader(); r.onload = () => setF((s) => ({ ...s, images: [...s.images, { id: uid(), name: file.name, src: r.result }] })); r.readAsDataURL(file) })
+    e.target.value = ''
+  }
+  const addImgUrl = () => { const u = window.prompt('Pegá la URL de la imagen'); if (u && u.trim()) setF((s) => ({ ...s, images: [...s.images, { id: uid(), name: '', src: u.trim() }] })) }
+  const rmImg = (id) => set('images', f.images.filter((im) => im.id !== id))
+  const canSave = f.title.trim().length > 0
+
+  return (
+    <Modal open onClose={onClose} title={proc.id ? 'Editar proceso' : 'Nuevo proceso'} sub="Documentá el proceso: texto, links embebidos e imágenes" width={780}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Field label="Título"><input className="input" value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="Ej: Llamada de onboarding" autoFocus /></Field>
+        <Field label="Descripción breve"><textarea className="input" rows={2} value={f.description} onChange={(e) => set('description', e.target.value)} placeholder="Una línea que resuma de qué trata" /></Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="Carpeta / categoría">
+            <select className="input" value={f.categoryId || ''} onChange={(e) => set('categoryId', e.target.value || null)}>
+              <option value="">— Sin categoría —</option>
+              {cats.map((c) => <option key={c.id} value={c.id}>{' '.repeat(depth(c.id) * 3)}{c.name}</option>)}
+            </select>
+          </Field>
+          <Field label="…o crear carpeta nueva"><input className="input" value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="Nombre de la carpeta nueva" /></Field>
+        </div>
+        <Field label="Contenido">
+          <textarea className="input mono" rows={14} value={f.content} onChange={(e) => set('content', e.target.value)} placeholder={'# Título\n## Sección\n- item de lista\n[ ] checklist\n**negrita** y [enlace](https://…)'} style={{ lineHeight: 1.55, fontSize: 13 }} />
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4 }}>Formato: <span className="mono"># ## ###</span> títulos · <span className="mono">- </span>listas · <span className="mono">[ ]</span> checklist · <span className="mono">**negrita**</span> · <span className="mono">[texto](url)</span> · <span className="mono">---</span> separador</div>
+        </Field>
+
+        {/* links */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}><span className="label">Links / embeds</span><button className="btn btn-sm" onClick={addLink}><I.plus width={13} height={13} /> Agregar link</button></div>
+          {f.links.length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>Loom, YouTube o Vimeo se muestran embebidos; el resto como tarjeta.</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{f.links.map((l) => (
+              <div key={l.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input className="input" value={l.label} onChange={(e) => setLink(l.id, 'label', e.target.value)} placeholder="Etiqueta" style={{ maxWidth: 180 }} />
+                <input className="input mono" value={l.url} onChange={(e) => setLink(l.id, 'url', e.target.value)} placeholder="https://…" style={{ fontSize: 12.5 }} />
+                <button className="btn btn-sm btn-ghost" onClick={() => rmLink(l.id)} style={{ padding: 6, color: 'var(--red)' }}><I.trash width={14} height={14} /></button>
+              </div>))}</div>
+          )}
+        </div>
+
+        {/* imágenes */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span className="label">Imágenes</span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <label className="btn btn-sm" style={{ cursor: 'pointer' }}><I.paperclip width={13} height={13} /> Subir<input type="file" accept="image/*" multiple onChange={onFiles} style={{ display: 'none' }} /></label>
+              <button className="btn btn-sm" onClick={addImgUrl}><I.link width={13} height={13} /> Por URL</button>
+            </div>
+          </div>
+          {f.images.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 8 }}>
+              {f.images.map((im) => (
+                <div key={im.id} style={{ position: 'relative' }}>
+                  <img src={im.src} alt={im.name || ''} style={{ width: '100%', height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+                  <button className="btn btn-sm" onClick={() => rmImg(im.id)} style={{ position: 'absolute', top: 4, right: 4, padding: 4, background: 'rgba(0,0,0,.6)', color: '#fff', border: 'none' }}><I.x width={12} height={12} /></button>
+                </div>))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+          <button className="btn" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" onClick={() => onSave(f, newCat)} disabled={!canSave}><I.check width={15} height={15} /> Guardar proceso</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function SopCatModal({ cat, cats, onClose, onSave }) {
+  const [name, setName] = useState(cat.name || '')
+  const [parentId, setParentId] = useState(cat.parentId || '')
+  const depth = (id) => { let d = 0, c = cats.find((x) => x.id === id); while (c && c.parentId) { d++; c = cats.find((x) => x.id === c.parentId) } return d }
+  const options = cats.filter((c) => c.id !== cat.id) // no puede ser su propio padre
+  return (
+    <Modal open onClose={onClose} title={cat.id ? 'Renombrar carpeta' : 'Nueva carpeta'} sub="Las carpetas organizan tus procesos, estilo Windows" width={480}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Field label="Nombre"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Onboarding" autoFocus onKeyDown={(e) => { if (e.key === 'Enter' && name.trim()) onSave({ ...cat, name: name.trim(), parentId: parentId || null }) }} /></Field>
+        <Field label="Dentro de (carpeta superior)">
+          <select className="input" value={parentId} onChange={(e) => setParentId(e.target.value)}>
+            <option value="">— Nivel principal —</option>
+            {options.map((c) => <option key={c.id} value={c.id}>{' '.repeat(depth(c.id) * 3)}{c.name}</option>)}
+          </select>
+        </Field>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+          <button className="btn" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" onClick={() => onSave({ ...cat, name: name.trim(), parentId: parentId || null })} disabled={!name.trim()}><I.check width={15} height={15} /> Guardar</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* ============================================================================
    14 · CALLS (+ Fathom sync)
 ============================================================================ */
 /* editor de llamada: alta/edición/borrado, selectores encadenados, prioridad */
@@ -3873,6 +4350,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'tasks', label: 'Tareas', icon: I.tasks },
     { key: 'clients', label: 'Clients', icon: I.users },
     { key: 'calls', label: 'Calls', icon: I.phone },
+    { key: 'sops', label: 'SOP', icon: I.doc },
     { key: 'assistant', label: 'IA Assistant', icon: I.spark },
   ]
   const mini = !mobile && collapsed          // solo colapsa en desktop
@@ -4057,7 +4535,7 @@ function UpdateButton({ mobile }) {
 }
 
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', assistant: 'IA Assistant', project: 'Projects / Detalle' }[route.view]
+  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', assistant: 'IA Assistant', project: 'Projects / Detalle' }[route.view]
   return (
     <header style={{ height: 64, flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: mobile ? '0 12px' : '0 24px', background: 'var(--bg-elevated)', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-dim)', fontSize: 13, minWidth: 0 }}>
@@ -4224,6 +4702,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'tasks' && <TasksView />}
               {route.view === 'clients' && <Clients />}
               {route.view === 'calls' && <Calls />}
+              {route.view === 'sops' && <Sops />}
               {route.view === 'assistant' && <AssistantView />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
             </motion.div>
