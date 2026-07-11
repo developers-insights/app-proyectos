@@ -15,7 +15,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { uid, I, useApp, Modal, Field } from '../ui.jsx'
 import {
   newPlan, slugify, isSlugAllowed, SLUG_RE, SLUG_BLOCKLIST,
-  suggestStats, resyncWeeks, weeksToLose, clampWeekCount, MAX_WEEKS,
+  resyncWeeks, weeksToLose, clampWeekCount, MAX_WEEKS,
   hitoForWeek, validatePlan,
   HITO_COLORS, PHASE_ICONS, SCHEMA_ICONS, WEEK_TYPES, DELIVER_KINDS, COLOR_RE,
 } from './planModel.js'
@@ -346,12 +346,6 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
     set((p) => ({ ...p, weeks: resyncWeeks(p, n) }))
   }
 
-  const recalcStats = () => set((p) => {
-    const sug = suggestStats(p)
-    const stats = (p.stats || []).map((s, i) => (i < 3 && sug[i] ? { ...s, n: sug[i].n, k: sug[i].k } : s))
-    return { ...p, stats }
-  })
-
   const issues = validatePlan(plan)
   const ranges = rangeIssues(plan)
   const sStat = slugStatus(plan.slug, plans, plan.id)
@@ -374,46 +368,16 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
           </div>
         </div>
 
-        {/* ===== PORTADA ===== */}
-        <Acc title="Portada" sub="Encabezado, marca y secciones" defaultOpen>
-          <div className="pe-grp-label" style={{ marginTop: 6 }}>Encabezado</div>
+        {/* ===== PORTADA (lo esencial) ===== */}
+        <Acc title="Portada" sub="Lo que se ve arriba de todo" defaultOpen>
           <Field label="Título"><input className="input" value={plan.title ?? ''} onChange={(e) => setField('title', e.target.value)} placeholder="Real Deal Exchange AI" /></Field>
-          <div style={{ marginTop: 10 }}>
-            <Field label="Subtítulo (segunda línea del título)"><input className="input" value={plan.subtitle ?? ''} onChange={(e) => setField('subtitle', e.target.value)} placeholder="semana a semana." /></Field>
-            {subLen > 30 && <div style={{ fontSize: 12, color: 'var(--yellow)', marginTop: 5 }}>El subtítulo tiene {subLen} caracteres. Va dentro del título grande: arriba de 30 se ve mal.</div>}
-          </div>
-          <div style={{ marginTop: 10 }}><Field label="Eyebrow (línea sobre el título)"><input className="input" value={plan.heroEyebrow ?? ''} onChange={(e) => setField('heroEyebrow', e.target.value)} placeholder="Insights Apps · Plan de ejecución" /></Field></div>
-          <div style={{ marginTop: 10 }}><Field label="Lead (párrafo del encabezado)"><textarea className="input" rows={3} value={plan.lead ?? ''} onChange={(e) => setField('lead', e.target.value)} style={{ resize: 'vertical' }} /></Field></div>
-          <div style={{ marginTop: 10 }}><Field label="Meta-línea (bajo el lead)"><input className="input" value={plan.metaLine ?? ''} onChange={(e) => setField('metaLine', e.target.value)} /></Field></div>
-          <div style={{ marginTop: 10 }}><Field label="Nombre del cliente"><input className="input" value={plan.clientName ?? ''} onChange={(e) => setField('clientName', e.target.value)} placeholder="Real Deal Exchange AI LLC" /></Field></div>
-          <div style={{ marginTop: 10 }}><Field label="Indicación de scroll"><input className="input" value={plan.scrollCue ?? ''} onChange={(e) => setField('scrollCue', e.target.value)} placeholder="Desliza para recorrer el plan" /></Field></div>
+          <div style={{ marginTop: 12 }}><Field label="Cliente"><input className="input" value={plan.clientName ?? ''} onChange={(e) => setField('clientName', e.target.value)} placeholder="Real Deal Exchange AI LLC" /></Field></div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>Se usa en el menú del plan (al lado de “Insights”) y en el pie.</div>
+          <div style={{ marginTop: 12 }}><Field label="Párrafo de presentación"><textarea className="input" rows={3} value={plan.lead ?? ''} onChange={(e) => setField('lead', e.target.value)} style={{ resize: 'vertical' }} placeholder="Plan de ejecución de 12 semanas — del discovery al handover en producción…" /></Field></div>
+        </Acc>
 
-          <div className="pe-grp-label">4 tarjetas del encabezado</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {(plan.stats || []).map((s, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '68px 1fr', gap: 8, alignItems: 'start' }}>
-                <input className="input" value={s.n ?? ''} onChange={(e) => set((p) => ({ ...p, stats: p.stats.map((x, k) => (k === i ? { ...x, n: e.target.value } : x)) }))} placeholder="12" style={{ textAlign: 'center' }} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <input className="input" value={s.k ?? ''} onChange={(e) => set((p) => ({ ...p, stats: p.stats.map((x, k) => (k === i ? { ...x, k: e.target.value } : x)) }))} placeholder="semanas de recorrido" />
-                  <ColorField value={s.color} onChange={(c) => set((p) => ({ ...p, stats: p.stats.map((x, k) => (k === i ? { ...x, color: c } : x)) }))} />
-                </div>
-              </div>
-            ))}
-          </div>
-          <button type="button" className="btn btn-sm" onClick={recalcStats} style={{ marginTop: 9 }}><I.refresh width={13} height={13} /> Recalcular sugeridos</button>
-          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.5 }}>Llena las primeras 3 con semanas, hitos formales y fases. La 4ª queda como está (es libre).</div>
-
-          <div className="pe-grp-label">Marca</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="Nombre (en el nav)"><input className="input" value={plan.brand?.name ?? ''} onChange={(e) => setNested('brand', 'name', e.target.value)} placeholder="Insights" /></Field>
-            <Field label="Tagline (al lado)"><input className="input" value={plan.brand?.tagline ?? ''} onChange={(e) => setNested('brand', 'tagline', e.target.value)} placeholder="Real Deal Exchange AI" /></Field>
-          </div>
-
-          <div className="pe-grp-label">Metadatos del documento</div>
-          <Field label="Título del navegador (<title>)"><input className="input" value={plan.docTitle ?? ''} onChange={(e) => setField('docTitle', e.target.value)} /></Field>
-          <div style={{ marginTop: 10 }}><Field label="Meta descripción"><textarea className="input" rows={2} value={plan.metaDescription ?? ''} onChange={(e) => setField('metaDescription', e.target.value)} style={{ resize: 'vertical' }} /></Field></div>
-
-          <div className="pe-grp-label">Dirección web y proyecto</div>
+        {/* ===== PUBLICACIÓN ===== */}
+        <Acc title="Publicación" sub="Link y proyecto">
           <Field label="Dirección pública (slug)">
             <input className="input mono" value={plan.slug ?? ''} onChange={(e) => setField('slug', e.target.value)} placeholder="rdx" />
           </Field>
@@ -428,53 +392,18 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
               </select>
             </Field>
           </div>
+        </Acc>
 
-          <div className="pe-grp-label">Menú de navegación</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {(plan.navLinks || []).map((l, i) => (
-              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <input className="input" value={l.label ?? ''} onChange={(e) => set((p) => ({ ...p, navLinks: p.navLinks.map((x, k) => (k === i ? { ...x, label: e.target.value } : x)) }))} placeholder="Fases" style={{ flex: '1 1 40%' }} />
-                <input className="input mono" value={l.href ?? ''} onChange={(e) => set((p) => ({ ...p, navLinks: p.navLinks.map((x, k) => (k === i ? { ...x, href: e.target.value } : x)) }))} placeholder="#fases" style={{ flex: '1 1 45%', fontSize: 12.5 }} />
-                <button type="button" className="btn btn-ghost pe-mini" title="Quitar" onClick={() => set((p) => ({ ...p, navLinks: p.navLinks.filter((_, k) => k !== i) }))} style={{ padding: 5, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
-              </div>
-            ))}
-          </div>
-          <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, navLinks: [...(p.navLinks || []), { label: '', href: '#' }] }))} style={{ marginTop: 8 }}><I.plus width={13} height={13} /> Agregar link</button>
-
-          <div className="pe-grp-label">Textos de las secciones</div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 10, lineHeight: 1.5 }}>Este texto se imprime tal cual. Si cambiás la cantidad de hitos, revisá que siga siendo cierto (ej: “Cuatro fases, tres hitos”).</div>
-          {[['schema', 'Esquema de trabajo'], ['phases', 'Fases'], ['weeks', 'Semanas']].map(([sec, label]) => (
-            <div key={sec} className="pe-card">
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-dim)', marginBottom: 9 }}>{label}</div>
-              <Field label="Eyebrow"><input className="input" value={plan.sections?.[sec]?.eyebrow ?? ''} onChange={(e) => setSection(sec, 'eyebrow', e.target.value)} /></Field>
-              <div style={{ marginTop: 8 }}><Field label="Título"><input className="input" value={plan.sections?.[sec]?.title ?? ''} onChange={(e) => setSection(sec, 'title', e.target.value)} /></Field></div>
-              <div style={{ marginTop: 8 }}><Field label="Lead"><textarea className="input" rows={2} value={plan.sections?.[sec]?.lead ?? ''} onChange={(e) => setSection(sec, 'lead', e.target.value)} style={{ resize: 'vertical' }} /></Field></div>
-            </div>
-          ))}
-
-          <div className="pe-grp-label">Esquema de trabajo (bento)</div>
+        {/* ===== ESQUEMA DE TRABAJO ===== */}
+        <Acc title="Esquema de trabajo" sub={plan.showSchema === false ? 'Oculto' : `${(plan.schema || []).length} tarjetas`}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13.5, marginBottom: 12 }}>
             <input type="checkbox" checked={plan.showSchema !== false} onChange={(e) => setField('showSchema', e.target.checked)} />
-            Mostrar la sección “Esquema de trabajo”
+            Mostrar la sección “Cómo trabajamos juntos”
           </label>
-          {(plan.schema || []).map((c, i) => <SchemaCardEditor key={c.id || i} plan={plan} index={i} set={set} />)}
-          <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, schema: [...(p.schema || []), { id: uid(), icon: 'video', title: '', text: '', tags: [], color: HITO_COLORS.green }] }))} style={{ marginTop: 4 }}><I.plus width={13} height={13} /> Agregar tarjeta</button>
-
-          <div className="pe-grp-label">Pie de página</div>
-          <Field label="Frase grande"><textarea className="input" rows={2} value={plan.footer?.big ?? ''} onChange={(e) => setNested('footer', 'big', e.target.value)} style={{ resize: 'vertical' }} /></Field>
-          <div style={{ marginTop: 10 }}><Field label="Marca (en negrita)"><input className="input" value={plan.footer?.brand ?? ''} onChange={(e) => setNested('footer', 'brand', e.target.value)} /></Field></div>
-          <div style={{ marginTop: 10 }}>
-            <span className="label" style={{ display: 'block', marginBottom: 6 }}>Líneas</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {(plan.footer?.lines || []).map((ln, i) => (
-                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input className="input" value={ln} onChange={(e) => set((p) => ({ ...p, footer: { ...p.footer, lines: p.footer.lines.map((x, k) => (k === i ? e.target.value : x)) } }))} style={{ flex: 1 }} />
-                  <button type="button" className="btn btn-ghost pe-mini" title="Quitar" onClick={() => set((p) => ({ ...p, footer: { ...p.footer, lines: p.footer.lines.filter((_, k) => k !== i) } }))} style={{ padding: 5, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
-                </div>
-              ))}
-            </div>
-            <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, footer: { ...p.footer, lines: [...((p.footer && p.footer.lines) || []), ''] } }))} style={{ marginTop: 8 }}><I.plus width={13} height={13} /> Agregar línea</button>
-          </div>
+          {plan.showSchema !== false && <>
+            {(plan.schema || []).map((c, i) => <SchemaCardEditor key={c.id || i} plan={plan} index={i} set={set} />)}
+            <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, schema: [...(p.schema || []), { id: uid(), icon: 'video', title: '', text: '', tags: [], color: HITO_COLORS.green }] }))} style={{ marginTop: 4 }}><I.plus width={13} height={13} /> Agregar tarjeta</button>
+          </>}
         </Acc>
 
         {/* ===== HITOS ===== */}
@@ -502,6 +431,54 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
           </div>
           {(plan.weeks || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>El plan no tiene semanas. Subí la cantidad para agregarlas.</div>}
           {(plan.weeks || []).map((w, i) => <WeekCard key={i} plan={plan} index={i} set={set} />)}
+        </Acc>
+
+        {/* ===== AVANZADO (rara vez hace falta) ===== */}
+        <Acc title="Avanzado" sub="Textos con default">
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 12, lineHeight: 1.5 }}>Todo esto ya viene con buenos valores por defecto. Tocalo solo si querés cambiar un texto puntual.</div>
+
+          <div className="pe-grp-label" style={{ marginTop: 0 }}>Encabezado</div>
+          <Field label="Subtítulo (2ª línea del título)"><input className="input" value={plan.subtitle ?? ''} onChange={(e) => setField('subtitle', e.target.value)} placeholder="semana a semana." /></Field>
+          {subLen > 30 && <div style={{ fontSize: 12, color: 'var(--yellow)', marginTop: 5 }}>El subtítulo tiene {subLen} caracteres. Va dentro del título grande: arriba de 30 se ve mal.</div>}
+          <div style={{ marginTop: 10 }}><Field label="Eyebrow (línea sobre el título)"><input className="input" value={plan.heroEyebrow ?? ''} onChange={(e) => setField('heroEyebrow', e.target.value)} placeholder="Insights Apps · Plan de ejecución" /></Field></div>
+          <div style={{ marginTop: 10 }}><Field label="Indicación de scroll"><input className="input" value={plan.scrollCue ?? ''} onChange={(e) => setField('scrollCue', e.target.value)} placeholder="Desliza para recorrer el plan" /></Field></div>
+
+          <div className="pe-grp-label">Marca</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="Nombre (en el nav)"><input className="input" value={plan.brand?.name ?? ''} onChange={(e) => setNested('brand', 'name', e.target.value)} placeholder="Insights" /></Field>
+            <Field label="Tagline (al lado)"><input className="input" value={plan.brand?.tagline ?? ''} onChange={(e) => setNested('brand', 'tagline', e.target.value)} placeholder={plan.clientName || 'Cliente'} /></Field>
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>Si dejás el tagline vacío, usa el nombre del cliente.</div>
+
+          <div className="pe-grp-label">SEO del documento</div>
+          <Field label="Título del navegador"><input className="input" value={plan.docTitle ?? ''} onChange={(e) => setField('docTitle', e.target.value)} placeholder={plan.title ? plan.title + ' — Plan de ejecución' : 'Plan de ejecución'} /></Field>
+          <div style={{ marginTop: 10 }}><Field label="Meta descripción"><textarea className="input" rows={2} value={plan.metaDescription ?? ''} onChange={(e) => setField('metaDescription', e.target.value)} style={{ resize: 'vertical' }} placeholder="Si lo dejás vacío, usa el párrafo de presentación." /></Field></div>
+
+          <div className="pe-grp-label">Títulos de las secciones</div>
+          {[['schema', 'Esquema de trabajo'], ['phases', 'Fases'], ['weeks', 'Semanas']].map(([sec, label]) => (
+            <div key={sec} className="pe-card">
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-dim)', marginBottom: 9 }}>{label}</div>
+              <Field label="Eyebrow"><input className="input" value={plan.sections?.[sec]?.eyebrow ?? ''} onChange={(e) => setSection(sec, 'eyebrow', e.target.value)} /></Field>
+              <div style={{ marginTop: 8 }}><Field label="Título"><input className="input" value={plan.sections?.[sec]?.title ?? ''} onChange={(e) => setSection(sec, 'title', e.target.value)} /></Field></div>
+              <div style={{ marginTop: 8 }}><Field label="Lead"><textarea className="input" rows={2} value={plan.sections?.[sec]?.lead ?? ''} onChange={(e) => setSection(sec, 'lead', e.target.value)} style={{ resize: 'vertical' }} /></Field></div>
+            </div>
+          ))}
+
+          <div className="pe-grp-label">Pie de página</div>
+          <Field label="Frase grande"><textarea className="input" rows={2} value={plan.footer?.big ?? ''} onChange={(e) => setNested('footer', 'big', e.target.value)} style={{ resize: 'vertical' }} placeholder="Listo para empezar con claridad total desde el día uno." /></Field>
+          <div style={{ marginTop: 10 }}><Field label="Marca (en negrita)"><input className="input" value={plan.footer?.brand ?? ''} onChange={(e) => setNested('footer', 'brand', e.target.value)} placeholder="Insights Apps" /></Field></div>
+          <div style={{ marginTop: 10 }}>
+            <span className="label" style={{ display: 'block', marginBottom: 6 }}>Líneas (si están vacías, usa el cliente)</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {(plan.footer?.lines || []).map((ln, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input className="input" value={ln} onChange={(e) => set((p) => ({ ...p, footer: { ...p.footer, lines: p.footer.lines.map((x, k) => (k === i ? e.target.value : x)) } }))} style={{ flex: 1 }} />
+                  <button type="button" className="btn btn-ghost pe-mini" title="Quitar" onClick={() => set((p) => ({ ...p, footer: { ...p.footer, lines: p.footer.lines.filter((_, k) => k !== i) } }))} style={{ padding: 5, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, footer: { ...p.footer, lines: [...((p.footer && p.footer.lines) || []), ''] } }))} style={{ marginTop: 8 }}><I.plus width={13} height={13} /> Agregar línea</button>
+          </div>
         </Acc>
       </div>
 

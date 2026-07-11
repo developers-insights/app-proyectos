@@ -170,7 +170,8 @@ export function sanitizePlan(plan) {
     heroEyebrow: e(p.heroEyebrow),
     lead: e(p.lead),
     metaLine: e(p.metaLine),
-    docTitle: p.docTitle ? e(p.docTitle) : title,
+    clientName: e(p.clientName),
+    docTitle: p.docTitle ? e(p.docTitle) : '',
     metaDescription: e(p.metaDescription),
     scrollCue: e(p.scrollCue),
 
@@ -717,27 +718,27 @@ export function buildPlanHTML(plan, opts = {}) {
     "'/%3E%3Cpath d='M16 8v16M8 16h16' stroke='%2304140d' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"
 
   // ── <nav> ──────────────────────────────────────────────────────────────────
-  // Con el esquema oculto, el link a #trabajo sería un ancla muerta.
-  const navLinks = sp.navLinks
-    .filter((l) => !(sp.showSchema === false && l.href === '#trabajo'))
-    .map((l) => `      <a href="${safeHref(l.href)}">${l.label}</a>`)
-    .join('\n')
+  // Los links se derivan de las secciones que existen: no se editan a mano.
+  // Con el esquema oculto, "Esquema" no aparece (sería un ancla muerta).
+  const navItems = [
+    ...(sp.showSchema === false ? [] : [{ label: 'Esquema', href: '#trabajo' }]),
+    { label: 'Fases', href: '#fases' },
+    { label: 'Semanas', href: '#semanas' },
+  ]
+  const navLinks = navItems.map((l) => `      <a href="${l.href}">${l.label}</a>`).join('\n')
 
-  const brandSmall = sp.brand.tagline ? `&nbsp;<small>· ${sp.brand.tagline}</small>` : ''
+  // El tagline del nav reutiliza el nombre del cliente si no se especificó otro.
+  const brandTagline = sp.brand.tagline || sp.clientName
+  const brandSmall = brandTagline ? `&nbsp;<small>· ${brandTagline}</small>` : ''
 
   // ── Hero ───────────────────────────────────────────────────────────────────
-  const subtitleHtml = sp.subtitle ? `<span class="l2">${sp.subtitle}</span>` : ''
+  // Subtítulo y eyebrow tienen default fijo: rara vez cambian (campos avanzados).
+  const heroEyebrow = sp.heroEyebrow || 'Insights Apps · Plan de ejecución'
+  const subtitleHtml = `<span class="l2">${sp.subtitle || 'semana a semana.'}</span>`
   const leadHtml = sp.lead ? `\n    <p class="lead reveal in d2">${sp.lead}</p>` : ''
-  const metaLineHtml = sp.metaLine ? `\n    <p class="meta-line reveal in d2">${sp.metaLine}</p>` : ''
   const scrollCueHtml = sp.scrollCue
     ? `\n    <div class="scroll-cue reveal in d4"><span class="bar"></span> ${sp.scrollCue}</div>`
     : ''
-  const statsHtml = sp.stats
-    .map(
-      (s) =>
-        `      <div class="stat"${s.color ? ` style="--accent:${s.color}"` : ''}><div class="n">${s.n}</div><div class="k">${s.k}</div></div>`,
-    )
-    .join('\n')
 
   // ── #trabajo ───────────────────────────────────────────────────────────────
   const bentoHtml = sp.schema
@@ -821,8 +822,9 @@ ${bentoHtml}
 `
 
   // ── <footer> ───────────────────────────────────────────────────────────────
-  const fLines = sp.footer.lines
-  let footMeta = `<b>${sp.footer.brand}</b>`
+  const fBrand = sp.footer.brand || 'Insights Apps'
+  const fLines = (sp.footer.lines && sp.footer.lines.length) ? sp.footer.lines : [sp.clientName].filter(Boolean)
+  let footMeta = `<b>${fBrand}</b>`
   if (fLines.length) footMeta += ` · ${fLines[0]}`
   footMeta += fLines
     .slice(1)
@@ -855,8 +857,8 @@ ${bentoHtml}
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="robots" content="noindex, nofollow" />
-<title>${sp.docTitle}</title>
-<meta name="description" content="${sp.metaDescription}" />
+<title>${sp.docTitle || (sp.title ? sp.title + ' — Plan de ejecución' : 'Plan de ejecución')}</title>
+<meta name="description" content="${sp.metaDescription || sp.lead || sp.title}" />
 <link rel="icon" href="${favicon}" />
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
 <link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,500,700,400&f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
@@ -886,11 +888,8 @@ ${navLinks}
 
 <header class="hero">
   <div class="wrap">
-    <span class="eyebrow reveal in"><span class="dot"></span> ${sp.heroEyebrow}</span>
-    <h1 class="reveal in d1">${sp.title}${subtitleHtml}</h1>${leadHtml}${metaLineHtml}
-    <div class="stats reveal in d3">
-${statsHtml}
-    </div>${scrollCueHtml}
+    <span class="eyebrow reveal in"><span class="dot"></span> ${heroEyebrow}</span>
+    <h1 class="reveal in d1">${sp.title}${subtitleHtml}</h1>${leadHtml}${scrollCueHtml}
   </div>
 </header>
 ${schemaSection}
@@ -924,7 +923,7 @@ ${weekNavHtml}  </div>
 
 <footer>
   <div class="wrap foot">
-    <div class="big">${sp.footer.big}</div>
+    <div class="big">${sp.footer.big || 'Listo para empezar con claridad total desde el día uno.'}</div>
     <div class="meta">
       ${footMeta}
     </div>

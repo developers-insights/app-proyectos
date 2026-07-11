@@ -447,9 +447,6 @@ export function newPlan() {
   const weeks = []
   for (let i = 1; i <= 12; i++) weeks.push(emptyWeek(i))
 
-  const base = { hitos, weeks }
-  const stats = suggestStats(base).map((s, i) => ({ ...s, color: STAT_COLORS[i] || HITO_COLORS.discovery }))
-
   return {
     id: uid(),
     slug: '',
@@ -457,17 +454,18 @@ export function newPlan() {
     subtitle: 'semana a semana.',
     heroEyebrow: 'Insights Apps · Plan de ejecución',
     lead: 'Plan de ejecución de 12 semanas — del discovery al handover en producción. Claridad total de entregables y revisiones formales, con avances navegables uno por uno.',
-    metaLine: '3 hitos formales · 4 fases de trabajo.',
+    metaLine: '',
     clientName: '',
     projectId: null,
     publishedUrl: '',
 
-    docTitle: 'Plan de ejecución',
-    metaDescription: 'Plan de ejecución de 12 semanas. Preparado por Insights Apps.',
+    // Se derivan del título / lead en el template si quedan vacíos (campos avanzados).
+    docTitle: '',
+    metaDescription: '',
 
     brand: { name: 'Insights', tagline: '' },
 
-    stats,
+    stats: [],
 
     hitos,
     weeks,
