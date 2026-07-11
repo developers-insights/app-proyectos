@@ -1,0 +1,303 @@
+{
+  "_comment": "El plan de Real Deal Exchange AI, traducido al modelo de MASTER_PLAN.md §4 (v2). Fuente original: C:\\MisProyectos\\INSIGHTS\\rdx-plan-cliente\\index.html. Uso: seed de desarrollo + caso de prueba de buildPlanHTML() + validación del modelo. NOTA: week.hitoId y week.days NO se guardan (D12) — se derivan con hitoForWeek()/daysForWeek() a partir de los rangos de los hitos.",
+
+  "id": "rdx",
+  "slug": "rdx",
+
+  "title": "Real Deal Exchange AI",
+  "subtitle": "semana a semana.",
+  "heroEyebrow": "Insights Apps · Plan de ejecución",
+  "lead": "Plan de ejecución de 12 semanas — del discovery funcional al handover en producción. Claridad total de sprints, entregables y revisiones formales, con avances navegables uno por uno.",
+  "metaLine": "Phase 1 Core · 3 hitos · 6 módulos · preparado para Carlos Sabbadin y Jossueth Irigoyen.",
+  "clientName": "Real Deal Exchange AI LLC",
+  "projectId": null,
+  "publishedUrl": "",
+
+  "docTitle": "Real Deal Exchange AI — Plan de ejecución",
+  "metaDescription": "Plan de ejecución de 12 semanas — Real Deal Exchange AI. Preparado por Insights Apps.",
+
+  "brand": { "name": "Insights", "tagline": "Real Deal Exchange AI" },
+
+  "navLinks": [
+    { "label": "Esquema", "href": "#trabajo" },
+    { "label": "Fases",   "href": "#fases" },
+    { "label": "Semanas", "href": "#semanas" }
+  ],
+  "scrollCue": "Desliza para recorrer el plan",
+
+  "stats": [
+    { "n": "12", "k": "semanas de recorrido", "color": "#c2c8d2" },
+    { "n": "3",  "k": "hitos formales",       "color": "#3ddc97" },
+    { "n": "6",  "k": "módulos core",         "color": "#a896f7" },
+    { "n": "4",  "k": "fases de trabajo",     "color": "#f0b94d" }
+  ],
+
+  "sections": {
+    "schema": {
+      "eyebrow": "Esquema de trabajo",
+      "title": "Cómo trabajamos juntos",
+      "lead": "Separamos la mecánica de comunicación del plan de ejecución. Cada semana hay un avance visible; cada hito, una revisión formal con criterios de aceptación."
+    },
+    "phases": {
+      "eyebrow": "El recorrido",
+      "title": "Cuatro fases, tres hitos",
+      "lead": "El plan avanza en cuatro fases. La primera deja todo definido antes de construir; las tres siguientes cierran con un hito formal y su aceptación."
+    },
+    "weeks": {
+      "eyebrow": "Detalle",
+      "title": "Semana a semana",
+      "lead": "Tocá cualquier semana para ver qué se hace y qué se entrega. Usá las flechas del teclado para recorrerlas."
+    }
+  },
+
+  "hitos": [
+    {
+      "id": "discovery",
+      "label": "Discovery",
+      "title": "Análisis y plan",
+      "description": "Entendemos el negocio, definimos el modelo de datos y validamos la lógica de ofertas. Cierra con el plan técnico firmado.",
+      "weeksLabel": "Semanas 1–3 · pre-anticipo",
+      "daysLabel": "Pre-anticipo",
+      "color": "#c2c8d2",
+      "icon": "search",
+      "weekFrom": 1,
+      "weekTo": 3,
+      "isMilestone": false
+    },
+    {
+      "id": "h1",
+      "label": "Hito 1",
+      "title": "Motor + outreach",
+      "description": "Infraestructura, importación y enriquecimiento de datos, y los canales SMS y WhatsApp funcionando en sandbox.",
+      "weeksLabel": "Semanas 4–7 · días 1–30",
+      "daysLabel": "Días 1–30",
+      "color": "#3ddc97",
+      "icon": "database",
+      "weekFrom": 4,
+      "weekTo": 7,
+      "isMilestone": true
+    },
+    {
+      "id": "h2",
+      "label": "Hito 2",
+      "title": "Agente + panel",
+      "description": "El agente de pre-ofertas, el panel de revisión humana con aprobación 1-clic y el marketplace para realtors.",
+      "weeksLabel": "Semanas 8–10 · días 31–60",
+      "daysLabel": "Días 31–60",
+      "color": "#a896f7",
+      "icon": "chip",
+      "weekFrom": 8,
+      "weekTo": 10,
+      "isMilestone": true
+    },
+    {
+      "id": "h3",
+      "label": "Hito 3",
+      "title": "Producción + handover",
+      "description": "Salida a producción, white-label y transferencia completa: cuentas, documentación y equipo capacitado.",
+      "weeksLabel": "Semanas 11–12 · días 61–90",
+      "daysLabel": "Días 61–90",
+      "color": "#f0b94d",
+      "icon": "rocket",
+      "weekFrom": 11,
+      "weekTo": 12,
+      "isMilestone": true
+    }
+  ],
+
+  "weeks": [
+    {
+      "n": 1,
+      "title": "Kickoff funcional",
+      "type": "doc",
+      "daysOverride": null,
+      "tasks": [
+        "Reunión de kickoff con Carlos, Jossueth y el equipo de Insights",
+        "Revisión del análisis inicial que entrega el cliente",
+        "Setup de herramientas: repositorio, tablero y canal de comunicación"
+      ],
+      "deliver": { "kind": "doc", "text": "Minuta de kickoff + listado de preguntas + primer mapa de procesos." }
+    },
+    {
+      "n": 2,
+      "title": "Modelo de datos y backlog",
+      "type": "doc",
+      "daysOverride": null,
+      "tasks": [
+        "Modelo de entidades: propiedades, dueños, leads, campañas y ofertas",
+        "Mapa de integraciones externas: Twilio, Meta y APIs de datos"
+      ],
+      "deliver": { "kind": "doc", "text": "Data Model preliminar v1." }
+    },
+    {
+      "n": 3,
+      "title": "Validación de lógica y plan técnico",
+      "type": "gate",
+      "daysOverride": null,
+      "tasks": [
+        "Sesión con Jossueth: criterio de oferta, Subject-To / Seller Finance y scoring",
+        "Definición del agente de IA y del Human Review Gate",
+        "Plan técnico: sprints, dependencias externas, responsables y riesgos",
+        "Inicio del registro A2P 10DLC (camino crítico de semanas)"
+      ],
+      "deliver": { "kind": "gate", "text": "Especificación funcional del agente + sprint plan. La firma del plan técnico habilita el inicio del desarrollo." }
+    },
+    {
+      "n": 4,
+      "title": "Infraestructura base",
+      "type": "info",
+      "daysOverride": null,
+      "tasks": [
+        "Autenticación, gestión de tenants y roles",
+        "Base de datos: schema, migraciones y seguridad por tenant",
+        "Panel CRM básico de propiedades"
+      ],
+      "deliver": { "kind": "live", "text": "La app corre con datos de prueba y cada usuario ve solo sus propios datos." }
+    },
+    {
+      "n": 5,
+      "title": "Importación y enriquecimiento",
+      "type": "info",
+      "daysOverride": null,
+      "tasks": [
+        "Importación de CSV (3.000–3.500 propiedades), dedup y normalización de direcciones",
+        "Enriquecimiento de datos: valuación, deudas, condición e imágenes (sandbox)",
+        "Scoring inicial de propiedades visible en el CRM"
+      ],
+      "deliver": { "kind": "live", "text": "Importamos y enriquecemos el primer lote real de propiedades del cliente." }
+    },
+    {
+      "n": 6,
+      "title": "SMS outbound y WhatsApp inbound",
+      "type": "info",
+      "daysOverride": null,
+      "tasks": [
+        "Campañas SMS outbound en Twilio Sandbox (sin envíos reales todavía)",
+        "Compliance: opt-out, blacklist, kill-switch y horarios por timezone",
+        "WhatsApp Business inbound: recepción y clasificación de respuestas"
+      ],
+      "deliver": { "kind": "live", "text": "Flujo completo de SMS y WhatsApp funcionando en modo testing." }
+    },
+    {
+      "n": 7,
+      "title": "Hito 1 — Revisión formal",
+      "type": "formal",
+      "daysOverride": null,
+      "tasks": [
+        "Deploy en staging con datos reales del cliente",
+        "Ajustes según el feedback de las semanas anteriores",
+        "Reunión de revisión formal con criterios de aceptación"
+      ],
+      "deliver": { "kind": "formal", "text": "Motor de datos + outreach operativo en staging. Aceptación formal del Hito 1." }
+    },
+    {
+      "n": 8,
+      "title": "Agente de pre-ofertas",
+      "type": "info",
+      "daysOverride": null,
+      "tasks": [
+        "Motor de scoring con el criterio de Jossueth y Mariano",
+        "Análisis de imágenes y condición de la propiedad",
+        "Generación de pre-oferta: cada campo indica si es dato real o estimado"
+      ],
+      "deliver": { "kind": "live", "text": "El agente analiza una propiedad y genera una pre-oferta fundamentada." }
+    },
+    {
+      "n": 9,
+      "title": "Review Panel y Marketplace",
+      "type": "info",
+      "daysOverride": null,
+      "tasks": [
+        "Panel de revisión humana: Aprobar / Rechazar / Editar / Pedir más datos",
+        "Flujo 1-clic: la aprobación dispara el envío por el canal correcto",
+        "Marketplace: listings de deals para realtors con atribución por campaña"
+      ],
+      "deliver": { "kind": "live", "text": "Aprobás una oferta en un clic y llega al canal correcto automáticamente." }
+    },
+    {
+      "n": 10,
+      "title": "Hito 2 — Revisión formal",
+      "type": "formal",
+      "daysOverride": null,
+      "tasks": [
+        "QA del flujo end-to-end: importar → score → oferta → aprobación → envío",
+        "Staging actualizado con datos reales",
+        "Reunión de revisión formal con criterios de aceptación"
+      ],
+      "deliver": { "kind": "formal", "text": "Agente de IA + Review Panel + Marketplace operativos. Aceptación formal del Hito 2." }
+    },
+    {
+      "n": 11,
+      "title": "Producción y white-label",
+      "type": "info",
+      "daysOverride": null,
+      "tasks": [
+        "Setup de producción: dominios, SSL, Vercel y Supabase de producción",
+        "White-label: configuración para fondos y realtors adicionales",
+        "Monitoreo, alertas y plan de contingencia operacional"
+      ],
+      "deliver": { "kind": "live", "text": "La app corre en producción con datos reales y dominio propio del cliente." }
+    },
+    {
+      "n": 12,
+      "title": "Hito 3 — Handover completo",
+      "type": "formal",
+      "daysOverride": null,
+      "tasks": [
+        "Capacitación del equipo operacional del cliente",
+        "Transferencia de cuentas y accesos: Supabase, Vercel y GitHub",
+        "Documentación operacional, runbooks y drill de reactivación"
+      ],
+      "deliver": { "kind": "formal", "text": "Sistema en producción + cuentas transferidas + equipo capacitado. Aceptación formal del Hito 3." }
+    }
+  ],
+
+  "showSchema": true,
+  "schema": [
+    {
+      "id": "s1",
+      "icon": "video",
+      "title": "Avance semanal en video",
+      "text": "Cada viernes: un deploy en Vercel Preview navegable más un Loom de 5 a 10 minutos recorriendo lo nuevo de la semana. Ves el avance, no solo lo leés.",
+      "tags": ["Loom", "Vercel Preview", "Viernes"],
+      "color": "#3ddc97"
+    },
+    {
+      "id": "s2",
+      "icon": "check",
+      "title": "Revisión formal de hito",
+      "text": "En las semanas 7, 10 y 12: reunión estructurada con criterios de aceptación definidos. Es la entrega que dispara la aprobación formal del hito.",
+      "tags": ["Semana 7", "Semana 10", "Semana 12"],
+      "color": "#f0b94d"
+    },
+    {
+      "id": "s3",
+      "icon": "chat",
+      "title": "Canal directo siempre abierto",
+      "text": "WhatsApp y correo para preguntas, dudas y decisiones rápidas durante toda la semana. No esperás al viernes para destrabar algo.",
+      "tags": ["WhatsApp", "Asíncrono"],
+      "color": "#a896f7"
+    },
+    {
+      "id": "s4",
+      "icon": "grid",
+      "title": "Tablero de avance visible",
+      "text": "Estado de las tareas actualizado cada semana, accesible para vos y para tu equipo. Siempre sabés qué está hecho, qué sigue y qué espera input tuyo.",
+      "tags": ["Transparencia", "Tiempo real"],
+      "color": "#c2c8d2"
+    }
+  ],
+
+  "footer": {
+    "big": "Listo para empezar con claridad total desde el día uno.",
+    "brand": "Insights Apps",
+    "lines": [
+      "Real Deal Exchange AI LLC",
+      "Plan de ejecución Phase 1 Core · 12 semanas",
+      "Documento de presentación — 2026"
+    ]
+  },
+
+  "createdAt": "2026-06-29T00:00:00.000Z",
+  "updatedAt": "2026-07-07T00:00:00.000Z"
+}
