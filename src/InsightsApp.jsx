@@ -941,6 +941,10 @@ const TASK_PRIORITY = [
   { key: 'bajo', label: 'Bajo', color: 'var(--text)' },
 ]
 const taskPrioMeta = (p) => TASK_PRIORITY.find((x) => x.key === p) || TASK_PRIORITY[1]
+/* y-m-d local (para comparar fecha de entrega con hoy/mañana sin líos de zona horaria) */
+const localYMD = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` }
+/* origen de la tarea: cliente (ligada a un proyecto) o interna de Insights */
+const taskScope = (t) => t.scope || (t.projectId ? 'cliente' : 'interno')
 
 /* tiempo relativo para el centro de notificaciones */
 const fmtRelative = (iso) => {
@@ -3473,7 +3477,7 @@ function ProjectDetail({ projectId, onBack }) {
   const userOf = (id) => (data.team || []).find((u) => u.id === id)
   const teamTasks = (data.tasks || []).filter((t) => t.projectId === projectId)
   const clientTasks = project.clientTasks || []
-  const addTeamTask = (name) => setData((d) => ({ ...d, tasks: [{ id: uid(), name, projectId, assigneeId: project.assignments?.dev?.userId || '', priority: 'normal', status: 'pendiente', notes: '', comments: [] }, ...(d.tasks || [])] }))
+  const addTeamTask = (name) => setData((d) => ({ ...d, tasks: [{ id: uid(), name, projectId, scope: 'cliente', assigneeId: project.assignments?.dev?.userId || '', priority: 'normal', status: 'pendiente', notes: '', comments: [] }, ...(d.tasks || [])] }))
   const setTeamStatus = (id, status) => setData((d) => ({ ...d, tasks: d.tasks.map((t) => (t.id === id ? { ...t, status } : t)) }))
   const addClientTask = (text) => patch((p) => ({ ...p, clientTasks: [...(p.clientTasks || []), { id: uid(), text, done: false, date: new Date().toISOString() }] }))
   const toggleClient = (id) => patch((p) => ({ ...p, clientTasks: (p.clientTasks || []).map((c) => (c.id === id ? { ...c, done: !c.done } : c)) }))
@@ -4044,12 +4048,6 @@ function TaskDetailModal({ open, task, team, projects, onClose, onPatch, onDelet
               {TASK_PRIORITY.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
           </Field>
-          <Field label="Proyecto">
-            <select className="input" value={task.projectId || ''} onChange={(e) => onPatch({ projectId: e.target.value })}>
-              <option value="">— Sin proyecto —</option>
-              {(projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </Field>
           <Field label="Estado">
             <select className="input" value={task.status || 'pendiente'} onChange={(e) => onPatch({ status: e.target.value })}>
               {TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -4059,6 +4057,20 @@ function TaskDetailModal({ open, task, team, projects, onClose, onPatch, onDelet
             <input className="input mono" type="date" value={task.dueDate ? task.dueDate.slice(0, 10) : ''} onChange={(e) => onPatch({ dueDate: e.target.value ? dateInputISO(e.target.value) : '' })} />
           </Field>
         </div>
+        <Field label="¿De qué es esta tarea?">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-sm" onClick={() => onPatch({ scope: 'cliente' })} style={{ flex: '1 1 140px', justifyContent: 'center', background: taskScope(task) === 'cliente' ? 'var(--accent-soft)' : 'transparent', color: taskScope(task) === 'cliente' ? 'var(--accent)' : 'var(--text-dim)', borderColor: taskScope(task) === 'cliente' ? 'var(--accent-line)' : 'var(--border)' }}><I.folder width={14} height={14} /> Proyecto de cliente</button>
+            <button type="button" className="btn btn-sm" onClick={() => onPatch({ scope: 'interno', projectId: '' })} style={{ flex: '1 1 140px', justifyContent: 'center', background: taskScope(task) === 'interno' ? 'var(--accent-soft)' : 'transparent', color: taskScope(task) === 'interno' ? 'var(--accent)' : 'var(--text-dim)', borderColor: taskScope(task) === 'interno' ? 'var(--accent-line)' : 'var(--border)' }}><span style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 12 }}>I</span> Interno (Insights)</button>
+          </div>
+        </Field>
+        {taskScope(task) === 'cliente' && (
+          <Field label="Proyecto del cliente">
+            <select className="input" value={task.projectId || ''} onChange={(e) => onPatch({ projectId: e.target.value, scope: 'cliente' })}>
+              <option value="">— Elegí el proyecto —</option>
+              {(projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="Notas / info para hacer la tarea mejor"><textarea className="input" rows={4} value={task.notes || ''} onChange={(e) => onPatch({ notes: e.target.value })} placeholder="Contexto, links, detalles…" /></Field>
 
         <CommentThread comments={task.comments} subject={`la tarea "${task.name}"`}
@@ -4084,7 +4096,7 @@ function TasksView() {
   const team = data.team || []
   const userOf = (id) => team.find((u) => u.id === id)
   const setTasks = (fn) => setData((d) => ({ ...d, tasks: fn(d.tasks || []) }))
-  const addTask = () => { const id = uid(); setTasks((ts) => [{ id, name: 'Nueva tarea', assigneeId: '', priority: 'normal', status: 'pendiente', notes: '', comments: [] }, ...ts]); setOpenId(id); logActivity && logActivity({ type: 'task-add', text: 'creó una tarea' }) }
+  const addTask = () => { const id = uid(); setTasks((ts) => [{ id, name: 'Nueva tarea', assigneeId: '', priority: 'normal', status: 'pendiente', scope: 'interno', projectId: '', notes: '', comments: [] }, ...ts]); setOpenId(id); logActivity && logActivity({ type: 'task-add', text: 'creó una tarea' }) }
   const updateTask = (id, fields) => {
     const prev = tasks.find((t) => t.id === id)
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...fields } : t)))
@@ -4102,10 +4114,41 @@ function TasksView() {
     return u ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar user={u} size={size} ring="var(--card)" /><span style={{ fontSize: 13.5, fontWeight: 600 }}>{u.name}</span></span>
       : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--text-faint)' }}><Avatar empty size={size} ring="var(--card)" /><span style={{ fontSize: 13 }}>Sin asignar</span></span>
   }
+  const projName = (id) => (data.projects || []).find((p) => p.id === id)?.name
+  const ScopeTag = ({ t }) => {
+    if (taskScope(t) === 'cliente') {
+      const n = projName(t.projectId)
+      return <span className="tag" style={{ color: 'var(--accent)', background: 'var(--accent-soft)', borderColor: 'var(--accent-line)', fontSize: 10.5 }}>{n || 'Cliente · sin proyecto'}</span>
+    }
+    return <span className="tag" style={{ color: 'var(--text-dim)', background: 'var(--bg-elevated)', borderColor: 'var(--border)', fontSize: 10.5 }}>Interno</span>
+  }
+
+  // filtros: estado (terminadas archivadas por defecto), entrega (hoy/mañana), persona
+  const [filters, setFilters] = useState({ estado: 'activas', entrega: 'todas', asignado: 'todos' })
+  const setF = (k, v) => setFilters((f) => ({ ...f, [k]: v }))
+  const today = localYMD(new Date())
+  const tomorrow = localYMD(new Date(Date.now() + 86400000))
+  const matchEntrega = (t) => {
+    if (filters.entrega === 'todas') return true
+    if (filters.entrega === 'sinfecha') return !t.dueDate
+    if (!t.dueDate) return false
+    const y = localYMD(t.dueDate)
+    if (filters.entrega === 'hoy') return y === today
+    if (filters.entrega === 'manana') return y === tomorrow
+    if (filters.entrega === 'hoymanana') return y === today || y === tomorrow
+    if (filters.entrega === 'vencidas') return y < today && t.status !== 'terminado'
+    return true
+  }
+  const matchAsignado = (t) => filters.asignado === 'todos' ? true : (t.assigneeId || '') === filters.asignado
+  const matchEstado = (t) => filters.estado === 'todas' ? true : filters.estado === 'terminadas' ? t.status === 'terminado' : t.status !== 'terminado'
+  const doneCount = tasks.filter((t) => t.status === 'terminado').length
+  const tableTasks = tasks.filter((t) => matchEstado(t) && matchEntrega(t) && matchAsignado(t))  // tabla: aplica los 3
+  const boardTasks = tasks.filter((t) => matchEntrega(t) && matchAsignado(t))                     // kanban: las columnas son el estado
+  const selStyle = { width: 'auto', padding: '8px 10px', fontSize: 13 }
 
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Equipo</div><h1 style={{ fontSize: 32 }}>Tareas</h1></div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
@@ -4116,19 +4159,47 @@ function TasksView() {
         </div>
       </div>
 
+      {/* barra de filtros */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 18 }}>
+        <select className="input" value={filters.estado} onChange={(e) => setF('estado', e.target.value)} style={selStyle}>
+          <option value="activas">Estado: activas</option>
+          <option value="terminadas">Terminadas{doneCount ? ` (${doneCount})` : ''}</option>
+          <option value="todas">Todas</option>
+        </select>
+        <select className="input" value={filters.entrega} onChange={(e) => setF('entrega', e.target.value)} style={selStyle}>
+          <option value="todas">Entrega: todas</option>
+          <option value="hoy">Para hoy</option>
+          <option value="manana">Para mañana</option>
+          <option value="hoymanana">Hoy y mañana</option>
+          <option value="vencidas">Vencidas</option>
+          <option value="sinfecha">Sin fecha</option>
+        </select>
+        <select className="input" value={filters.asignado} onChange={(e) => setF('asignado', e.target.value)} style={selStyle}>
+          <option value="todos">Asignado: todos</option>
+          <option value="">Sin asignar</option>
+          {team.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        {(filters.estado !== 'activas' || filters.entrega !== 'todas' || filters.asignado !== 'todos') && (
+          <button className="btn btn-sm btn-ghost" onClick={() => setFilters({ estado: 'activas', entrega: 'todas', asignado: 'todos' })} style={{ color: 'var(--text-dim)' }}>Limpiar</button>
+        )}
+        <span style={{ fontSize: 12.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{view === 'table' ? tableTasks.length : boardTasks.length} tarea(s)</span>
+      </div>
+
       {tasks.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Sin tareas. Agregá la primera con “Agregar tarea”.</div>}
 
       {tasks.length > 0 && view === 'table' && (
+        tableTasks.length === 0 ? <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>No hay tareas con esos filtros.{filters.estado === 'activas' && doneCount > 0 ? ` Hay ${doneCount} terminada(s) — elegí “Terminadas” para verlas.` : ''}</div> :
         <div className="surface tbl" style={{ overflow: 'hidden' }}>
           <table>
             <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Asignado', 'Tarea', 'Prioridad', 'Entrega', 'Estado', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+              {['Asignado', 'Tarea', 'Origen', 'Prioridad', 'Entrega', 'Estado', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
             </tr></thead>
             <tbody>
-              {tasks.map((t) => (
-                <tr key={t.id} className="row-hover click" onClick={() => setOpenId(t.id)} style={{ borderBottom: '1px solid var(--border)' }}>
+              {tableTasks.map((t) => (
+                <tr key={t.id} className="row-hover click" onClick={() => setOpenId(t.id)} style={{ borderBottom: '1px solid var(--border)', opacity: t.status === 'terminado' ? 0.6 : 1 }}>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Assignee id={t.assigneeId} /></td>
-                  <td style={{ padding: '12px 16px', fontWeight: 600 }}>{t.name}{(t.comments || []).length > 0 && <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{t.comments.length}</span>}</td>
+                  <td style={{ padding: '12px 16px', fontWeight: 600, textDecoration: t.status === 'terminado' ? 'line-through' : 'none' }}>{t.name}{(t.comments || []).length > 0 && <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{t.comments.length}</span>}</td>
+                  <td style={{ padding: '12px 16px' }}><ScopeTag t={t} /></td>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><PrioFlag p={t.priority} withLabel /></td>
                   <td style={{ padding: '8px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}><DueDate value={t.dueDate} onChange={(v) => updateTask(t.id, { dueDate: v })} /></td>
                   <td style={{ padding: '8px 16px' }} onClick={(e) => e.stopPropagation()}>
@@ -4147,7 +4218,7 @@ function TasksView() {
       {tasks.length > 0 && view === 'kanban' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, alignItems: 'start' }}>
           {TASK_STATUS.map((col) => {
-            const colTasks = tasks.filter((t) => (t.status || 'pendiente') === col.key)
+            const colTasks = boardTasks.filter((t) => (t.status || 'pendiente') === col.key)
             return (
               <div key={col.key}
                 onDragOver={(e) => { e.preventDefault(); setOverCol(col.key) }}
@@ -4165,7 +4236,8 @@ function TasksView() {
                       onDragEnd={() => { setDragId(null); setOverCol(null) }}
                       onClick={() => setOpenId(t.id)}
                       className="surface click" style={{ padding: 11, background: 'var(--card)', cursor: 'grab', opacity: dragId === t.id ? 0.5 : 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>{t.name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, lineHeight: 1.3 }}>{t.name}</div>
+                      <div style={{ marginBottom: 8 }}><ScopeTag t={t} /></div>
                       <div style={{ marginBottom: 8 }}><DueDate value={t.dueDate} onChange={(v) => updateTask(t.id, { dueDate: v })} /></div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         {t.assigneeId ? <Avatar user={userOf(t.assigneeId)} size={24} ring="var(--card)" /> : <Avatar empty size={24} ring="var(--card)" />}
