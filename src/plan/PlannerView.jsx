@@ -16,8 +16,8 @@ import { uid, I, useApp, Modal, Field } from '../ui.jsx'
 import {
   newPlan, slugify, isSlugAllowed, SLUG_RE, SLUG_BLOCKLIST,
   resyncWeeks, weeksToLose, clampWeekCount, MAX_WEEKS,
-  hitoForWeek, validatePlan,
-  HITO_COLORS, PHASE_ICONS, SCHEMA_ICONS, WEEK_TYPES, DELIVER_KINDS, COLOR_RE,
+  normalizeStages, hitoForWeek, validatePlan,
+  HITO_COLORS, SCHEMA_ICONS, COLOR_RE,
 } from './planModel.js'
 import { buildPlanHTML } from './planTemplate.js'
 import rdxReference from './rdx.reference.json'
@@ -59,7 +59,6 @@ function usePlannerCss() {
 /* ============================================================================
    Helpers de presentación / edición
 ============================================================================ */
-const PHASE_ICON_LABELS = { search: 'Lupa · análisis', database: 'Base de datos', chip: 'Chip · producto', rocket: 'Cohete · lanzamiento' }
 const SCHEMA_ICON_LABELS = { video: 'Video', check: 'Check', chat: 'Chat', grid: 'Grilla' }
 
 /** Mueve el elemento i en la dirección dir (-1 arriba, +1 abajo). Devuelve un array nuevo. */
@@ -176,50 +175,50 @@ function RowTools({ i, len, onUp, onDown, onRemove, removeTitle = 'Quitar' }) {
   )
 }
 
-/** Tarjeta de un hito. */
-function HitoCard({ plan, index, set }) {
-  const h = plan.hitos[index]
-  const hitos = plan.hitos
-  const up = (fields) => set((p) => ({ ...p, hitos: p.hitos.map((x, i) => (i === index ? { ...x, ...fields } : x)) }))
+/**
+ * Tarjeta de una etapa (liviana). El usuario solo elige NOMBRE y "termina en la
+ * semana X" (más una descripción opcional). El rango, el color y el ícono los
+ * deriva normalizeStages() cada vez que algo cambia, así que editar una etapa
+ * reescribe TODAS de forma consistente (los rangos siguen encadenados sin solapes).
+ */
+function StageCard({ plan, index, set, totalWeeks }) {
+  const stages = plan.hitos || []
+  const h = stages[index]
+  const color = COLOR_RE.test(String(h.color)) ? h.color : 'var(--text-faint)'
+  // Forma "cruda" que come normalizeStages: conserva lo que el usuario decide,
+  // descarta lo derivado (weekFrom/label/color/icon se recalculan solos).
+  const raw = () => stages.map((s) => ({ id: s.id, title: s.title, description: s.description, weekTo: s.weekTo }))
+  const apply = (list) => set((p) => ({ ...p, hitos: normalizeStages(list) }))
+  const up = (fields) => apply(raw().map((s, i) => (i === index ? { ...s, ...fields } : s)))
+
+  // "Termina en la semana": input local, se aplica al salir del campo (Enter/blur).
+  // Así se puede borrar y retipear sin que normalizeStages lo pise a cada tecla.
+  const [toStr, setToStr] = useState(String(h.weekTo ?? ''))
+  useEffect(() => { setToStr(String(h.weekTo ?? '')) }, [h.weekTo])
+  const applyTo = () => {
+    if (toStr.trim() === '') { setToStr(String(h.weekTo ?? '')); return }
+    up({ weekTo: toStr })
+  }
   return (
     <div className="pe-card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <span style={{ width: 12, height: 12, borderRadius: 4, background: COLOR_RE.test(String(h.color)) ? h.color : 'var(--text-faint)', flexShrink: 0 }} />
-        <strong style={{ fontSize: 13.5 }}>{h.label || `Hito ${index + 1}`}</strong>
-        <span style={{ marginLeft: 'auto' }} />
-        <RowTools i={index} len={hitos.length} onUp={() => set((p) => ({ ...p, hitos: moveItem(p.hitos, index, -1) }))} onDown={() => set((p) => ({ ...p, hitos: moveItem(p.hitos, index, 1) }))} onRemove={() => set((p) => ({ ...p, hitos: p.hitos.filter((_, i) => i !== index) }))} removeTitle="Quitar hito" />
+        <span style={{ width: 12, height: 12, borderRadius: 4, background: color, flexShrink: 0 }} />
+        <strong style={{ fontSize: 13.5 }}>{h.title || h.label}</strong>
+        <span className="mono" style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-faint)' }}>{h.weeksLabel}</span>
+        <RowTools i={index} len={stages.length} onUp={() => apply(moveItem(raw(), index, -1))} onDown={() => apply(moveItem(raw(), index, 1))} onRemove={() => apply(raw().filter((_, i) => i !== index))} removeTitle="Quitar etapa" />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="Etiqueta (chip)"><input className="input" value={h.label ?? ''} onChange={(e) => up({ label: e.target.value })} placeholder="Hito 1" /></Field>
-        <Field label="Título de la fase"><input className="input" value={h.title ?? ''} onChange={(e) => up({ title: e.target.value })} placeholder="Base y datos" /></Field>
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <Field label="Descripción"><textarea className="input" rows={2} value={h.description ?? ''} onChange={(e) => up({ description: e.target.value })} style={{ resize: 'vertical' }} /></Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-        <Field label="Semana desde"><input className="input" type="number" min="1" value={h.weekFrom ?? ''} onChange={(e) => up({ weekFrom: numOr(e.target.value, h.weekFrom) })} /></Field>
-        <Field label="Semana hasta"><input className="input" type="number" min="1" value={h.weekTo ?? ''} onChange={(e) => up({ weekTo: numOr(e.target.value, h.weekTo) })} /></Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-        <Field label="Etiqueta de semanas (tarjeta)"><input className="input" value={h.weeksLabel ?? ''} onChange={(e) => up({ weeksLabel: e.target.value })} placeholder="Semanas 4–7 · días 1–30" /></Field>
-        <Field label="Etiqueta de días (chip semanal)"><input className="input" value={h.daysLabel ?? ''} onChange={(e) => up({ daysLabel: e.target.value })} placeholder="Días 1–30" /></Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10, alignItems: 'end' }}>
-        <Field label="Ícono"><select className="input" value={h.icon ?? 'search'} onChange={(e) => up({ icon: e.target.value })}>{Object.keys(PHASE_ICONS).map((k) => <option key={k} value={k}>{PHASE_ICON_LABELS[k] || k}</option>)}</select></Field>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13.5, padding: '9px 0' }}>
-          <input type="checkbox" checked={h.isMilestone === true} onChange={(e) => up({ isMilestone: e.target.checked })} />
-          Es hito formal
-        </label>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 10 }}>
+        <Field label="Nombre de la etapa"><input className="input" value={h.title ?? ''} onChange={(e) => up({ title: e.target.value })} placeholder="Ej: Fundaciones" /></Field>
+        <Field label="Termina en la semana"><input className="input" type="number" min="1" max={totalWeeks || undefined} value={toStr} onChange={(e) => setToStr(e.target.value)} onBlur={applyTo} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }} /></Field>
       </div>
       <div style={{ marginTop: 10 }}>
-        <span className="label" style={{ display: 'block', marginBottom: 6 }}>Color</span>
-        <ColorField value={h.color} onChange={(c) => up({ color: c })} />
+        <Field label="Descripción (opcional)"><textarea className="input" rows={2} value={h.description ?? ''} onChange={(e) => up({ description: e.target.value })} style={{ resize: 'vertical' }} placeholder="Qué se logra en esta etapa." /></Field>
       </div>
     </div>
   )
 }
 
-/** Tarjeta de una semana (colapsable). */
+/** Tarjeta de una semana (colapsable): título, items y un entregable opcional. */
 function WeekCard({ plan, index, set }) {
   const [open, setOpen] = useState(false)
   const w = plan.weeks[index]
@@ -227,7 +226,7 @@ function WeekCard({ plan, index, set }) {
   const chipColor = COLOR_RE.test(String(hito.color)) ? hito.color : 'var(--text-faint)'
   const up = (fields) => set((p) => ({ ...p, weeks: p.weeks.map((x, i) => (i === index ? { ...x, ...fields } : x)) }))
   const upTasks = (fn) => set((p) => ({ ...p, weeks: p.weeks.map((x, i) => (i === index ? { ...x, tasks: fn(Array.isArray(x.tasks) ? [...x.tasks] : []) } : x)) }))
-  const deliver = w.deliver || { kind: 'live', text: '' }
+  const deliver = w.deliver || { kind: 'doc', text: '' }
   return (
     <div className="pe-card" style={{ padding: 0 }}>
       <button type="button" onClick={() => setOpen((v) => !v)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '11px 12px', background: 'transparent' }}>
@@ -240,14 +239,8 @@ function WeekCard({ plan, index, set }) {
       </button>
       {open && (
         <div style={{ padding: '4px 12px 14px', borderTop: '1px solid var(--border)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-            <Field label="Título de la semana"><input className="input" value={w.title ?? ''} onChange={(e) => up({ title: e.target.value })} placeholder="Kickoff funcional" /></Field>
-            <Field label="Tipo"><select className="input" value={w.type ?? 'info'} onChange={(e) => up({ type: e.target.value })}>{Object.entries(WEEK_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
-          </div>
           <div style={{ marginTop: 10 }}>
-            <Field label={`Días (opcional — si lo dejás vacío hereda "${hito.daysLabel || '—'}")`}>
-              <input className="input" value={w.daysOverride ?? ''} onChange={(e) => up({ daysOverride: e.target.value === '' ? null : e.target.value })} placeholder={hito.daysLabel || 'Días 1–30'} />
-            </Field>
+            <Field label="Título de la semana"><input className="input" value={w.title ?? ''} onChange={(e) => up({ title: e.target.value })} placeholder="Qué se hace esta semana" /></Field>
           </div>
 
           <div className="pe-grp-label" style={{ margin: '14px 0 8px' }}>Items de la semana</div>
@@ -255,17 +248,15 @@ function WeekCard({ plan, index, set }) {
             {(w.tasks || []).length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>Sin items. Agregá el primero abajo.</div>}
             {(w.tasks || []).map((t, j) => (
               <div key={j} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <input className="input" value={t} onChange={(e) => upTasks((ts) => { ts[j] = e.target.value; return ts })} style={{ flex: 1 }} placeholder="Qué se hace esta semana" />
+                <input className="input" value={t} onChange={(e) => upTasks((ts) => { ts[j] = e.target.value; return ts })} style={{ flex: 1 }} placeholder="Una tarea concreta de la semana" />
                 <RowTools i={j} len={(w.tasks || []).length} onUp={() => upTasks((ts) => moveItem(ts, j, -1))} onDown={() => upTasks((ts) => moveItem(ts, j, 1))} onRemove={() => upTasks((ts) => ts.filter((_, k) => k !== j))} removeTitle="Quitar item" />
               </div>
             ))}
           </div>
           <button type="button" className="btn btn-sm" onClick={() => upTasks((ts) => [...ts, ''])} style={{ marginTop: 8 }}><I.plus width={13} height={13} /> Agregar item</button>
 
-          <div className="pe-grp-label" style={{ margin: '16px 0 8px' }}>Entregable</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
-            <Field label="Tipo de entregable"><select className="input" value={deliver.kind ?? 'live'} onChange={(e) => up({ deliver: { ...deliver, kind: e.target.value } })}>{Object.entries(DELIVER_KINDS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}</select></Field>
-            <Field label="Texto del entregable"><textarea className="input" rows={2} value={deliver.text ?? ''} onChange={(e) => up({ deliver: { ...deliver, text: e.target.value } })} style={{ resize: 'vertical' }} placeholder="Qué se entrega y cómo se ve." /></Field>
+          <div style={{ marginTop: 16 }}>
+            <Field label="Entregable de la semana (opcional)"><input className="input" value={deliver.text ?? ''} onChange={(e) => up({ deliver: { kind: deliver.kind || 'doc', text: e.target.value } })} placeholder="Qué queda listo y visible al cierre de la semana." /></Field>
           </div>
         </div>
       )}
@@ -350,7 +341,6 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
   const ranges = rangeIssues(plan)
   const sStat = slugStatus(plan.slug, plans, plan.id)
   const subLen = String(plan.subtitle ?? '').length
-  const formalCount = (plan.hitos || []).filter((h) => h && h.isMilestone).length
 
   const setField = (k, v) => set((p) => ({ ...p, [k]: v }))
   const setNested = (obj, k, v) => set((p) => ({ ...p, [obj]: { ...(p[obj] || {}), [k]: v } }))
@@ -368,22 +358,48 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
           </div>
         </div>
 
-        {/* ===== PORTADA (lo esencial) ===== */}
-        <Acc title="Portada" sub="Lo que se ve arriba de todo" defaultOpen>
-          <Field label="Título"><input className="input" value={plan.title ?? ''} onChange={(e) => setField('title', e.target.value)} placeholder="Real Deal Exchange AI" /></Field>
-          <div style={{ marginTop: 12 }}><Field label="Cliente"><input className="input" value={plan.clientName ?? ''} onChange={(e) => setField('clientName', e.target.value)} placeholder="Real Deal Exchange AI LLC" /></Field></div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>Se usa en el menú del plan (al lado de “Insights”) y en el pie.</div>
-          <div style={{ marginTop: 12 }}><Field label="Párrafo de presentación"><textarea className="input" rows={3} value={plan.lead ?? ''} onChange={(e) => setField('lead', e.target.value)} style={{ resize: 'vertical' }} placeholder="Plan de ejecución de 12 semanas — del discovery al handover en producción…" /></Field></div>
+        {/* ===== LO BÁSICO ===== */}
+        <Acc title="Lo básico" sub="Cliente y objetivo" defaultOpen>
+          <Field label="Nombre del cliente o proyecto"><input className="input" value={plan.title ?? ''} onChange={(e) => setField('title', e.target.value)} placeholder="Cleaning Marketplace" /></Field>
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>Es el título grande del plan. También se usa en el menú y el pie.</div>
+          <div style={{ marginTop: 12 }}><Field label="Objetivo del plan"><textarea className="input" rows={3} value={plan.lead ?? ''} onChange={(e) => setField('lead', e.target.value)} style={{ resize: 'vertical' }} placeholder="Del estado actual al despliegue en App Store y Play Store en 12 semanas." /></Field></div>
         </Acc>
 
-        {/* ===== PUBLICACIÓN ===== */}
-        <Acc title="Publicación" sub="Link y proyecto">
-          <Field label="Dirección pública (slug)">
-            <input className="input mono" value={plan.slug ?? ''} onChange={(e) => setField('slug', e.target.value)} placeholder="rdx" />
-          </Field>
+        {/* ===== ETAPAS ===== */}
+        <Acc title="Etapas" sub={`${(plan.hitos || []).length} · dan color y estructura`} defaultOpen>
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 12, lineHeight: 1.5 }}>Agrupan las semanas en bloques de color. Solo ponés el nombre y hasta qué semana llega cada una; el color y el ícono se asignan solos.</div>
+          {(ranges.gaps.length > 0 || ranges.out.length > 0) ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+              {ranges.gaps.length > 0 && <div style={{ fontSize: 12.5, color: 'var(--yellow)' }}>Sin etapa: semana{ranges.gaps.length > 1 ? 's' : ''} {ranges.gaps.join(', ')} (salen en gris). Extendé la última etapa hasta la semana {(plan.weeks || []).length}.</div>}
+              {ranges.out.length > 0 && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>Una etapa termina fuera del plan. Bajá su “termina en la semana” o subí la cantidad de semanas.</div>}
+            </div>
+          ) : (plan.hitos || []).length > 0 && (
+            <div style={{ fontSize: 12.5, color: 'var(--green)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}><I.check width={14} height={14} /> Las etapas cubren todas las semanas.</div>
+          )}
+          {(plan.hitos || []).map((h, i) => <StageCard key={h.id || i} plan={plan} index={i} set={set} totalWeeks={(plan.weeks || []).length} />)}
+          <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, hitos: normalizeStages([...(p.hitos || []).map((s) => ({ id: s.id, title: s.title, description: s.description, weekTo: s.weekTo })), { title: '', weekTo: (p.weeks || []).length || 1 }]) }))}><I.plus width={13} height={13} /> Agregar etapa</button>
+        </Acc>
+
+        {/* ===== SEMANAS ===== */}
+        <Acc title="Semanas" sub={`${(plan.weeks || []).length} semanas`} defaultOpen>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 14 }}>
+            <Field label="Cantidad de semanas">
+              <input className="input" type="number" min="0" max={MAX_WEEKS} value={countStr} onChange={(e) => setCountStr(e.target.value)} onBlur={applyCount} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }} style={{ width: 110 }} />
+            </Field>
+            <div style={{ fontSize: 11.5, color: 'var(--text-faint)', lineHeight: 1.5, paddingBottom: 3 }}>Escribí el número y salí del campo (o Enter). Si bajás y hay semanas cargadas, te avisa antes de borrar.</div>
+          </div>
+          {(plan.weeks || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>El plan no tiene semanas. Subí la cantidad para agregarlas.</div>}
+          {(plan.weeks || []).map((w, i) => <WeekCard key={i} plan={plan} index={i} set={set} />)}
+        </Acc>
+
+        {/* ===== AVANZADO (rara vez hace falta) ===== */}
+        <Acc title="Avanzado" sub="Publicación, marca y textos">
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 12, lineHeight: 1.5 }}>Todo esto ya viene con buenos valores por defecto. Tocalo solo si querés cambiar algo puntual antes de publicar.</div>
+
+          <div className="pe-grp-label" style={{ marginTop: 0 }}>Publicación</div>
+          <Field label="Dirección pública (slug)"><input className="input mono" value={plan.slug ?? ''} onChange={(e) => setField('slug', e.target.value)} placeholder="cleaning-marketplace" /></Field>
           <div style={{ fontSize: 12, color: sStat.tone === 'error' ? 'var(--red)' : sStat.tone === 'warn' ? 'var(--yellow)' : 'var(--green)', marginTop: 5 }}>{sStat.msg}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>Es la URL pública del plan. Si la cambiás después de mandarle el link al cliente, ese link deja de funcionar.</div>
-          <div style={{ marginTop: 10 }}><Field label="URL publicada"><input className="input" value={plan.publishedUrl ?? ''} onChange={(e) => setField('publishedUrl', e.target.value)} placeholder="https://…/rdx" /></Field></div>
+          <div style={{ marginTop: 10 }}><Field label="URL publicada"><input className="input" value={plan.publishedUrl ?? ''} onChange={(e) => setField('publishedUrl', e.target.value)} placeholder="https://…/cleaning-marketplace" /></Field></div>
           <div style={{ marginTop: 10 }}>
             <Field label="Proyecto asociado">
               <select className="input" value={plan.projectId ?? ''} onChange={(e) => setField('projectId', e.target.value || null)}>
@@ -392,10 +408,9 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
               </select>
             </Field>
           </div>
-        </Acc>
+          <div style={{ marginTop: 10 }}><Field label="Cliente (para el pie y el menú)"><input className="input" value={plan.clientName ?? ''} onChange={(e) => setField('clientName', e.target.value)} placeholder="Si lo dejás vacío, usa el nombre de arriba." /></Field></div>
 
-        {/* ===== ESQUEMA DE TRABAJO ===== */}
-        <Acc title="Esquema de trabajo" sub={plan.showSchema === false ? 'Oculto' : `${(plan.schema || []).length} tarjetas`}>
+          <div className="pe-grp-label">Esquema de trabajo</div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13.5, marginBottom: 12 }}>
             <input type="checkbox" checked={plan.showSchema !== false} onChange={(e) => setField('showSchema', e.target.checked)} />
             Mostrar la sección “Cómo trabajamos juntos”
@@ -404,40 +419,8 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
             {(plan.schema || []).map((c, i) => <SchemaCardEditor key={c.id || i} plan={plan} index={i} set={set} />)}
             <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, schema: [...(p.schema || []), { id: uid(), icon: 'video', title: '', text: '', tags: [], color: HITO_COLORS.green }] }))} style={{ marginTop: 4 }}><I.plus width={13} height={13} /> Agregar tarjeta</button>
           </>}
-        </Acc>
 
-        {/* ===== HITOS ===== */}
-        <Acc title="Hitos" sub={`${(plan.hitos || []).length} · ${formalCount} formales`}>
-          {(ranges.gaps.length > 0 || ranges.overlaps.length > 0 || ranges.out.length > 0) ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-              {ranges.gaps.length > 0 && <div style={{ fontSize: 12.5, color: 'var(--yellow)' }}>Sin hito: semana{ranges.gaps.length > 1 ? 's' : ''} {ranges.gaps.join(', ')} (salen en gris).</div>}
-              {ranges.overlaps.length > 0 && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>En dos hitos a la vez: semana{ranges.overlaps.length > 1 ? 's' : ''} {ranges.overlaps.join(', ')}.</div>}
-              {ranges.out.length > 0 && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>Rango fuera del plan: {ranges.out.join(', ')}.</div>}
-            </div>
-          ) : (plan.hitos || []).length > 0 && (
-            <div style={{ fontSize: 12.5, color: 'var(--green)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}><I.check width={14} height={14} /> Los rangos cubren todas las semanas, sin solapes.</div>
-          )}
-          {(plan.hitos || []).map((h, i) => <HitoCard key={h.id || i} plan={plan} index={i} set={set} />)}
-          <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, hitos: [...(p.hitos || []), { id: uid(), label: `Hito ${(p.hitos || []).length}`, title: '', description: '', weeksLabel: '', daysLabel: '', color: HITO_COLORS.blue, icon: 'search', weekFrom: 1, weekTo: 1, isMilestone: true }] }))}><I.plus width={13} height={13} /> Agregar hito</button>
-        </Acc>
-
-        {/* ===== SEMANAS ===== */}
-        <Acc title="Semanas" sub={`${(plan.weeks || []).length} semanas`}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 14 }}>
-            <Field label="Cantidad de semanas">
-              <input className="input" type="number" min="0" max={MAX_WEEKS} value={countStr} onChange={(e) => setCountStr(e.target.value)} onBlur={applyCount} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }} style={{ width: 110 }} />
-            </Field>
-            <div style={{ fontSize: 11.5, color: 'var(--text-faint)', lineHeight: 1.5, paddingBottom: 3 }}>Escribí el número y salí del campo (o Enter). Si bajás y hay semanas con contenido, te avisa antes de borrar.</div>
-          </div>
-          {(plan.weeks || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>El plan no tiene semanas. Subí la cantidad para agregarlas.</div>}
-          {(plan.weeks || []).map((w, i) => <WeekCard key={i} plan={plan} index={i} set={set} />)}
-        </Acc>
-
-        {/* ===== AVANZADO (rara vez hace falta) ===== */}
-        <Acc title="Avanzado" sub="Textos con default">
-          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 12, lineHeight: 1.5 }}>Todo esto ya viene con buenos valores por defecto. Tocalo solo si querés cambiar un texto puntual.</div>
-
-          <div className="pe-grp-label" style={{ marginTop: 0 }}>Encabezado</div>
+          <div className="pe-grp-label">Encabezado</div>
           <Field label="Subtítulo (2ª línea del título)"><input className="input" value={plan.subtitle ?? ''} onChange={(e) => setField('subtitle', e.target.value)} placeholder="semana a semana." /></Field>
           {subLen > 30 && <div style={{ fontSize: 12, color: 'var(--yellow)', marginTop: 5 }}>El subtítulo tiene {subLen} caracteres. Va dentro del título grande: arriba de 30 se ve mal.</div>}
           <div style={{ marginTop: 10 }}><Field label="Eyebrow (línea sobre el título)"><input className="input" value={plan.heroEyebrow ?? ''} onChange={(e) => setField('heroEyebrow', e.target.value)} placeholder="Insights Apps · Plan de ejecución" /></Field></div>

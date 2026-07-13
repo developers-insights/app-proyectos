@@ -586,6 +586,7 @@ const pillNodes=[...pillsEl.children];
 function buildHTML(w){
   const t=TYPE[w.type];
   const tasks=w.tasks.map(x=>'<div class="task"><span class="tick">'+ICONS.tick+'</span><span>'+x+'</span></div>').join('');
+  const del=(w.deliver&&w.deliver.text)?'<div class="deliver"><span class="dic">'+ICONS[w.deliver.kind]+'</span><div><div class="dk">'+DK[w.deliver.kind]+'</div><div class="dt">'+w.deliver.text+'</div></div></div>':'';
   return ''+
    '<div class="week-top">'+
      '<span class="phase-chip"><span class="d"></span>'+PHASES[w.phase].label+'</span>'+
@@ -594,10 +595,7 @@ function buildHTML(w){
    '</div>'+
    '<h3 class="wt"><span class="wn">Semana '+w.n+'</span> — '+w.title+'</h3>'+
    '<div class="tasks">'+tasks+'</div>'+
-   '<div class="deliver">'+
-     '<span class="dic">'+ICONS[w.deliver.kind]+'</span>'+
-     '<div><div class="dk">'+DK[w.deliver.kind]+'</div><div class="dt">'+w.deliver.text+'</div></div>'+
-   '</div>';
+   del;
 }
 
 function go(i){
@@ -639,9 +637,10 @@ syncControls();
 // print version: all weeks expanded
 document.getElementById('printAll').innerHTML=WEEKS.map(w=>{
   const li=w.tasks.map(t=>'<li>'+t+'</li>').join('');
+  const pdel=(w.deliver&&w.deliver.text)?'<div class="pdel"><b>'+DK[w.deliver.kind]+':</b> '+w.deliver.text+'</div>':'';
   return '<div class="pweek"><h3>Semana '+w.n+' — '+w.title+'</h3>'+
     '<div class="pmeta">'+PHASES[w.phase].label+' · '+w.days+' · '+TYPE[w.type].label+'</div>'+
-    '<ul>'+li+'</ul><div class="pdel"><b>'+DK[w.deliver.kind]+':</b> '+w.deliver.text+'</div></div>';
+    '<ul>'+li+'</ul>'+pdel+'</div>';
 }).join('');`
 
   // En preview las .reveal ya están forzadas visibles por la regla .preview .reveal (D-A).
@@ -728,7 +727,7 @@ export function buildPlanHTML(plan, opts = {}) {
   const navLinks = navItems.map((l) => `      <a href="${l.href}">${l.label}</a>`).join('\n')
 
   // El tagline del nav reutiliza el nombre del cliente si no se especificó otro.
-  const brandTagline = sp.brand.tagline || sp.clientName
+  const brandTagline = sp.brand.tagline || sp.clientName || sp.title
   const brandSmall = brandTagline ? `&nbsp;<small>· ${brandTagline}</small>` : ''
 
   // ── Hero ───────────────────────────────────────────────────────────────────
@@ -784,7 +783,7 @@ ${bentoHtml}
       (h, i) => `      <div class="phase shell reveal d${Math.min(i + 1, 4)}" style="--col:var(--c-hito-${safeIds[i]})"><div class="core">
         <div class="pic">${phaseIcon(h.icon)}</div>
         <div class="pnum">${h.label}</div>
-        <h3>${h.title}</h3>
+        <h3>${h.title || h.label}</h3>
         <div class="wk">${h.weeksLabel}</div>
         <div class="desc">${h.description}</div>
       </div></div>`,
@@ -823,7 +822,7 @@ ${bentoHtml}
 
   // ── <footer> ───────────────────────────────────────────────────────────────
   const fBrand = sp.footer.brand || 'Insights Apps'
-  const fLines = (sp.footer.lines && sp.footer.lines.length) ? sp.footer.lines : [sp.clientName].filter(Boolean)
+  const fLines = (sp.footer.lines && sp.footer.lines.length) ? sp.footer.lines : [sp.clientName || sp.title].filter(Boolean)
   let footMeta = `<b>${fBrand}</b>`
   if (fLines.length) footMeta += ` · ${fLines[0]}`
   footMeta += fLines
@@ -841,7 +840,7 @@ ${bentoHtml}
   const weeksData = weeks.map((w) => ({
     n: w.n,
     phase: safeIdOf(hitoForWeek(sp, w.n)),
-    days: daysForWeek(sp, w),
+    days: daysForWeek(sp, w) || ('Semana ' + w.n),
     title: w.title,
     type: w.type,
     tasks: w.tasks,

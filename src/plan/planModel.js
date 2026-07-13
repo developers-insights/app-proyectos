@@ -18,6 +18,16 @@ export const HITO_COLORS = {
   gold:      '#f0b94d', blue:  '#6db3f2', rose:   '#f2789f',
 }
 
+/**
+ * Paleta y orden de íconos de las etapas del editor simple.
+ * El usuario NO elige color ni ícono: se asignan por índice desde acá (D-simple).
+ */
+export const STAGE_COLORS = [
+  HITO_COLORS.discovery, HITO_COLORS.green, HITO_COLORS.purple,
+  HITO_COLORS.gold, HITO_COLORS.blue, HITO_COLORS.rose,
+]
+export const STAGE_ICON_ORDER = ['search', 'database', 'chip', 'rocket']
+
 export const NEUTRAL_HITO = {              // fallback para semanas huérfanas (T6)
   id: '_neutral', label: '—', title: '', color: '#8a8a8a',
   daysLabel: '', icon: 'search', isMilestone: false,
@@ -161,7 +171,7 @@ export function emptyWeek(n) {
     title: '',
     type: 'info',
     tasks: [],
-    deliver: { kind: 'live', text: '' },
+    deliver: { kind: 'doc', text: '' },
     daysOverride: null,
   }
 }
@@ -233,6 +243,46 @@ export function weeksToLose(plan, count) {
     count: lost.length,
     withContent: lost.filter(weekHasContent).length,
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// normalizeStages — las "etapas livianas" del editor simple → hitos completos
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * El editor simple deja al usuario elegir SOLO el nombre y "termina en la semana X"
+ * de cada etapa. Todo lo demás se deriva acá y el resultado son hitos con la forma
+ * completa que ya consumen el template y validatePlan (no hay que tocar nada más):
+ *
+ *   · el rango arranca donde terminó la etapa anterior (cascada) → nunca se solapan;
+ *   · color e ícono salen de STAGE_COLORS / STAGE_ICON_ORDER por índice;
+ *   · label ("Etapa N") y weeksLabel ("Semanas X–Y") se arman solos;
+ *   · isMilestone queda en true (todas cuentan como hito formal).
+ *
+ * Es PURA: no muta la entrada ni comparte estructuras con ella.
+ */
+export function normalizeStages(stages) {
+  const list = Array.isArray(stages) ? stages : []
+  let from = 1
+  return list.map((s, i) => {
+    const askedTo = s && s.weekTo != null && s.weekTo !== '' ? clampWeekCount(s.weekTo) : from
+    const to = Math.max(from, askedTo || from)
+    const hito = {
+      id: (s && s.id) || uid(),
+      label: `Etapa ${i + 1}`,
+      title: (s && typeof s.title === 'string') ? s.title : '',
+      description: (s && typeof s.description === 'string') ? s.description : '',
+      weeksLabel: from === to ? `Semana ${from}` : `Semanas ${from}–${to}`,
+      daysLabel: '',
+      color: STAGE_COLORS[i % STAGE_COLORS.length],
+      icon: STAGE_ICON_ORDER[i % STAGE_ICON_ORDER.length],
+      weekFrom: from,
+      weekTo: to,
+      isMilestone: true,
+    }
+    from = to + 1
+    return hito
+  })
 }
 
 /**
@@ -389,60 +439,15 @@ const STAT_COLORS = [HITO_COLORS.discovery, HITO_COLORS.green, HITO_COLORS.purpl
 export function newPlan() {
   const now = new Date().toISOString()
 
-  const hitos = [
-    {
-      id: uid(),
-      label: 'Discovery',
-      title: 'Análisis y plan',
-      description: 'Entendemos el negocio, definimos el alcance y dejamos el plan técnico cerrado antes de escribir una línea de código.',
-      weeksLabel: 'Semanas 1–3 · pre-anticipo',
-      daysLabel: 'Pre-anticipo',
-      color: HITO_COLORS.discovery,
-      icon: 'search',
-      weekFrom: 1,
-      weekTo: 3,
-      isMilestone: false,
-    },
-    {
-      id: uid(),
-      label: 'Hito 1',
-      title: 'Base y datos',
-      description: 'La infraestructura, el modelo de datos y las integraciones externas funcionando de punta a punta.',
-      weeksLabel: 'Semanas 4–7 · días 1–30',
-      daysLabel: 'Días 1–30',
-      color: HITO_COLORS.green,
-      icon: 'database',
-      weekFrom: 4,
-      weekTo: 7,
-      isMilestone: true,
-    },
-    {
-      id: uid(),
-      label: 'Hito 2',
-      title: 'Producto',
-      description: 'Las funcionalidades que le dan valor al usuario final, listas para probar con datos reales.',
-      weeksLabel: 'Semanas 8–10 · días 31–60',
-      daysLabel: 'Días 31–60',
-      color: HITO_COLORS.purple,
-      icon: 'chip',
-      weekFrom: 8,
-      weekTo: 10,
-      isMilestone: true,
-    },
-    {
-      id: uid(),
-      label: 'Hito 3',
-      title: 'Producción + handover',
-      description: 'Salida a producción y transferencia completa: cuentas, documentación y equipo capacitado.',
-      weeksLabel: 'Semanas 11–12 · días 61–90',
-      daysLabel: 'Días 61–90',
-      color: HITO_COLORS.gold,
-      icon: 'rocket',
-      weekFrom: 11,
-      weekTo: 12,
-      isMilestone: true,
-    },
-  ]
+  // Cuatro etapas por defecto repartidas sobre 12 semanas. Nacen sin nombre: el
+  // usuario se los pone desde el editor simple. El color, el ícono y el rango los
+  // deriva normalizeStages — nada de esto se elige a mano (D-simple).
+  const hitos = normalizeStages([
+    { title: '', weekTo: 3 },
+    { title: '', weekTo: 7 },
+    { title: '', weekTo: 10 },
+    { title: '', weekTo: 12 },
+  ])
 
   const weeks = []
   for (let i = 1; i <= 12; i++) weeks.push(emptyWeek(i))
@@ -514,8 +519,8 @@ export function newPlan() {
       },
       phases: {
         eyebrow: 'El recorrido',
-        title: 'Cuatro fases, tres hitos',
-        lead: 'El plan avanza en cuatro fases. La primera deja todo definido antes de construir; las tres siguientes cierran con un hito formal y su aceptación.',
+        title: 'El plan, etapa por etapa',
+        lead: 'El trabajo avanza por etapas. Cada semana deja un avance visible y cada etapa cierra con su entrega.',
       },
       weeks: {
         eyebrow: 'Detalle',
