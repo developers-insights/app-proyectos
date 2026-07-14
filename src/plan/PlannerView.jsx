@@ -425,7 +425,7 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, syncP
           {plan.published ? (() => {
             const err = syncState === 'error'
             const col = err ? 'var(--red)' : 'var(--green)'
-            const label = syncState === 'saving' ? 'Guardando cambios…' : err ? 'No se pudo sincronizar' : 'Publicado · se actualiza solo'
+            const label = syncState === 'saving' ? 'Guardando cambios…' : err ? 'No se pudo sincronizar' : 'se actualiza en tiempo real'
             return (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: '5px 11px' }}>
                 {syncState === 'saving' ? <I.refresh width={13} height={13} /> : <span style={{ width: 7, height: 7, borderRadius: 99, background: col }} />}
@@ -436,11 +436,13 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, syncP
           })() : (
             <button className="btn btn-sm btn-accent" onClick={() => onPublish(plan)}><I.rocket width={14} height={14} /> Publicar</button>
           )}
+          {plan.published && plan.publishedUrl && (
+            <a href={plan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-sm" title={plan.publishedUrl} style={{ color: 'var(--accent)' }}><I.ext width={14} height={14} /> Abrir página</a>
+          )}
           <button className="btn btn-sm" onClick={() => downloadPlanPDF(plan)}><I.pdf width={14} height={14} /> Descargar PDF</button>
           <button className="btn btn-sm btn-ghost" onClick={onExit}><I.chevR width={14} height={14} style={{ transform: 'scaleX(-1)' }} /> Volver a la lista</button>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-dim)' }}>
             <span className="mono" title="Ruta pública" style={{ color: 'var(--text)' }}>/{plan.slug || 'sin-slug'}</span>
-            {plan.publishedUrl && <a href={plan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost" title="Abrir la página publicada" style={{ padding: 5 }}><I.ext width={13} height={13} /></a>}
           </span>
         </div>
 
