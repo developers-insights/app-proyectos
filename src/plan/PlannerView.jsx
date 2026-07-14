@@ -19,7 +19,7 @@ import {
   normalizeStages, hitoForWeek, validatePlan,
   COLOR_RE,
 } from './planModel.js'
-import { buildPlanHTML } from './planTemplate.js'
+import { buildPlanHTML, makePlanPdfDoc } from './planTemplate.js'
 import rdxReference from './rdx.reference.json'
 
 /* Sitio público de planes (Next.js en Vercel). Cada plan vive en /{slug} y lee
@@ -251,52 +251,14 @@ function WeekCard({ plan, index, set }) {
 }
 
 /**
- * Descarga el plan como un PDF simple de texto: un clic, sin diálogo de impresión.
- * No captura el diseño de la preview — arma un documento limpio con el título, el
- * objetivo y, por cada semana, su título, los items y el entregable. jsPDF se carga
- * on-demand (import dinámico) así no pesa el bundle inicial de la app.
+ * Descarga el plan como PDF premium de un clic (sin diálogo de impresión). Usa el
+ * generador compartido makePlanPdfDoc — el MISMO que corre la página pública de
+ * Vercel, así los dos PDF son idénticos. jsPDF se carga on-demand (import dinámico).
  */
 async function downloadPlanPDF(plan) {
   const mod = await import('jspdf')
   const JsPDF = mod.jsPDF || mod.default
-  const doc = new JsPDF({ unit: 'pt', format: 'a4' })
-  const pageH = doc.internal.pageSize.getHeight()
-  const M = 48
-  const W = doc.internal.pageSize.getWidth() - M * 2
-  let y = M
-
-  // Las fuentes core de jsPDF (WinAnsi) no traen guiones tipográficos ni "…".
-  const ascii = (s) => String(s ?? '').replace(/[—–]/g, '-').replace(/·/g, '-').replace(/…/g, '...').replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
-  const room = (need) => { if (y + need > pageH - M) { doc.addPage(); y = M } }
-  const block = (text, { size = 10.5, style = 'normal', color = 20, gap = 4, bullet = false } = {}) => {
-    if (!text) return
-    doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(color)
-    const lines = doc.splitTextToSize(ascii(text), W - (bullet ? 14 : 0))
-    const lh = size * 1.35
-    room(lines.length * lh)
-    if (bullet) { doc.text('-', M, y); doc.text(lines, M + 14, y) }
-    else doc.text(lines, M, y)
-    y += lines.length * lh + gap
-  }
-
-  block(plan.title || 'Plan de ejecución', { size: 22, style: 'bold', color: 0, gap: 10 })
-  if (plan.lead) block(plan.lead, { size: 10.5, color: 90, gap: 16 })
-
-  let lastStage = null
-  ;(plan.weeks || []).forEach((w) => {
-    const h = hitoForWeek(plan, w.n)
-    if (h && h.id !== lastStage && (h.title || h.label)) {
-      lastStage = h.id
-      y += 6
-      block(`${h.title || h.label}${h.weeksLabel ? '  · ' + h.weeksLabel : ''}`.toUpperCase(), { size: 9, style: 'bold', color: 130, gap: 8 })
-    }
-    block(`Semana ${w.n}${w.title ? ' — ' + w.title : ''}`, { size: 12.5, style: 'bold', color: 0, gap: 6 })
-    ;(w.tasks || []).forEach((t) => { if (t) block(t, { size: 10.5, color: 30, gap: 2, bullet: true }) })
-    if (w.deliver && w.deliver.text) block('Entregable: ' + w.deliver.text, { size: 9.5, style: 'italic', color: 90, gap: 4 })
-    y += 12
-  })
-
-  doc.save((plan.slug || 'plan') + '.pdf')
+  makePlanPdfDoc(plan, JsPDF).save((plan.slug || 'plan') + '.pdf')
 }
 
 /* ============================================================================

@@ -674,6 +674,237 @@ window.addEventListener('scroll',()=>{
  *        al <html> con su regla CSS, y saltea el IntersectionObserver. Nada más.
  * @returns {string} HTML autocontenido.
  */
+/**
+ * makePlanPdfDoc(plan, JsPDF) → un documento jsPDF premium del plan.
+ *
+ * AUTOCONTENIDA a propósito (sin imports ni variables de módulo): buildPlanHTML la
+ * embebe TAL CUAL vía `.toString()` en la página de Vercel, así el botón "Descargar
+ * PDF" del sitio genera EXACTAMENTE el mismo PDF que el de la app. Solo usa `plan`,
+ * `JsPDF` y globals estándar (Math, String, JSON, Date). No usar `?.` ni `??` ni
+ * template literals: mantiene el .toString() portable (sin helpers del bundler).
+ *
+ * Arregla lo que fallaba antes:
+ *  - No corta un bloque de semana entre hojas (mide el bloque antes de dibujarlo).
+ *  - Limpia lo que no entra en WinAnsi (emojis/símbolos), que salía como "&C&i&r...".
+ */
+export function makePlanPdfDoc(plan, JsPDF) {
+  var doc = new JsPDF({ unit: 'pt', format: 'a4', compress: true })
+  var PW = doc.internal.pageSize.getWidth()
+  var PH = doc.internal.pageSize.getHeight()
+  var M = 56
+  var CW = PW - M * 2
+  var FOOT_Y = PH - 40
+  var BOTTOM = PH - 66
+
+  // Fuentes core de jsPDF = WinAnsi (Latin-1). Todo lo de afuera (emojis, flechas,
+  // guiones tipográficos) se normaliza o se saca; si no, sale basura tipo "&C&i&r".
+  function clean(s) {
+    var t = String(s === null || s === undefined ? '' : s)
+    t = t.replace(/[↔⇔]/g, '<->')              // flechas dobles
+    t = t.replace(/[→⇒➡]/g, '->')         // flechas derecha
+    t = t.replace(/[←⇐]/g, '<-')               // flechas izquierda
+    t = t.replace(/[•●▪⁃]/g, '-')    // vinetas
+    t = t.replace(/[✓✔]/g, 'OK')               // checks
+    t = t.replace(/€/g, 'EUR')                      // euro
+    t = t.replace(/™/g, '(TM)')                     // trademark
+    t = t.replace(/[—–]/g, '-')
+    t = t.replace(/·/g, '-')
+    t = t.replace(/…/g, '...')
+    t = t.replace(/[“”]/g, '"')
+    t = t.replace(/[‘’]/g, "'")
+    t = t.replace(/ /g, ' ')
+    t = t.replace(/[\uD800-\uDFFF]/g, '')
+    t = t.replace(/[^\t\n\r\x20-\xFF]/g, '')
+    t = t.replace(/[ \t]+/g, ' ')
+    return t.trim()
+  }
+  function hexToRgb(h, fb) {
+    var m = /^#?([0-9a-fA-F]{6})$/.exec(String(h === null || h === undefined ? '' : h))
+    if (!m) return fb
+    var n = parseInt(m[1], 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  }
+  function readable(rgb) {
+    var lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+    if (lum > 170) return [Math.round(rgb[0] * 0.6), Math.round(rgb[1] * 0.6), Math.round(rgb[2] * 0.6)]
+    return rgb
+  }
+
+  var INK = [24, 24, 27]
+  var BODY = [46, 46, 50]
+  var DIM = [96, 96, 100]
+  var FAINT = [150, 150, 156]
+  var LINE = [227, 227, 230]
+  var BOXBG = [246, 246, 244]
+  var STRUCT = [26, 26, 29]
+
+  var stages = []
+  var allH = plan.hitos || []
+  for (var si = 0; si < allH.length; si++) { if (allH[si]) stages.push(allH[si]) }
+  function stageForWeek(n) {
+    for (var i = 0; i < stages.length; i++) {
+      var h = stages[i]
+      var from = Number(h.weekFrom), to = Number(h.weekTo)
+      if (isFinite(from) && isFinite(to) && n >= from && n <= to) return h
+    }
+    return null
+  }
+  function stageColor(h) { return h ? readable(hexToRgb(h.color, [90, 90, 95])) : FAINT }
+
+  function font(style, size, rgb) {
+    doc.setFont('helvetica', style)
+    doc.setFontSize(size)
+    doc.setTextColor(rgb[0], rgb[1], rgb[2])
+  }
+  function wrap(text, size, style, width) {
+    doc.setFont('helvetica', style)
+    doc.setFontSize(size)
+    return doc.splitTextToSize(clean(text), width)
+  }
+
+  var y = 0
+
+  // ───────── PORTADA ─────────
+  doc.setFillColor(STRUCT[0], STRUCT[1], STRUCT[2])
+  doc.rect(0, 0, PW, 6, 'F')
+
+  var accent = stages.length ? stageColor(stages[0]) : STRUCT
+  y = 134
+  doc.setFillColor(accent[0], accent[1], accent[2])
+  doc.circle(M + 3, y - 3, 3, 'F')
+  font('bold', 8.5, FAINT)
+  doc.text('INSIGHTS APPS      PLAN DE EJECUCION', M + 13, y, { charSpace: 1.5 })
+
+  y += 36
+  var titleLines = wrap(plan.title || 'Plan de ejecucion', 30, 'bold', CW)
+  font('bold', 30, INK)
+  for (var a = 0; a < titleLines.length; a++) { doc.text(titleLines[a], M, y); y += 35 }
+
+  if (plan.lead) {
+    y += 8
+    var leadLines = wrap(plan.lead, 12, 'normal', CW)
+    font('normal', 12, DIM)
+    for (var b = 0; b < leadLines.length; b++) { doc.text(leadLines[b], M, y); y += 17 }
+  }
+
+  y += 20
+  doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(1)
+  doc.line(M, y, PW - M, y)
+  y += 28
+
+  if (stages.length) {
+    font('bold', 8.5, FAINT)
+    doc.text('EL PLAN, ETAPA POR ETAPA', M, y, { charSpace: 1.5 })
+    y += 20
+    for (var c = 0; c < stages.length; c++) {
+      var st = stages[c], sc = stageColor(st)
+      doc.setFillColor(sc[0], sc[1], sc[2])
+      doc.roundedRect(M, y - 8, 9, 9, 2, 2, 'F')
+      font('bold', 10.5, INK)
+      doc.text(clean(st.title || st.label || ('Etapa ' + (c + 1))), M + 18, y)
+      if (st.weeksLabel) { font('normal', 9.5, FAINT); doc.text(clean(st.weeksLabel), PW - M, y, { align: 'right' }) }
+      y += 20
+    }
+  }
+
+  var dd = new Date()
+  var MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+  font('normal', 9, FAINT)
+  doc.text('Generado el ' + dd.getDate() + ' de ' + MES[dd.getMonth()] + ' de ' + dd.getFullYear() + '.', M, PH - 76)
+
+  // ───────── CONTENIDO ─────────
+  var weeks = plan.weeks || []
+  var lastStageId = '__none__'
+  if (weeks.length) { doc.addPage(); y = M + 8 }
+
+  for (var w = 0; w < weeks.length; w++) {
+    var wk = weeks[w]
+    var stg = stageForWeek(wk.n)
+    var stId = stg ? (stg.id || stg.label || ('#' + w)) : '__nostage__'
+    var newStage = !!stg && stId !== lastStageId
+    var sc2 = stageColor(stg)
+
+    // medir el bloque completo (encabezado de etapa + semana) para no cortarlo
+    var tLines = wk.title ? wrap(wk.title, 13.5, 'bold', CW) : []
+    var itemModels = []
+    var items = wk.tasks || []
+    for (var it = 0; it < items.length; it++) {
+      if (!items[it]) continue
+      itemModels.push(wrap(items[it], 10.5, 'normal', CW - 16))
+    }
+    var delLines = (wk.deliver && wk.deliver.text) ? wrap(wk.deliver.text, 10, 'normal', CW - 28) : null
+
+    var headerH = newStage ? 30 : 0
+    var itemsH = 0
+    for (var m0 = 0; m0 < itemModels.length; m0++) itemsH += itemModels[m0].length * 14.5 + 3
+    var delH = delLines ? (36 + delLines.length * 13.5 + 8) : 0
+    var blockH = headerH + 15 + tLines.length * 17 + 4 + itemsH + delH + 20
+
+    if (y + blockH > BOTTOM && y > M + 10) { doc.addPage(); y = M + 8 }
+
+    if (newStage) {
+      doc.setFillColor(sc2[0], sc2[1], sc2[2])
+      doc.roundedRect(M, y - 8, 10, 10, 2, 2, 'F')
+      font('bold', 10, INK)
+      doc.text(clean(stg.title || stg.label).toUpperCase(), M + 18, y, { charSpace: 0.8 })
+      if (stg.weeksLabel) { font('normal', 9, FAINT); doc.text(clean(stg.weeksLabel), PW - M, y, { align: 'right' }) }
+      y += 13
+      doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.8); doc.line(M, y, PW - M, y)
+      y += 17
+      lastStageId = stId
+    }
+
+    font('bold', 8.5, sc2)
+    doc.text('SEMANA ' + wk.n, M, y, { charSpace: 1 })
+    y += 15
+    if (tLines.length) {
+      font('bold', 13.5, INK)
+      for (var t2 = 0; t2 < tLines.length; t2++) { doc.text(tLines[t2], M, y); y += 17 }
+    }
+    y += 4
+
+    for (var im = 0; im < itemModels.length; im++) {
+      var ml = itemModels[im]
+      font('bold', 10.5, FAINT); doc.text('-', M + 2, y)
+      font('normal', 10.5, BODY)
+      for (var q = 0; q < ml.length; q++) { doc.text(ml[q], M + 16, y); y += 14.5 }
+      y += 3
+    }
+
+    if (delLines) {
+      y += 6
+      var boxTop = y - 8
+      var boxH = 14 + 14 + delLines.length * 13.5 + 10
+      doc.setFillColor(BOXBG[0], BOXBG[1], BOXBG[2])
+      doc.roundedRect(M, boxTop, CW, boxH, 5, 5, 'F')
+      var iy = boxTop + 19
+      font('bold', 7.8, sc2); doc.text('ENTREGABLE', M + 15, iy, { charSpace: 1.3 })
+      iy += 15
+      font('normal', 10, DIM)
+      for (var dl = 0; dl < delLines.length; dl++) { doc.text(delLines[dl], M + 15, iy); iy += 13.5 }
+      y = boxTop + boxH
+    }
+
+    y += 22
+  }
+
+  // ───────── PIE (numeración) ─────────
+  var total = doc.internal.getNumberOfPages()
+  var titleFoot = clean(plan.title || 'Plan de ejecucion')
+  if (titleFoot.length > 58) titleFoot = titleFoot.slice(0, 57) + '...'
+  for (var p = 1; p <= total; p++) {
+    doc.setPage(p)
+    doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.8)
+    doc.line(M, FOOT_Y - 11, PW - M, FOOT_Y - 11)
+    font('normal', 8.5, FAINT)
+    doc.text('Insights Apps', M, FOOT_Y)
+    doc.text(titleFoot, PW / 2, FOOT_Y, { align: 'center' })
+    doc.text(p + ' / ' + total, PW - M, FOOT_Y, { align: 'right' })
+  }
+
+  return doc
+}
+
 export function buildPlanHTML(plan, opts = {}) {
   const preview = !!(opts && opts.preview === true)
   const sp = sanitizePlan(plan)
@@ -849,6 +1080,29 @@ ${bentoHtml}
 
   const script = buildScript({ phasesObj, weeksData, hasWeeks, preview })
 
+  // Botón "Descargar PDF": genera el MISMO PDF premium que la app (makePlanPdfDoc),
+  // cargando jsPDF on-demand desde CDN al primer clic. En preview no hace falta.
+  const pdfBlock = preview ? '' : `<script>
+(function () {
+  var PLAN = ${jsonForScript(plan)};
+  var makePlanPdfDoc = ${makePlanPdfDoc.toString()};
+  function build() {
+    try { makePlanPdfDoc(PLAN, window.jspdf.jsPDF).save((PLAN.slug || 'plan') + '.pdf'); }
+    catch (e) { console.error('PDF error', e); alert('No se pudo generar el PDF.'); }
+  }
+  function onClick() {
+    if (window.jspdf && window.jspdf.jsPDF) { build(); return; }
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js';
+    s.onload = build;
+    s.onerror = function () { alert('No se pudo cargar el generador de PDF. Revisa tu conexion.'); };
+    document.head.appendChild(s);
+  }
+  var btn = document.getElementById('dl-pdf');
+  if (btn) btn.addEventListener('click', onClick);
+})();
+</script>`
+
   // ── El documento ───────────────────────────────────────────────────────────
   return `<!DOCTYPE html>
 <html lang="es"${preview ? ' class="preview"' : ''}>
@@ -878,7 +1132,7 @@ ${css}
     <div class="nav-links">
 ${navLinks}
     </div>
-    <button class="btn" type="button" onclick="window.print()">
+    <button class="btn" type="button" id="dl-pdf">
       Descargar PDF
       <span class="iconwrap">${DOWNLOAD_ICON}</span>
     </button>
@@ -932,6 +1186,7 @@ ${weekNavHtml}  </div>
 <script>
 ${script}
 </script>
+${pdfBlock}
 </body>
 </html>
 `
