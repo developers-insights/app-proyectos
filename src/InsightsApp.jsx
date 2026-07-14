@@ -4747,7 +4747,7 @@ function AppShell({ session, onLogout }) {
   const pmProjects = (data.projects || []).filter((p) => myId && p.assignments?.pm?.userId === myId && p.status === 'active')
 
   return (
-    <AppCtx.Provider value={{ data, setData, logActivity }}>
+    <AppCtx.Provider value={{ data, setData, logActivity, supabase }}>
       <div className="app-shell">
         <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>

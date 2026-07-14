@@ -22,6 +22,22 @@ import {
 import { buildPlanHTML } from './planTemplate.js'
 import rdxReference from './rdx.reference.json'
 
+/* Sitio público de planes (Next.js en Vercel). Cada plan vive en /{slug} y lee
+   su contenido de la tabla published_plans en Supabase, en tiempo real. */
+const PLAN_SITE_BASE = 'https://planes-web-mu.vercel.app'
+
+/**
+ * Sube (o pisa) el plan en published_plans. La escritura requiere estar logueado
+ * (RLS), así que usa el mismo cliente supabase autenticado de la app. Devuelve el
+ * { error } de Supabase (o un error propio si no hay sesión de nube).
+ */
+async function upsertPublished(supabase, plan) {
+  if (!supabase) return { error: { message: 'No estás conectado a la base (modo local). Entrá con tu cuenta para publicar.' } }
+  return supabase
+    .from('published_plans')
+    .upsert({ slug: plan.slug, data: plan, updated_at: new Date().toISOString() }, { onConflict: 'slug' })
+}
+
 /* ============================================================================
    CSS propio del planner (SOLO layout de dos paneles + responsive).
    Todo lo demás va inline con var(--token), como el resto de la app.
@@ -286,9 +302,36 @@ async function downloadPlanPDF(plan) {
 /* ============================================================================
    EDITOR — dos paneles
 ============================================================================ */
-function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
+function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, syncPublished }) {
   const frameRef = useRef(null)
   const set = (fn) => patchPlan(plan.id, fn)
+
+  // Auto-sync: una vez publicado, cada edición se sube sola a published_plans
+  // (debounce 800ms). El sitio en Vercel escucha ese cambio y se refresca solo,
+  // así que el cliente ve lo nuevo sin que nadie toque otro botón.
+  const [syncState, setSyncState] = useState('idle') // idle · saving · saved · error
+  const lastSyncRef = useRef(null)
+  useEffect(() => {
+    if (!plan.published) return
+    const snap = JSON.stringify(plan)
+    if (lastSyncRef.current === null) { lastSyncRef.current = snap; return } // al abrir un plan ya publicado no re-subimos
+    if (snap === lastSyncRef.current) return
+    setSyncState('saving')
+    const t = setTimeout(async () => {
+      const { error } = await syncPublished(plan)
+      if (error) { setSyncState('error'); return }
+      lastSyncRef.current = snap
+      setSyncState('saved')
+    }, 800)
+    return () => clearTimeout(t)
+  }, [plan, syncPublished])
+  const retrySync = async () => {
+    setSyncState('saving')
+    const { error } = await syncPublished(plan)
+    if (error) { setSyncState('error'); return }
+    lastSyncRef.current = JSON.stringify(plan)
+    setSyncState('saved')
+  }
 
   // Preview: memo + debounce 300ms + key estable (G3 / T12).
   const html = useMemo(() => {
@@ -379,7 +422,20 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
       {/* ---------- DERECHA: toolbar + preview ---------- */}
       <div className="pe-right">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn btn-sm btn-accent" onClick={() => onExport(plan)}><I.download width={14} height={14} /> Exportar HTML</button>
+          {plan.published ? (() => {
+            const err = syncState === 'error'
+            const col = err ? 'var(--red)' : 'var(--green)'
+            const label = syncState === 'saving' ? 'Guardando cambios…' : err ? 'No se pudo sincronizar' : 'Publicado · se actualiza solo'
+            return (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: '5px 11px' }}>
+                {syncState === 'saving' ? <I.refresh width={13} height={13} /> : <span style={{ width: 7, height: 7, borderRadius: 99, background: col }} />}
+                {label}
+                {err && <button className="btn btn-sm btn-ghost" onClick={retrySync} style={{ padding: '0 5px', color: 'var(--red)', fontWeight: 700 }}>reintentar</button>}
+              </span>
+            )
+          })() : (
+            <button className="btn btn-sm btn-accent" onClick={() => onPublish(plan)}><I.rocket width={14} height={14} /> Publicar</button>
+          )}
           <button className="btn btn-sm" onClick={() => downloadPlanPDF(plan)}><I.pdf width={14} height={14} /> Descargar PDF</button>
           <button className="btn btn-sm btn-ghost" onClick={onExit}><I.chevR width={14} height={14} style={{ transform: 'scaleX(-1)' }} /> Volver a la lista</button>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-dim)' }}>
@@ -410,7 +466,7 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
 /* ============================================================================
    LISTA
 ============================================================================ */
-function PlanList({ plans, projects, onEdit, onNew, onLoadExample, onExport, onDelete }) {
+function PlanList({ plans, projects, onEdit, onNew, onLoadExample, onPublish, onDelete }) {
   const projName = (id) => (projects.find((p) => p.id === id)?.name) || null
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
@@ -460,7 +516,7 @@ function PlanList({ plans, projects, onEdit, onNew, onLoadExample, onExport, onD
                     <td style={{ padding: '10px 16px 10px 0', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: 3, justifyContent: 'flex-end' }}>
                         <button className="btn btn-sm btn-ghost" title="Editar" onClick={() => onEdit(p.id)} style={{ padding: 6 }}><I.pencil width={15} height={15} /></button>
-                        <button className="btn btn-sm btn-ghost" title="Exportar HTML" onClick={() => onExport(p)} style={{ padding: 6 }}><I.download width={15} height={15} /></button>
+                        {!p.published && <button className="btn btn-sm btn-ghost" title="Publicar" onClick={() => onPublish(p)} style={{ padding: 6, color: 'var(--accent)' }}><I.rocket width={15} height={15} /></button>}
                         <button className="btn btn-sm btn-ghost" title="Borrar" onClick={() => onDelete(p)} style={{ padding: 6, color: 'var(--text-faint)' }}><I.trash width={15} height={15} /></button>
                       </div>
                     </td>
@@ -480,7 +536,7 @@ function PlanList({ plans, projects, onEdit, onNew, onLoadExample, onExport, onD
 ============================================================================ */
 export default function PlannerView() {
   usePlannerCss()
-  const { data, setData, logActivity } = useApp()
+  const { data, setData, logActivity, supabase } = useApp()
   const [editingId, setEditingId] = useState(null)
   const [newOpen, setNewOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -517,27 +573,30 @@ export default function PlannerView() {
     // Queda en la lista: el usuario lo abre cuando quiere (a diferencia de "Nuevo plan").
   }
 
-  const exportPlan = (plan) => {
-    const html = buildPlanHTML(plan)
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${plan.slug || 'plan'}.html`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
-    if (logActivity) logActivity({ type: 'plan-export', text: `exportó el plan "${plan.title}"` })
+  // Publicar (primera vez): sube el plan a published_plans y le guarda su dirección
+  // pública. A partir de ahí, el editor lo mantiene sincronizado solo (auto-sync).
+  const publishPlan = async (plan) => {
+    const { error } = await upsertPublished(supabase, plan)
+    if (error) { window.alert('No se pudo publicar el plan.\n\n' + error.message); return }
+    patchPlan(plan.id, (p) => ({ ...p, published: true, publishedUrl: `${PLAN_SITE_BASE}/${p.slug}` }))
+    if (logActivity) logActivity({ type: 'plan-publish', text: `publicó el plan "${plan.title}"` })
   }
+  // Sync silencioso (lo llama el editor en cada cambio de un plan ya publicado).
+  const syncPublished = (plan) => upsertPublished(supabase, plan)
 
-  const deletePlan = (plan) => {
+  const deletePlan = async (plan) => {
     const ok = window.confirm(
       `Vas a borrar el plan "${plan.title}".\n\n` +
-      `Ojo: si ya lo publicaste, el archivo .html que está en el sitio NO se borra desde acá — eso se hace aparte, en el repo del sitio.\n\n` +
-      `¿Borrar el plan de la app?`,
+      (plan.published
+        ? `Como está publicado, también se quita de su dirección pública (${plan.publishedUrl || `${PLAN_SITE_BASE}/${plan.slug}`}).\n\n`
+        : '') +
+      `Esto no se puede deshacer. ¿Borrar el plan?`,
     )
     if (!ok) return
+    if (plan.published && supabase) {
+      const { error } = await supabase.from('published_plans').delete().eq('slug', plan.slug)
+      if (error) { window.alert('No se pudo quitar el plan del sitio, así que no borré nada.\n\n' + error.message); return }
+    }
     setPlans((ps) => ps.filter((p) => p.id !== plan.id))
     if (editingId === plan.id) setEditingId(null)
     if (logActivity) logActivity({ type: 'plan-delete', text: `borró el plan "${plan.title}"` })
@@ -553,7 +612,8 @@ export default function PlannerView() {
         projects={projects}
         patchPlan={patchPlan}
         onExit={() => setEditingId(null)}
-        onExport={exportPlan}
+        onPublish={publishPlan}
+        syncPublished={syncPublished}
       />
     )
   }
@@ -566,7 +626,7 @@ export default function PlannerView() {
         onEdit={(id) => setEditingId(id)}
         onNew={() => { setNewTitle(''); setNewOpen(true) }}
         onLoadExample={loadExample}
-        onExport={exportPlan}
+        onPublish={publishPlan}
         onDelete={deletePlan}
       />
       <Modal open={newOpen} onClose={() => setNewOpen(false)} title="Nuevo plan" sub="Ponele un título — el resto lo editás después" width={440}>
