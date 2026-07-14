@@ -12,7 +12,7 @@
  * Contrato: plan/docs/MASTER_PLAN.md §6, §8 (F4/F5) y las decisiones D-A..D-E.
  */
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { uid, I, useApp, Modal, Field } from '../ui.jsx'
+import { I, useApp, Modal, Field } from '../ui.jsx'
 import {
   newPlan, slugify, isSlugAllowed, SLUG_RE, SLUG_BLOCKLIST,
   resyncWeeks, weeksToLose, clampWeekCount, MAX_WEEKS,
@@ -20,7 +20,6 @@ import {
   COLOR_RE,
 } from './planModel.js'
 import { buildPlanHTML, makePlanPdfDoc } from './planTemplate.js'
-import rdxReference from './rdx.reference.json'
 
 /* Sitio público de planes (Next.js en Vercel). Cada plan vive en /{slug} y lee
    su contenido de la tabla published_plans en Supabase, en tiempo real. */
@@ -86,8 +85,6 @@ const moveItem = (arr, i, dir) => {
 
 /** Entero desde un <input>, dejando pasar el vacío para poder borrar el campo. */
 const numOr = (v, prev) => (v === '' ? '' : (Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : prev))
-
-const deepClone = (o) => JSON.parse(JSON.stringify(o))
 
 /**
  * Un slug válido, único entre los planes y fuera del blocklist.
@@ -339,7 +336,7 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, syncP
       {/* ---------- IZQUIERDA: acordeones ---------- */}
       <div className="pe-left">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <button className="btn btn-sm btn-ghost" onClick={onExit} title="Volver a la lista" style={{ transform: 'scaleX(-1)', padding: 7 }}><I.chevR width={16} height={16} /></button>
+          <button className="btn btn-sm" onClick={onExit} title="Volver a la lista" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, fontWeight: 600 }}><I.chevR width={15} height={15} style={{ transform: 'scaleX(-1)' }} /> Volver</button>
           <div style={{ minWidth: 0 }}>
             <div className="label">Editando plan</div>
             <div style={{ fontWeight: 700, fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plan.title || 'Sin título'}</div>
@@ -402,7 +399,7 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, syncP
             <a href={plan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-sm" title={plan.publishedUrl} style={{ color: 'var(--accent)' }}><I.ext width={14} height={14} /> Abrir página</a>
           )}
           <button className="btn btn-sm" onClick={() => downloadPlanPDF(plan)}><I.pdf width={14} height={14} /> Descargar PDF</button>
-          <button className="btn btn-sm btn-ghost" onClick={onExit}><I.chevR width={14} height={14} style={{ transform: 'scaleX(-1)' }} /> Volver a la lista</button>
+          <button className="btn btn-sm" onClick={onExit}><I.chevR width={14} height={14} style={{ transform: 'scaleX(-1)' }} /> Volver a la lista</button>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-dim)' }}>
             <span className="mono" title="Ruta pública" style={{ color: 'var(--text)' }}>/{plan.slug || 'sin-slug'}</span>
           </span>
@@ -430,14 +427,13 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, syncP
 /* ============================================================================
    LISTA
 ============================================================================ */
-function PlanList({ plans, projects, onEdit, onNew, onLoadExample, onPublish, onDelete }) {
+function PlanList({ plans, projects, onEdit, onNew, onPublish, onDelete }) {
   const projName = (id) => (projects.find((p) => p.id === id)?.name) || null
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Entregables de cliente</div><h1 style={{ fontSize: 32 }}>Planificador</h1></div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button className="btn" onClick={onLoadExample}><I.doc width={15} height={15} /> Cargar plan de ejemplo (RDX)</button>
           <button className="btn btn-accent" onClick={onNew}><I.plus width={15} height={15} /> Nuevo plan</button>
         </div>
       </div>
@@ -446,10 +442,9 @@ function PlanList({ plans, projects, onEdit, onNew, onLoadExample, onPublish, on
         <div className="surface" style={{ padding: 44, textAlign: 'center' }}>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Todavía no hay planes</div>
           <div style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.6, maxWidth: 460, margin: '0 auto 18px' }}>
-            Armá un plan de ejecución para mostrarle a un cliente: hitos, semanas y entregables, en una página lista para compartir. Empezá de cero o cargá el de ejemplo para ver cómo queda.
+            Armá un plan de ejecución para mostrarle a un cliente: etapas, semanas y entregables, en una página lista para compartir.
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button className="btn" onClick={onLoadExample}><I.doc width={15} height={15} /> Cargar ejemplo (RDX)</button>
             <button className="btn btn-accent" onClick={onNew}><I.plus width={15} height={15} /> Crear el primero</button>
           </div>
         </div>
@@ -522,21 +517,6 @@ export default function PlannerView() {
     setNewTitle(''); setNewOpen(false); setEditingId(p.id)
   }
 
-  const loadExample = () => {
-    const base = deepClone(rdxReference)
-    delete base._comment
-    const now = new Date().toISOString()
-    base.id = uid()
-    base.projectId = null
-    base.publishedUrl = ''
-    base.createdAt = now
-    base.updatedAt = now
-    base.slug = isSlugAllowed('rdx', plans) ? 'rdx' : makeUniqueSlug('rdx-copia', plans)
-    setPlans((ps) => [base, ...ps])
-    if (logActivity) logActivity({ type: 'plan-add', text: `cargó el plan de ejemplo "${base.title}"` })
-    // Queda en la lista: el usuario lo abre cuando quiere (a diferencia de "Nuevo plan").
-  }
-
   // Publicar (primera vez): sube el plan a published_plans y le guarda su dirección
   // pública. A partir de ahí, el editor lo mantiene sincronizado solo (auto-sync).
   const publishPlan = async (plan) => {
@@ -589,7 +569,6 @@ export default function PlannerView() {
         projects={projects}
         onEdit={(id) => setEditingId(id)}
         onNew={() => { setNewTitle(''); setNewOpen(true) }}
-        onLoadExample={loadExample}
         onPublish={publishPlan}
         onDelete={deletePlan}
       />
