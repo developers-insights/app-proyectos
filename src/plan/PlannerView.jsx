@@ -24,7 +24,7 @@ import rdxReference from './rdx.reference.json'
 
 /* Sitio público de planes (Next.js en Vercel). Cada plan vive en /{slug} y lee
    su contenido de la tabla published_plans en Supabase, en tiempo real. */
-const PLAN_SITE_BASE = 'https://planes-web-mu.vercel.app'
+const PLAN_SITE_BASE = 'https://planes-insights.vercel.app'
 
 /**
  * Sube (o pisa) el plan en published_plans. La escritura requiere estar logueado
