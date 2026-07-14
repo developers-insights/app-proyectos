@@ -25,7 +25,7 @@ import PlannerView from './plan/PlannerView.jsx'
    VITE_SUPABASE_URL · VITE_SUPABASE_ANON_KEY (set locally in .env and in Render)
 ============================================================================ */
 // Podés configurarlo por variables de entorno (Render) O hardcodearlo acá abajo.
-const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || 'https://otowpbkhcjpdqowpqfyx.supabase.co'
+const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || 'https://yzmtzyuncekspgtsetwk.supabase.co'
 const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '' // ← pegá acá tu publishable key (sb_publishable_…) y el login funciona sin tocar Render
 const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY) : null
 const cloudEnabled = !!supabase
@@ -4371,7 +4371,11 @@ function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
   )
 }
 
-function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClose }) {
+/** Solo este usuario ve la herramienta "Editor" (editor de video). */
+const EDITOR_OWNER_EMAIL = 'manuelnavarro@insightsapps.tech'
+const isEditorOwner = (email) => String(email || '').trim().toLowerCase() === EDITOR_OWNER_EMAIL
+
+function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClose, email }) {
   const items = [
     { key: 'projects', label: 'Projects', icon: I.folder },
     { key: 'tasks', label: 'Tareas', icon: I.tasks },
@@ -4380,6 +4384,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'sops', label: 'SOP', icon: I.doc },
     { key: 'planner', label: 'Planificador', icon: I.calendar },
     { key: 'assistant', label: 'IA Assistant', icon: I.spark },
+    ...(isEditorOwner(email) ? [{ key: 'editor', label: 'Editor', icon: I.film }] : []),
   ]
   const mini = !mobile && collapsed          // solo colapsa en desktop
   const go = (key) => { setRoute({ view: key }); if (mobile && onClose) onClose() }
@@ -4431,6 +4436,26 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
       style={{ flexShrink: 0, borderRight: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {inner}
     </motion.aside>
+  )
+}
+
+/* ============================================================================
+   EDITOR DE VIDEO — INSIGHTS Editor embebido (export estático servido en /editor)
+   Subís/arrastrás un video y lo devuelve sin tiempos muertos + subtítulos con IA,
+   editables (mover, agrandar, restyle) y con encuadre/barras negras. 100% en el
+   navegador; se sirve same-origin desde public/editor así que no necesita backend.
+============================================================================ */
+function EditorView() {
+  const src = `${import.meta.env.BASE_URL}editor/index.html`
+  return (
+    <div style={{ height: '100%', width: '100%', background: '#0b0b12' }}>
+      <iframe
+        src={src}
+        title="Editor de video"
+        allow="clipboard-write; fullscreen"
+        style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
+      />
+    </div>
   )
 }
 
@@ -4563,7 +4588,7 @@ function UpdateButton({ mobile }) {
 }
 
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', planner: 'Planificador', assistant: 'IA Assistant', project: 'Projects / Detalle' }[route.view]
+  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', project: 'Projects / Detalle' }[route.view]
   return (
     <header style={{ height: 64, flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: mobile ? '0 12px' : '0 24px', background: 'var(--bg-elevated)', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-dim)', fontSize: 13, minWidth: 0 }}>
@@ -4724,12 +4749,12 @@ function AppShell({ session, onLogout }) {
   return (
     <AppCtx.Provider value={{ data, setData, logActivity }}>
       <div className="app-shell">
-        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} />
+        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
           <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} mobile={isMobile} onMenu={() => setNavOpen(true)} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
-              style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' || route.view === 'planner' ? 'hidden' : 'auto' }}>
+              style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' || route.view === 'planner' || route.view === 'editor' ? 'hidden' : 'auto' }}>
               {route.view === 'projects' && <Projects onOpenProject={openProject} />}
               {route.view === 'tasks' && <TasksView />}
               {route.view === 'clients' && <Clients />}
@@ -4737,6 +4762,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'sops' && <Sops />}
               {route.view === 'assistant' && <AssistantView />}
               {route.view === 'planner' && <PlannerView />}
+              {route.view === 'editor' && isEditorOwner(session?.user?.email) && <EditorView />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
             </motion.div>
           </main>

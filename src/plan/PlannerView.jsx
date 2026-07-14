@@ -17,7 +17,7 @@ import {
   newPlan, slugify, isSlugAllowed, SLUG_RE, SLUG_BLOCKLIST,
   resyncWeeks, weeksToLose, clampWeekCount, MAX_WEEKS,
   normalizeStages, hitoForWeek, validatePlan,
-  HITO_COLORS, SCHEMA_ICONS, COLOR_RE,
+  COLOR_RE,
 } from './planModel.js'
 import { buildPlanHTML } from './planTemplate.js'
 import rdxReference from './rdx.reference.json'
@@ -59,8 +59,6 @@ function usePlannerCss() {
 /* ============================================================================
    Helpers de presentación / edición
 ============================================================================ */
-const SCHEMA_ICON_LABELS = { video: 'Video', check: 'Check', chat: 'Chat', grid: 'Grilla' }
-
 /** Mueve el elemento i en la dirección dir (-1 arriba, +1 abajo). Devuelve un array nuevo. */
 const moveItem = (arr, i, dir) => {
   const j = i + dir
@@ -91,16 +89,6 @@ function makeUniqueSlug(desired, plans, selfId = null) {
     s = `${base}-${i}`
   }
   return s
-}
-
-/** Estado del slug para el aviso en vivo del editor. */
-function slugStatus(slug, plans, selfId) {
-  const s = String(slug ?? '')
-  if (!s) return { ok: false, tone: 'warn', msg: 'Sin dirección todavía. Poné una antes de publicar.' }
-  if (SLUG_BLOCKLIST.includes(s)) return { ok: false, tone: 'error', msg: `"${s}" está reservada por el sitio. Elegí otra.` }
-  if (!SLUG_RE.test(s)) return { ok: false, tone: 'error', msg: 'Solo minúsculas, números y guiones (entre 2 y 60 caracteres).' }
-  if (!isSlugAllowed(s, plans, selfId)) return { ok: false, tone: 'error', msg: `Ya hay otro plan usando "${s}".` }
-  return { ok: true, tone: 'ok', msg: 'Dirección disponible.' }
 }
 
 /** Huecos / solapes / rangos fuera del plan — para el aviso en vivo en la sección Hitos. */
@@ -142,24 +130,6 @@ function Acc({ title, sub, defaultOpen = false, children }) {
         {sub && <span style={{ fontSize: 12, color: 'var(--text-faint)', marginLeft: 'auto' }}>{sub}</span>}
       </button>
       {open && <div className="pe-acc-body">{children}</div>}
-    </div>
-  )
-}
-
-/** Swatches de HITO_COLORS + input hex + muestra. Valida en vivo, no bloquea. */
-function ColorField({ value, onChange }) {
-  const valid = COLOR_RE.test(String(value ?? ''))
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <div style={{ display: 'flex', gap: 5 }}>
-        {Object.entries(HITO_COLORS).map(([k, c]) => (
-          <button key={k} type="button" title={k} onClick={() => onChange(c)} className="pe-swatch"
-            style={{ background: c, border: String(value ?? '').toLowerCase() === c.toLowerCase() ? '2px solid var(--text)' : '1px solid var(--border)' }} />
-        ))}
-      </div>
-      <input className="input mono" value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder="#3ddc97"
-        style={{ width: 108, padding: '6px 9px', fontSize: 12.5, borderColor: valid ? undefined : 'var(--red)' }} />
-      <span title={valid ? 'Color válido' : 'Hex inválido'} style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, background: valid ? value : 'transparent', border: '1px solid var(--border)' }} />
     </div>
   )
 }
@@ -264,35 +234,53 @@ function WeekCard({ plan, index, set }) {
   )
 }
 
-/** Tarjeta del bento de "Esquema de trabajo". Los tags viven en estado local (raw). */
-function SchemaCardEditor({ plan, index, set }) {
-  const c = plan.schema[index]
-  const [tagsRaw, setTagsRaw] = useState((c.tags || []).join(', '))
-  const up = (fields) => set((p) => ({ ...p, schema: p.schema.map((x, i) => (i === index ? { ...x, ...fields } : x)) }))
-  const onTags = (raw) => {
-    setTagsRaw(raw)
-    up({ tags: raw.split(',').map((t) => t.trim()).filter(Boolean) })
+/**
+ * Descarga el plan como un PDF simple de texto: un clic, sin diálogo de impresión.
+ * No captura el diseño de la preview — arma un documento limpio con el título, el
+ * objetivo y, por cada semana, su título, los items y el entregable. jsPDF se carga
+ * on-demand (import dinámico) así no pesa el bundle inicial de la app.
+ */
+async function downloadPlanPDF(plan) {
+  const mod = await import('jspdf')
+  const JsPDF = mod.jsPDF || mod.default
+  const doc = new JsPDF({ unit: 'pt', format: 'a4' })
+  const pageH = doc.internal.pageSize.getHeight()
+  const M = 48
+  const W = doc.internal.pageSize.getWidth() - M * 2
+  let y = M
+
+  // Las fuentes core de jsPDF (WinAnsi) no traen guiones tipográficos ni "…".
+  const ascii = (s) => String(s ?? '').replace(/[—–]/g, '-').replace(/·/g, '-').replace(/…/g, '...').replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
+  const room = (need) => { if (y + need > pageH - M) { doc.addPage(); y = M } }
+  const block = (text, { size = 10.5, style = 'normal', color = 20, gap = 4, bullet = false } = {}) => {
+    if (!text) return
+    doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(color)
+    const lines = doc.splitTextToSize(ascii(text), W - (bullet ? 14 : 0))
+    const lh = size * 1.35
+    room(lines.length * lh)
+    if (bullet) { doc.text('-', M, y); doc.text(lines, M + 14, y) }
+    else doc.text(lines, M, y)
+    y += lines.length * lh + gap
   }
-  return (
-    <div className="pe-card">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <strong style={{ fontSize: 13.5 }}>{c.title || `Tarjeta ${index + 1}`}</strong>
-        <span style={{ marginLeft: 'auto' }} />
-        <RowTools i={index} len={plan.schema.length} onUp={() => set((p) => ({ ...p, schema: moveItem(p.schema, index, -1) }))} onDown={() => set((p) => ({ ...p, schema: moveItem(p.schema, index, 1) }))} onRemove={() => set((p) => ({ ...p, schema: p.schema.filter((_, i) => i !== index) }))} removeTitle="Quitar tarjeta" />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="Ícono"><select className="input" value={c.icon ?? 'video'} onChange={(e) => up({ icon: e.target.value })}>{Object.keys(SCHEMA_ICONS).map((k) => <option key={k} value={k}>{SCHEMA_ICON_LABELS[k] || k}</option>)}</select></Field>
-        <Field label="Título"><input className="input" value={c.title ?? ''} onChange={(e) => up({ title: e.target.value })} /></Field>
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <Field label="Texto"><textarea className="input" rows={2} value={c.text ?? ''} onChange={(e) => up({ text: e.target.value })} style={{ resize: 'vertical' }} /></Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, marginTop: 10, alignItems: 'end' }}>
-        <Field label="Tags (separá con comas)"><input className="input" value={tagsRaw} onChange={(e) => onTags(e.target.value)} placeholder="Loom, Vercel Preview, Viernes" /></Field>
-        <div><span className="label" style={{ display: 'block', marginBottom: 6 }}>Color</span><ColorField value={c.color} onChange={(col) => up({ color: col })} /></div>
-      </div>
-    </div>
-  )
+
+  block(plan.title || 'Plan de ejecución', { size: 22, style: 'bold', color: 0, gap: 10 })
+  if (plan.lead) block(plan.lead, { size: 10.5, color: 90, gap: 16 })
+
+  let lastStage = null
+  ;(plan.weeks || []).forEach((w) => {
+    const h = hitoForWeek(plan, w.n)
+    if (h && h.id !== lastStage && (h.title || h.label)) {
+      lastStage = h.id
+      y += 6
+      block(`${h.title || h.label}${h.weeksLabel ? '  · ' + h.weeksLabel : ''}`.toUpperCase(), { size: 9, style: 'bold', color: 130, gap: 8 })
+    }
+    block(`Semana ${w.n}${w.title ? ' — ' + w.title : ''}`, { size: 12.5, style: 'bold', color: 0, gap: 6 })
+    ;(w.tasks || []).forEach((t) => { if (t) block(t, { size: 10.5, color: 30, gap: 2, bullet: true }) })
+    if (w.deliver && w.deliver.text) block('Entregable: ' + w.deliver.text, { size: 9.5, style: 'italic', color: 90, gap: 4 })
+    y += 12
+  })
+
+  doc.save((plan.slug || 'plan') + '.pdf')
 }
 
 /* ============================================================================
@@ -339,12 +327,7 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
 
   const issues = validatePlan(plan)
   const ranges = rangeIssues(plan)
-  const sStat = slugStatus(plan.slug, plans, plan.id)
-  const subLen = String(plan.subtitle ?? '').length
-
   const setField = (k, v) => set((p) => ({ ...p, [k]: v }))
-  const setNested = (obj, k, v) => set((p) => ({ ...p, [obj]: { ...(p[obj] || {}), [k]: v } }))
-  const setSection = (sec, k, v) => set((p) => ({ ...p, sections: { ...(p.sections || {}), [sec]: { ...((p.sections || {})[sec] || {}), [k]: v } } }))
 
   return (
     <div className="pe-wrap">
@@ -391,85 +374,13 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
           {(plan.weeks || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>El plan no tiene semanas. Subí la cantidad para agregarlas.</div>}
           {(plan.weeks || []).map((w, i) => <WeekCard key={i} plan={plan} index={i} set={set} />)}
         </Acc>
-
-        {/* ===== AVANZADO (rara vez hace falta) ===== */}
-        <Acc title="Avanzado" sub="Publicación, marca y textos">
-          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 12, lineHeight: 1.5 }}>Todo esto ya viene con buenos valores por defecto. Tocalo solo si querés cambiar algo puntual antes de publicar.</div>
-
-          <div className="pe-grp-label" style={{ marginTop: 0 }}>Publicación</div>
-          <Field label="Dirección pública (slug)"><input className="input mono" value={plan.slug ?? ''} onChange={(e) => setField('slug', e.target.value)} placeholder="cleaning-marketplace" /></Field>
-          <div style={{ fontSize: 12, color: sStat.tone === 'error' ? 'var(--red)' : sStat.tone === 'warn' ? 'var(--yellow)' : 'var(--green)', marginTop: 5 }}>{sStat.msg}</div>
-          <div style={{ marginTop: 10 }}><Field label="URL publicada"><input className="input" value={plan.publishedUrl ?? ''} onChange={(e) => setField('publishedUrl', e.target.value)} placeholder="https://…/cleaning-marketplace" /></Field></div>
-          <div style={{ marginTop: 10 }}>
-            <Field label="Proyecto asociado">
-              <select className="input" value={plan.projectId ?? ''} onChange={(e) => setField('projectId', e.target.value || null)}>
-                <option value="">— Sin proyecto —</option>
-                {(projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </Field>
-          </div>
-          <div style={{ marginTop: 10 }}><Field label="Cliente (para el pie y el menú)"><input className="input" value={plan.clientName ?? ''} onChange={(e) => setField('clientName', e.target.value)} placeholder="Si lo dejás vacío, usa el nombre de arriba." /></Field></div>
-
-          <div className="pe-grp-label">Esquema de trabajo</div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13.5, marginBottom: 12 }}>
-            <input type="checkbox" checked={plan.showSchema !== false} onChange={(e) => setField('showSchema', e.target.checked)} />
-            Mostrar la sección “Cómo trabajamos juntos”
-          </label>
-          {plan.showSchema !== false && <>
-            {(plan.schema || []).map((c, i) => <SchemaCardEditor key={c.id || i} plan={plan} index={i} set={set} />)}
-            <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, schema: [...(p.schema || []), { id: uid(), icon: 'video', title: '', text: '', tags: [], color: HITO_COLORS.green }] }))} style={{ marginTop: 4 }}><I.plus width={13} height={13} /> Agregar tarjeta</button>
-          </>}
-
-          <div className="pe-grp-label">Encabezado</div>
-          <Field label="Subtítulo (2ª línea del título)"><input className="input" value={plan.subtitle ?? ''} onChange={(e) => setField('subtitle', e.target.value)} placeholder="semana a semana." /></Field>
-          {subLen > 30 && <div style={{ fontSize: 12, color: 'var(--yellow)', marginTop: 5 }}>El subtítulo tiene {subLen} caracteres. Va dentro del título grande: arriba de 30 se ve mal.</div>}
-          <div style={{ marginTop: 10 }}><Field label="Eyebrow (línea sobre el título)"><input className="input" value={plan.heroEyebrow ?? ''} onChange={(e) => setField('heroEyebrow', e.target.value)} placeholder="Insights Apps · Plan de ejecución" /></Field></div>
-          <div style={{ marginTop: 10 }}><Field label="Indicación de scroll"><input className="input" value={plan.scrollCue ?? ''} onChange={(e) => setField('scrollCue', e.target.value)} placeholder="Desliza para recorrer el plan" /></Field></div>
-
-          <div className="pe-grp-label">Marca</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="Nombre (en el nav)"><input className="input" value={plan.brand?.name ?? ''} onChange={(e) => setNested('brand', 'name', e.target.value)} placeholder="Insights" /></Field>
-            <Field label="Tagline (al lado)"><input className="input" value={plan.brand?.tagline ?? ''} onChange={(e) => setNested('brand', 'tagline', e.target.value)} placeholder={plan.clientName || 'Cliente'} /></Field>
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>Si dejás el tagline vacío, usa el nombre del cliente.</div>
-
-          <div className="pe-grp-label">SEO del documento</div>
-          <Field label="Título del navegador"><input className="input" value={plan.docTitle ?? ''} onChange={(e) => setField('docTitle', e.target.value)} placeholder={plan.title ? plan.title + ' — Plan de ejecución' : 'Plan de ejecución'} /></Field>
-          <div style={{ marginTop: 10 }}><Field label="Meta descripción"><textarea className="input" rows={2} value={plan.metaDescription ?? ''} onChange={(e) => setField('metaDescription', e.target.value)} style={{ resize: 'vertical' }} placeholder="Si lo dejás vacío, usa el párrafo de presentación." /></Field></div>
-
-          <div className="pe-grp-label">Títulos de las secciones</div>
-          {[['schema', 'Esquema de trabajo'], ['phases', 'Fases'], ['weeks', 'Semanas']].map(([sec, label]) => (
-            <div key={sec} className="pe-card">
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-dim)', marginBottom: 9 }}>{label}</div>
-              <Field label="Eyebrow"><input className="input" value={plan.sections?.[sec]?.eyebrow ?? ''} onChange={(e) => setSection(sec, 'eyebrow', e.target.value)} /></Field>
-              <div style={{ marginTop: 8 }}><Field label="Título"><input className="input" value={plan.sections?.[sec]?.title ?? ''} onChange={(e) => setSection(sec, 'title', e.target.value)} /></Field></div>
-              <div style={{ marginTop: 8 }}><Field label="Lead"><textarea className="input" rows={2} value={plan.sections?.[sec]?.lead ?? ''} onChange={(e) => setSection(sec, 'lead', e.target.value)} style={{ resize: 'vertical' }} /></Field></div>
-            </div>
-          ))}
-
-          <div className="pe-grp-label">Pie de página</div>
-          <Field label="Frase grande"><textarea className="input" rows={2} value={plan.footer?.big ?? ''} onChange={(e) => setNested('footer', 'big', e.target.value)} style={{ resize: 'vertical' }} placeholder="Listo para empezar con claridad total desde el día uno." /></Field>
-          <div style={{ marginTop: 10 }}><Field label="Marca (en negrita)"><input className="input" value={plan.footer?.brand ?? ''} onChange={(e) => setNested('footer', 'brand', e.target.value)} placeholder="Insights Apps" /></Field></div>
-          <div style={{ marginTop: 10 }}>
-            <span className="label" style={{ display: 'block', marginBottom: 6 }}>Líneas (si están vacías, usa el cliente)</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {(plan.footer?.lines || []).map((ln, i) => (
-                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input className="input" value={ln} onChange={(e) => set((p) => ({ ...p, footer: { ...p.footer, lines: p.footer.lines.map((x, k) => (k === i ? e.target.value : x)) } }))} style={{ flex: 1 }} />
-                  <button type="button" className="btn btn-ghost pe-mini" title="Quitar" onClick={() => set((p) => ({ ...p, footer: { ...p.footer, lines: p.footer.lines.filter((_, k) => k !== i) } }))} style={{ padding: 5, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
-                </div>
-              ))}
-            </div>
-            <button type="button" className="btn btn-sm" onClick={() => set((p) => ({ ...p, footer: { ...p.footer, lines: [...((p.footer && p.footer.lines) || []), ''] } }))} style={{ marginTop: 8 }}><I.plus width={13} height={13} /> Agregar línea</button>
-          </div>
-        </Acc>
       </div>
 
       {/* ---------- DERECHA: toolbar + preview ---------- */}
       <div className="pe-right">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-sm btn-accent" onClick={() => onExport(plan)}><I.download width={14} height={14} /> Exportar HTML</button>
-          <button className="btn btn-sm" onClick={() => frameRef.current?.contentWindow?.print()}><I.pdf width={14} height={14} /> Descargar PDF</button>
+          <button className="btn btn-sm" onClick={() => downloadPlanPDF(plan)}><I.pdf width={14} height={14} /> Descargar PDF</button>
           <button className="btn btn-sm btn-ghost" onClick={onExit}><I.chevR width={14} height={14} style={{ transform: 'scaleX(-1)' }} /> Volver a la lista</button>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-dim)' }}>
             <span className="mono" title="Ruta pública" style={{ color: 'var(--text)' }}>/{plan.slug || 'sin-slug'}</span>
@@ -499,7 +410,7 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onExport }) {
 /* ============================================================================
    LISTA
 ============================================================================ */
-function PlanList({ plans, projects, onEdit, onNew, onLoadExample, onDuplicate, onExport, onDelete }) {
+function PlanList({ plans, projects, onEdit, onNew, onLoadExample, onExport, onDelete }) {
   const projName = (id) => (projects.find((p) => p.id === id)?.name) || null
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
@@ -549,7 +460,6 @@ function PlanList({ plans, projects, onEdit, onNew, onLoadExample, onDuplicate, 
                     <td style={{ padding: '10px 16px 10px 0', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: 3, justifyContent: 'flex-end' }}>
                         <button className="btn btn-sm btn-ghost" title="Editar" onClick={() => onEdit(p.id)} style={{ padding: 6 }}><I.pencil width={15} height={15} /></button>
-                        <button className="btn btn-sm btn-ghost" title="Duplicar" onClick={() => onDuplicate(p)} style={{ padding: 6 }}><I.cards width={15} height={15} /></button>
                         <button className="btn btn-sm btn-ghost" title="Exportar HTML" onClick={() => onExport(p)} style={{ padding: 6 }}><I.download width={15} height={15} /></button>
                         <button className="btn btn-sm btn-ghost" title="Borrar" onClick={() => onDelete(p)} style={{ padding: 6, color: 'var(--text-faint)' }}><I.trash width={15} height={15} /></button>
                       </div>
@@ -607,19 +517,6 @@ export default function PlannerView() {
     // Queda en la lista: el usuario lo abre cuando quiere (a diferencia de "Nuevo plan").
   }
 
-  const duplicatePlan = (plan) => {
-    const copy = deepClone(plan)
-    const now = new Date().toISOString()
-    copy.id = uid()
-    copy.projectId = null
-    copy.publishedUrl = ''
-    copy.slug = makeUniqueSlug(`${plan.slug || slugify(plan.title)}-copia`, plans)
-    copy.createdAt = now
-    copy.updatedAt = now
-    setPlans((ps) => [copy, ...ps])
-    if (logActivity) logActivity({ type: 'plan-duplicate', text: `duplicó el plan "${plan.title}"` })
-  }
-
   const exportPlan = (plan) => {
     const html = buildPlanHTML(plan)
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
@@ -669,7 +566,6 @@ export default function PlannerView() {
         onEdit={(id) => setEditingId(id)}
         onNew={() => { setNewTitle(''); setNewOpen(true) }}
         onLoadExample={loadExample}
-        onDuplicate={duplicatePlan}
         onExport={exportPlan}
         onDelete={deletePlan}
       />
