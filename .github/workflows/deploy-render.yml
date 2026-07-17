@@ -3,6 +3,13 @@ name: Deploy a Render
 # Dispara el deploy de proyectosapp en Render en cada push a main. Sustituye a la
 # conexion nativa GitHub App <-> Render (Render solo permite UNA cuenta de GitHub
 # conectada por workspace; este repo vive en una cuenta distinta a la ya conectada).
+#
+# Ojo con esta secuencia (no simplificar a un solo POST /deploys):
+# En modo "Public Git Repository", Render NO refresca solo el ref de la rama al
+# recibir un POST /deploys vacio -- se queda pegado al ultimo commit que conocia
+# (verificado: 3 pushes seguidos deployaron el commit viejo sin este paso). Hay
+# que forzar el resync con un PATCH al mismo repo (nudge) ANTES de pedir el
+# deploy, y pedirlo con el commitId exacto para asegurar que toma el correcto.
 on:
   push:
     branches: [main]
@@ -10,10 +17,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      SERVICE_ID: srv-d8u0gspo3t8c73c5dn6g
     steps:
-      - name: Disparar deploy en Render
+      - name: Resync del repo en Render (refresca el ref que Render conoce)
         run: |
-          curl -fsS -X POST "https://api.render.com/v1/services/srv-d8u0gspo3t8c73c5dn6g/deploys" \
+          curl -fsS -X PATCH "https://api.render.com/v1/services/${SERVICE_ID}" \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '{}'
+            -d '{"repo":"https://github.com/developers-insights/app-proyectos","branch":"main"}'
+          sleep 5
+
+      - name: Deploy del commit exacto de este push
+        run: |
+          curl -fsS -X POST "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"commitId\":\"${GITHUB_SHA}\"}"
