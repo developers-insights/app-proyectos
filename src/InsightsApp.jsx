@@ -19,6 +19,7 @@ import { createClient } from '@supabase/supabase-js'
 import OnboardingLanding from './Onboarding'
 import { uid, I, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
 import PlannerView from './plan/PlannerView.jsx'
+import BotView from './bot/BotView.jsx'
 
 /* ============================================================================
    0 · SUPABASE (cloud persistence + auth) — optional, enabled via env vars
@@ -4544,6 +4545,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'sops', label: 'SOP', icon: I.doc },
     { key: 'planner', label: 'Planificador', icon: I.calendar },
     { key: 'assistant', label: 'IA Assistant', icon: I.spark },
+    { key: 'bot', label: 'Bot', icon: I.whatsapp },
     { key: 'editor', label: 'Editor', icon: I.film },
   ]
   const mini = !mobile && collapsed          // solo colapsa en desktop
@@ -4915,7 +4917,7 @@ function AppShell({ session, onLogout }) {
           <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} mobile={isMobile} onMenu={() => setNavOpen(true)} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
-              style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' || route.view === 'planner' || route.view === 'editor' ? 'hidden' : 'auto' }}>
+              style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' || route.view === 'planner' || route.view === 'editor' || route.view === 'bot' ? 'hidden' : 'auto' }}>
               {route.view === 'projects' && <Projects onOpenProject={openProject} />}
               {route.view === 'tasks' && <TasksView />}
               {route.view === 'clients' && <Clients />}
@@ -4923,6 +4925,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'sops' && <Sops />}
               {route.view === 'assistant' && <AssistantView />}
               {route.view === 'planner' && <PlannerView />}
+              {route.view === 'bot' && <BotView />}
               {route.view === 'editor' && <EditorView />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
             </motion.div>
