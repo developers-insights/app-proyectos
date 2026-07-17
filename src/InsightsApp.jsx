@@ -823,7 +823,8 @@ function usePlans() {
   const [plans, setPlansState] = useState([])
   const [ready, setReady] = useState(!cloudEnabled)
   const plansRef = useRef([])
-  const timers = useRef(new Map())
+  const timers = useRef(new Map())    // id -> timeout del guardado debounced
+  const pending = useRef(new Map())   // id -> última versión aún NO confirmada en el server
 
   // Fuente de verdad = plansRef (siempre fresca, sin closures viejos). Cada
   // mutación recalcula desde el ref y empuja al estado de React.
@@ -833,21 +834,53 @@ function usePlans() {
     setPlansState(next)
   }
 
+  // Escritura real de una fila. Al confirmar, saca el pendiente si sigue siendo
+  // esta misma versión (si el usuario editó más, queda un pendiente nuevo).
+  const writePlan = async (plan) => {
+    if (!cloudEnabled) return
+    try {
+      await supabase.from('plans').upsert(
+        { id: plan.id, data: plan, updated_at: plan.updatedAt || new Date().toISOString() },
+        { onConflict: 'id' },
+      )
+      const still = pending.current.get(plan.id)
+      if (still && still.updatedAt === plan.updatedAt) pending.current.delete(plan.id)
+    } catch (e) { /* queda pendiente; se reintenta en la próxima edición o en flush() */ }
+  }
+
+  // Vacía a disco todo lo que quedó en debounce. Se llama al ocultar/cerrar la
+  // pestaña, para no perder la última edición dentro de la ventana de debounce.
+  const flush = () => {
+    timers.current.forEach((t) => clearTimeout(t))
+    timers.current.clear()
+    pending.current.forEach((plan) => { writePlan(plan) })
+  }
+
+  // Carga la lista desde el server sin pisar ediciones locales aún sin sincronizar.
+  const loadPlans = async () => {
+    if (!cloudEnabled) return
+    const { data: rows, error } = await supabase
+      .from('plans').select('data').is('deleted_at', null)
+      .order('updated_at', { ascending: false })
+    if (error) return
+    applyLocal(() => {
+      const server = (rows || []).map((r) => r.data)
+      if (pending.current.size === 0) return server
+      const byId = new Map(server.map((p) => [p.id, p]))
+      pending.current.forEach((local, id) => {
+        const s = byId.get(id)
+        if (!s || (local.updatedAt || '') >= (s.updatedAt || '')) byId.set(id, local)
+      })
+      return [...byId.values()].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+    })
+  }
+
   useEffect(() => {
     if (!cloudEnabled) return
     let alive = true
-    ;(async () => {
-      try {
-        const { data: rows, error } = await supabase
-          .from('plans').select('data').is('deleted_at', null)
-          .order('updated_at', { ascending: false })
-        if (!alive) return
-        if (error) throw error
-        applyLocal(() => (rows || []).map((r) => r.data))
-      } catch (e) { /* deja la lista como está; realtime la irá completando */ }
-      finally { if (alive) setReady(true) }
-    })()
+    ;(async () => { try { await loadPlans() } finally { if (alive) setReady(true) } })()
 
+    let subscribedOnce = false
     const channel = supabase
       .channel('plans_all')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, (payload) => {
@@ -869,33 +902,42 @@ function usePlans() {
           const nx = [...cur]; nx[idx] = incoming; return nx
         })
       })
-      .subscribe()
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return
+        // Reconexión del realtime: pudimos habernos perdido eventos → resync.
+        if (subscribedOnce) loadPlans()
+        subscribedOnce = true
+      })
 
-    return () => { alive = false; supabase.removeChannel(channel) }
+    return () => { alive = false; flush(); supabase.removeChannel(channel) }
+  }, [])
+
+  // Al ocultar/cerrar la pestaña, no esperar el debounce: guardar ya.
+  useEffect(() => {
+    if (!cloudEnabled) return
+    const onHide = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onHide)
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onHide) }
   }, [])
 
   const scheduleSave = (plan) => {
     if (!cloudEnabled) return
+    pending.current.set(plan.id, plan)
     const t = timers.current
     clearTimeout(t.get(plan.id))
-    t.set(plan.id, setTimeout(async () => {
-      t.delete(plan.id)
-      try {
-        await supabase.from('plans').upsert(
-          { id: plan.id, data: plan, updated_at: plan.updatedAt || new Date().toISOString() },
-          { onConflict: 'id' },
-        )
-      } catch (e) { /* se reintenta en la próxima edición */ }
-    }, PLAN_SAVE_DEBOUNCE))
+    t.set(plan.id, setTimeout(() => { t.delete(plan.id); writePlan(plan) }, PLAN_SAVE_DEBOUNCE))
   }
 
   // Crear: escritura inmediata (sin debounce) para que exista en el server ya.
+  // Si falla (ej. sin red), queda como pendiente y se reintenta.
   const createPlan = async (plan) => {
     applyLocal((cur) => [plan, ...cur])
     if (!cloudEnabled) return { error: null }
     const { error } = await supabase.from('plans').insert(
       { id: plan.id, data: plan, updated_at: plan.updatedAt || new Date().toISOString() },
     )
+    if (error) scheduleSave(plan)
     return { error }
   }
 
@@ -915,6 +957,7 @@ function usePlans() {
   // así que una pestaña vieja editando no puede resucitar un plan borrado.
   const deletePlan = async (id) => {
     clearTimeout(timers.current.get(id)); timers.current.delete(id)
+    pending.current.delete(id)   // que un flush no reescriba un plan recién borrado
     applyLocal((cur) => cur.filter((p) => p.id !== id))
     if (!cloudEnabled) return { error: null }
     const { error } = await supabase.from('plans').update({ deleted_at: new Date().toISOString() }).eq('id', id)
