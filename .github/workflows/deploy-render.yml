@@ -1,0 +1,19 @@
+name: Deploy a Render
+
+# Dispara el deploy de proyectosapp en Render en cada push a main. Sustituye a la
+# conexion nativa GitHub App <-> Render (Render solo permite UNA cuenta de GitHub
+# conectada por workspace; este repo vive en una cuenta distinta a la ya conectada).
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar deploy en Render
+        run: |
+          curl -fsS -X POST "https://api.render.com/v1/services/srv-d8u0gspo3t8c73c5dn6g/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{}'
