@@ -659,7 +659,11 @@ function migrate(state) {
   const soppIds = new Set(state.sops.processes.map((p) => p.id))
   seededSops.processes.forEach((p) => { if (!soppIds.has(p.id)) state.sops.processes.push(p) })
   state.sops.processes = state.sops.processes.map((p) => ({ ...p, links: p.links || [], images: p.images || [] }))
-  if (!state.plans) state.plans = []
+  // Los planes ya NO viven dentro de app_state (que se guarda como documento
+  // único y último-en-escribir-gana). Ahora cada plan es su propia fila en la
+  // tabla `plans` (ver usePlans). Acá los sacamos del blob para que ninguna
+  // pestaña con estado viejo pueda pisarlos o borrarlos al guardar app_state.
+  if (state.plans) delete state.plans
   // add new clients/projects that aren't present yet (by id)
   const cIds = new Set(state.clients.map((c) => c.id))
   seedClients().forEach((c) => { if (!cIds.has(c.id)) state.clients.push(c) })
@@ -801,6 +805,123 @@ function useAppData() {
   }, [data])
 
   return [data, setData, sync]
+}
+
+/* ============================================================================
+   6b · PLANS STORE — cada plan es una fila en la tabla `plans` de Supabase.
+   Ya NO viven dentro de app_state (documento monolítico, último-gana). Esto
+   blinda contra el bug histórico: una pestaña con estado viejo ya no puede
+   pisar ni borrar todos los planes, porque cada escritura toca una sola fila.
+   - Carga inicial (rows activas) + realtime por tabla.
+   - patch: optimista + upsert debounced de esa fila (500ms).
+   - delete: soft-delete (tombstone) — una edición vieja no puede resucitarlo.
+   - merge realtime: solo aplica lo entrante si es más nuevo (ignora el eco
+     de nuestra propia escritura y writes con updatedAt más viejo).
+============================================================================ */
+const PLAN_SAVE_DEBOUNCE = 500
+function usePlans() {
+  const [plans, setPlansState] = useState([])
+  const [ready, setReady] = useState(!cloudEnabled)
+  const plansRef = useRef([])
+  const timers = useRef(new Map())
+
+  // Fuente de verdad = plansRef (siempre fresca, sin closures viejos). Cada
+  // mutación recalcula desde el ref y empuja al estado de React.
+  const applyLocal = (fn) => {
+    const next = fn(plansRef.current)
+    plansRef.current = next
+    setPlansState(next)
+  }
+
+  useEffect(() => {
+    if (!cloudEnabled) return
+    let alive = true
+    ;(async () => {
+      try {
+        const { data: rows, error } = await supabase
+          .from('plans').select('data').is('deleted_at', null)
+          .order('updated_at', { ascending: false })
+        if (!alive) return
+        if (error) throw error
+        applyLocal(() => (rows || []).map((r) => r.data))
+      } catch (e) { /* deja la lista como está; realtime la irá completando */ }
+      finally { if (alive) setReady(true) }
+    })()
+
+    const channel = supabase
+      .channel('plans_all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, (payload) => {
+        const row = payload.new
+        if (payload.eventType === 'DELETE') {
+          const goneId = payload.old && payload.old.id
+          applyLocal((cur) => cur.filter((p) => p.id !== goneId)); return
+        }
+        if (!row) return
+        if (row.deleted_at) { applyLocal((cur) => cur.filter((p) => p.id !== row.id)); return }
+        const incoming = row.data
+        if (!incoming || !incoming.id) return
+        applyLocal((cur) => {
+          const idx = cur.findIndex((p) => p.id === incoming.id)
+          if (idx === -1) return [incoming, ...cur]
+          const localT = cur[idx].updatedAt || ''
+          const remoteT = incoming.updatedAt || ''
+          if (remoteT <= localT) return cur   // nuestro eco o una versión más vieja → ignorar
+          const nx = [...cur]; nx[idx] = incoming; return nx
+        })
+      })
+      .subscribe()
+
+    return () => { alive = false; supabase.removeChannel(channel) }
+  }, [])
+
+  const scheduleSave = (plan) => {
+    if (!cloudEnabled) return
+    const t = timers.current
+    clearTimeout(t.get(plan.id))
+    t.set(plan.id, setTimeout(async () => {
+      t.delete(plan.id)
+      try {
+        await supabase.from('plans').upsert(
+          { id: plan.id, data: plan, updated_at: plan.updatedAt || new Date().toISOString() },
+          { onConflict: 'id' },
+        )
+      } catch (e) { /* se reintenta en la próxima edición */ }
+    }, PLAN_SAVE_DEBOUNCE))
+  }
+
+  // Crear: escritura inmediata (sin debounce) para que exista en el server ya.
+  const createPlan = async (plan) => {
+    applyLocal((cur) => [plan, ...cur])
+    if (!cloudEnabled) return { error: null }
+    const { error } = await supabase.from('plans').insert(
+      { id: plan.id, data: plan, updated_at: plan.updatedAt || new Date().toISOString() },
+    )
+    return { error }
+  }
+
+  // Editar: patch por id, optimista + guardado debounced de esa sola fila.
+  const patchPlan = (id, fn) => {
+    let saved = null
+    applyLocal((cur) => cur.map((p) => {
+      if (p.id !== id) return p
+      saved = { ...fn(p), updatedAt: new Date().toISOString() }
+      return saved
+    }))
+    if (saved) scheduleSave(saved)
+    return saved
+  }
+
+  // Borrar: soft-delete (tombstone). El upsert de edición no toca deleted_at,
+  // así que una pestaña vieja editando no puede resucitar un plan borrado.
+  const deletePlan = async (id) => {
+    clearTimeout(timers.current.get(id)); timers.current.delete(id)
+    applyLocal((cur) => cur.filter((p) => p.id !== id))
+    if (!cloudEnabled) return { error: null }
+    const { error } = await supabase.from('plans').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    return { error }
+  }
+
+  return { plans, plansReady: ready, createPlan, patchPlan, deletePlan }
 }
 
 /* ============================================================================
@@ -3444,7 +3565,7 @@ function ShareModal({ open, project, onClose, patch }) {
 }
 
 function ProjectDetail({ projectId, onBack }) {
-  const { data, setData, logActivity } = useApp()
+  const { data, setData, logActivity, plans, patchPlan } = useApp()
   const project = data.projects.find((p) => p.id === projectId)
   const client = data.clients.find((c) => c.id === project?.clientId)
   const gh = useGithubCommit(project?.githubRepo)
@@ -3462,14 +3583,14 @@ function ProjectDetail({ projectId, onBack }) {
   if (!project) return null
   const patch = (fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === projectId ? fn(p) : p)) }))
   // Plan asociado (D10: el enlace vive SOLO en plan.publishedUrl; el proyecto solo guarda planId)
-  const linkedPlan = (data.plans || []).find((pl) => pl.id === project.planId) || null
+  const linkedPlan = (plans || []).find((pl) => pl.id === project.planId) || null
   const associatePlan = (id) => {
     patch((p) => ({ ...p, planId: id || null }))
     if (logActivity) logActivity(id
       ? { type: 'plan-link', text: `asoció un plan a ${project.name}` }
       : { type: 'plan-unlink', text: `desasoció el plan de ${project.name}` })
   }
-  const setPlanUrl = (url) => setData((d) => ({ ...d, plans: (d.plans || []).map((pl) => (pl.id === project.planId ? { ...pl, publishedUrl: url, updatedAt: new Date().toISOString() } : pl)) }))
+  const setPlanUrl = (url) => { if (project.planId) patchPlan(project.planId, (pl) => ({ ...pl, publishedUrl: url })) }
   const saveProject = (draft) => patch((p) => ({ ...draft, chats: p.chats }))
   const patchSprint = (sid, fields) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
   const openSprint = project.sprints.find((s) => s.id === openSprintId)
@@ -3618,7 +3739,7 @@ function ProjectDetail({ projectId, onBack }) {
           <Field label="Plan asociado">
             <select className="input" value={linkedPlan ? linkedPlan.id : ''} onChange={(e) => associatePlan(e.target.value || null)}>
               <option value="">— Sin plan —</option>
-              {(data.plans || []).map((pl) => <option key={pl.id} value={pl.id}>{pl.title || 'Plan sin título'}{pl.clientName ? ` · ${pl.clientName}` : ''}</option>)}
+              {(plans || []).map((pl) => <option key={pl.id} value={pl.id}>{pl.title || 'Plan sin título'}{pl.clientName ? ` · ${pl.clientName}` : ''}</option>)}
             </select>
           </Field>
           {linkedPlan ? (
@@ -4692,6 +4813,7 @@ function CenterScreen({ children }) {
 /* the authenticated app */
 function AppShell({ session, onLogout }) {
   const [data, setData, sync] = useAppData()
+  const planStore = usePlans()   // { plans, plansReady, createPlan, patchPlan, deletePlan }
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [route, setRoute] = useState({ view: 'projects' })
   const [collapsed, setCollapsed] = useState(false)
@@ -4743,7 +4865,7 @@ function AppShell({ session, onLogout }) {
   const pmProjects = (data.projects || []).filter((p) => myId && p.assignments?.pm?.userId === myId && p.status === 'active')
 
   return (
-    <AppCtx.Provider value={{ data, setData, logActivity, supabase }}>
+    <AppCtx.Provider value={{ data, setData, logActivity, supabase, ...planStore }}>
       <div className="app-shell">
         <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>

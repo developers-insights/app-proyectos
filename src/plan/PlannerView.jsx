@@ -495,15 +495,12 @@ function PlanList({ plans, projects, onEdit, onNew, onPublish, onDelete }) {
 ============================================================================ */
 export default function PlannerView() {
   usePlannerCss()
-  const { data, setData, logActivity, supabase } = useApp()
+  const { data, logActivity, supabase, plans, plansReady, createPlan: addPlan, patchPlan, deletePlan: deletePlanRow } = useApp()
   const [editingId, setEditingId] = useState(null)
   const [newOpen, setNewOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
 
-  const plans = data.plans || []
   const projects = data.projects || []
-  const setPlans = (fn) => setData((d) => ({ ...d, plans: fn(d.plans || []) }))
-  const patchPlan = (id, fn) => setPlans((ps) => ps.map((p) => (p.id === id ? { ...fn(p), updatedAt: new Date().toISOString() } : p)))
 
   const createPlan = () => {
     const title = newTitle.trim()
@@ -512,7 +509,8 @@ export default function PlannerView() {
     p.title = title
     p.docTitle = title
     p.slug = makeUniqueSlug(title, plans)
-    setPlans((ps) => [p, ...ps])
+    p.updatedAt = new Date().toISOString()
+    addPlan(p)   // inserta la fila en la tabla `plans` + optimista en memoria
     if (logActivity) logActivity({ type: 'plan-add', text: `creó el plan "${title}"` })
     setNewTitle(''); setNewOpen(false); setEditingId(p.id)
   }
@@ -541,12 +539,17 @@ export default function PlannerView() {
       const { error } = await supabase.from('published_plans').delete().eq('slug', plan.slug)
       if (error) { window.alert('No se pudo quitar el plan del sitio, así que no borré nada.\n\n' + error.message); return }
     }
-    setPlans((ps) => ps.filter((p) => p.id !== plan.id))
+    const { error } = await deletePlanRow(plan.id)
+    if (error) { window.alert('No se pudo borrar el plan.\n\n' + error.message); return }
     if (editingId === plan.id) setEditingId(null)
     if (logActivity) logActivity({ type: 'plan-delete', text: `borró el plan "${plan.title}"` })
   }
 
   const editing = editingId ? plans.find((p) => p.id === editingId) : null
+
+  if (!plansReady && plans.length === 0) {
+    return <div style={{ padding: 40, color: 'var(--text-dim)', fontSize: 14 }}>Cargando planes…</div>
+  }
 
   if (editing) {
     return (
