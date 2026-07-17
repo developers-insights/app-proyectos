@@ -4371,10 +4371,6 @@ function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
   )
 }
 
-/** Solo este usuario ve la herramienta "Editor" (editor de video). */
-const EDITOR_OWNER_EMAIL = 'manuelnavarro@insightsapps.tech'
-const isEditorOwner = (email) => String(email || '').trim().toLowerCase() === EDITOR_OWNER_EMAIL
-
 function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClose, email }) {
   const items = [
     { key: 'projects', label: 'Projects', icon: I.folder },
@@ -4384,7 +4380,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'sops', label: 'SOP', icon: I.doc },
     { key: 'planner', label: 'Planificador', icon: I.calendar },
     { key: 'assistant', label: 'IA Assistant', icon: I.spark },
-    ...(isEditorOwner(email) ? [{ key: 'editor', label: 'Editor', icon: I.film }] : []),
+    { key: 'editor', label: 'Editor', icon: I.film },
   ]
   const mini = !mobile && collapsed          // solo colapsa en desktop
   const go = (key) => { setRoute({ view: key }); if (mobile && onClose) onClose() }
@@ -4762,7 +4758,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'sops' && <Sops />}
               {route.view === 'assistant' && <AssistantView />}
               {route.view === 'planner' && <PlannerView />}
-              {route.view === 'editor' && isEditorOwner(session?.user?.email) && <EditorView />}
+              {route.view === 'editor' && <EditorView />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
             </motion.div>
           </main>
