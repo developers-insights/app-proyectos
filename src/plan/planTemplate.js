@@ -34,6 +34,7 @@ import {
   daysForWeek,
   COLOR_RE,
   HREF_RE,
+  planProgress,
 } from './planModel.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -153,7 +154,12 @@ export function sanitizePlan(plan) {
       n: Number.isFinite(n) ? n : i + 1,
       title: e(w.title),
       type: hasOwn(WEEK_TYPES, w.type) ? w.type : 'info',
-      tasks: arr(w.tasks).map(e),
+      // TaskLike[] → {text,done}[]. Retrocompat: un string viejo se lee como
+      // texto con done:false. NUNCA perder el done acá (es lo que ve el cliente).
+      tasks: arr(w.tasks).map((t) => {
+        const isObj = t && typeof t === 'object'
+        return { text: e(isObj ? t.text : t), done: isObj ? !!t.done : false }
+      }),
       deliver: {
         kind: hasOwn(DELIVER_KINDS, kind) ? kind : 'doc',
         text: e(w.deliver && w.deliver.text),
@@ -356,6 +362,12 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
   .sec-head h2{font-size:clamp(2rem,4.4vw,3.3rem);margin-top:20px;letter-spacing:-.03em}
   .sec-head p{color:var(--ink-2);margin-top:18px;font-size:1.05rem;max-width:560px}
 
+  /* ---------- PLAN PROGRESS (barra global de avance) ---------- */
+  .plan-progress{margin-top:22px;max-width:420px}
+  .pp-track{height:6px;border-radius:999px;background:var(--line);overflow:hidden}
+  .pp-fill{height:100%;border-radius:999px;background:var(--c-accent);transition:width .8s var(--ease-2)}
+  .pp-label{margin-top:10px;font-size:12.5px;color:var(--ink-3);letter-spacing:.03em;font-variant-numeric:tabular-nums}
+
   /* ---------- COMMS BENTO ---------- */
   .bento{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
   .shell{background:var(--glass);border:1px solid var(--line);border-radius:26px;padding:7px}
@@ -435,6 +447,8 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     border:1px solid color-mix(in srgb,var(--col) 45%,var(--line));display:grid;place-items:center;color:var(--col)}
   .task .tick .ic{width:12px;height:12px;stroke-width:2}
   .task span{color:var(--ink);font-size:1rem;line-height:1.5;opacity:.92}
+  .task.done span{text-decoration:line-through;opacity:.5}
+  .task.done .tick{opacity:.6}
 
   .deliver{margin-top:30px;display:flex;gap:16px;align-items:flex-start;
     background:color-mix(in srgb,var(--col) 9%,transparent);
@@ -523,6 +537,8 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     .hero .stats{gap:8px;margin-top:20px}
     h1,h2,.sec-head h2{color:#111!important}
     .sec-head p,.hero p.lead,.hero .meta-line{color:#444!important}
+    .pp-track{background:#e5e5e5!important}
+    .pp-label{color:#555!important}
     .eyebrow{color:#555!important;border-color:#d0d0d0!important;background:none!important}
     .eyebrow .dot{display:none}
     /* flatten double-bezel to one clean card; never split a card across pages */
@@ -544,6 +560,7 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     .pweek .pmeta{font-size:10.5px;color:#666;margin-bottom:8px;text-transform:uppercase;letter-spacing:.07em}
     .pweek ul{margin:0 0 0 16px;padding:0}
     .pweek li{color:#222;font-size:12px;margin:3px 0;line-height:1.45}
+    .pweek li.done{text-decoration:line-through;color:#777}
     .pweek .pdel{margin-top:8px;font-size:12px;color:#111;background:#eef0ee;border-radius:8px;padding:9px 11px}
     footer{break-inside:avoid;border-top:1px solid #ddd;padding:22px 0 0;margin-top:14px}
     .foot .big{color:#111!important;font-size:1.4rem}
@@ -585,7 +602,11 @@ const pillNodes=[...pillsEl.children];
 
 function buildHTML(w){
   const t=TYPE[w.type];
-  const tasks=w.tasks.map(x=>'<div class="task"><span class="tick">'+ICONS.tick+'</span><span>'+x+'</span></div>').join('');
+  const tasks=w.tasks.map(x=>{
+    const done=x&&typeof x==='object'?x.done:false;
+    const txt=x&&typeof x==='object'?x.text:x;
+    return '<div class="task'+(done?' done':'')+'"><span class="tick">'+(done?(ICONS.check||ICONS.tick):ICONS.tick)+'</span><span>'+txt+'</span></div>';
+  }).join('');
   const del=(w.deliver&&w.deliver.text)?'<div class="deliver"><span class="dic">'+ICONS[w.deliver.kind]+'</span><div><div class="dk">'+DK[w.deliver.kind]+'</div><div class="dt">'+w.deliver.text+'</div></div></div>':'';
   return ''+
    '<div class="week-top">'+
@@ -636,7 +657,11 @@ syncControls();
 
 // print version: all weeks expanded
 document.getElementById('printAll').innerHTML=WEEKS.map(w=>{
-  const li=w.tasks.map(t=>'<li>'+t+'</li>').join('');
+  const li=w.tasks.map(x=>{
+    const done=x&&typeof x==='object'?x.done:false;
+    const txt=x&&typeof x==='object'?x.text:x;
+    return '<li'+(done?' class="done"':'')+'>'+txt+'</li>';
+  }).join('');
   const pdel=(w.deliver&&w.deliver.text)?'<div class="pdel"><b>'+DK[w.deliver.kind]+':</b> '+w.deliver.text+'</div>':'';
   return '<div class="pweek"><h3>Semana '+w.n+' — '+w.title+'</h3>'+
     '<div class="pmeta">'+PHASES[w.phase].label+' · '+w.days+' · '+TYPE[w.type].label+'</div>'+
@@ -829,14 +854,18 @@ export function makePlanPdfDoc(plan, JsPDF) {
     var itemModels = []
     var items = wk.tasks || []
     for (var it = 0; it < items.length; it++) {
-      if (!items[it]) continue
-      itemModels.push(wrap(items[it], 10.5, 'normal', CW - 16))
+      var rawItem = items[it]
+      if (!rawItem) continue
+      var itemIsObj = rawItem && typeof rawItem === 'object'
+      var itemTxt = itemIsObj ? rawItem.text : rawItem
+      var itemDone = itemIsObj ? !!rawItem.done : false
+      itemModels.push({ lines: wrap(itemTxt, 10.5, 'normal', CW - 16), done: itemDone })
     }
     var delLines = (wk.deliver && wk.deliver.text) ? wrap(wk.deliver.text, 10, 'normal', CW - 28) : null
 
     var headerH = newStage ? 30 : 0
     var itemsH = 0
-    for (var m0 = 0; m0 < itemModels.length; m0++) itemsH += itemModels[m0].length * 14.5 + 3
+    for (var m0 = 0; m0 < itemModels.length; m0++) itemsH += itemModels[m0].lines.length * 14.5 + 3
     var delH = delLines ? (36 + delLines.length * 13.5 + 8) : 0
     var blockH = headerH + 15 + tLines.length * 17 + 4 + itemsH + delH + 20
 
@@ -864,9 +893,10 @@ export function makePlanPdfDoc(plan, JsPDF) {
     y += 4
 
     for (var im = 0; im < itemModels.length; im++) {
-      var ml = itemModels[im]
-      font('bold', 10.5, FAINT); doc.text('-', M + 2, y)
-      font('normal', 10.5, BODY)
+      var mdl = itemModels[im]
+      var ml = mdl.lines
+      font('bold', 10.5, FAINT); doc.text(mdl.done ? 'x' : '-', M + 2, y)
+      font('normal', 10.5, mdl.done ? FAINT : BODY)
       for (var q = 0; q < ml.length; q++) { doc.text(ml[q], M + 16, y); y += 14.5 }
       y += 3
     }
@@ -1025,6 +1055,17 @@ ${bentoHtml}
   const hasWeeks = weeks.length > 0
   const firstWeekToken = hasWeeks ? tokenOf(hitoForWeek(sp, weeks[0].n)) : ''
 
+  // Barra de % global (avance del plan). Se calcula server-side sobre el plan
+  // CRUDO (no sp): son solo conteos, no texto que vaya a innerHTML — no hace
+  // falta escapar. Oculta si el plan todavía no tiene ninguna tarea.
+  const progress = planProgress(plan)
+  const progressHtml = progress.total > 0
+    ? `\n      <div class="plan-progress reveal">
+        <div class="pp-track"><div class="pp-fill" style="width:${progress.pct}%"></div></div>
+        <div class="pp-label">${progress.pct}% · ${progress.done}/${progress.total} tareas</div>
+      </div>`
+    : ''
+
   const weekNavHtml = !hasWeeks
     ? ''
     : `
@@ -1169,7 +1210,7 @@ ${phasesHtml}
     <div class="sec-head reveal">
       <span class="eyebrow"><span class="dot"></span> ${sp.sections.weeks.eyebrow}</span>
       <h2>${sp.sections.weeks.title}</h2>
-      <p class="np">${sp.sections.weeks.lead}</p>
+      <p class="np">${sp.sections.weeks.lead}</p>${progressHtml}
     </div>
 ${weekNavHtml}  </div>
 </section>

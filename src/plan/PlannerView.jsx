@@ -17,7 +17,7 @@ import {
   newPlan, slugify, isSlugAllowed, SLUG_RE, SLUG_BLOCKLIST,
   resyncWeeks, weeksToLose, clampWeekCount, MAX_WEEKS,
   normalizeStages, hitoForWeek, validatePlan,
-  COLOR_RE,
+  COLOR_RE, uid, taskText, normalizeTasks,
 } from './planModel.js'
 import { buildPlanHTML, makePlanPdfDoc } from './planTemplate.js'
 
@@ -208,7 +208,12 @@ function WeekCard({ plan, index, set }) {
   const hito = hitoForWeek(plan, w.n)
   const chipColor = COLOR_RE.test(String(hito.color)) ? hito.color : 'var(--text-faint)'
   const up = (fields) => set((p) => ({ ...p, weeks: p.weeks.map((x, i) => (i === index ? { ...x, ...fields } : x)) }))
-  const upTasks = (fn) => set((p) => ({ ...p, weeks: p.weeks.map((x, i) => (i === index ? { ...x, tasks: fn(Array.isArray(x.tasks) ? [...x.tasks] : []) } : x)) }))
+  // Normaliza SIEMPRE antes de mutar (agregar/editar/borrar/reordenar). Así el
+  // primer edit de una semana vieja (tasks: string[]) la convierte a Task[]
+  // {id,text,done} preservando cualquier `done` que ya tuviera, y las ediciones
+  // siguientes ya trabajan sobre objetos con id estable (normalizeTasks es
+  // idempotente: si el id ya existe, lo conserva).
+  const upTasks = (fn) => set((p) => ({ ...p, weeks: p.weeks.map((x, i) => (i === index ? { ...x, tasks: fn(normalizeTasks(x.tasks)) } : x)) }))
   const deliver = w.deliver || { kind: 'doc', text: '' }
   return (
     <div className="pe-card" style={{ padding: 0 }}>
@@ -231,12 +236,15 @@ function WeekCard({ plan, index, set }) {
             {(w.tasks || []).length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>Sin items. Agregá el primero abajo.</div>}
             {(w.tasks || []).map((t, j) => (
               <div key={j} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <input className="input" value={t} onChange={(e) => upTasks((ts) => { ts[j] = e.target.value; return ts })} style={{ flex: 1 }} placeholder="Una tarea concreta de la semana" />
+                {/* El input SOLO edita texto: taskText() tolera tareas viejas (string) sin
+                    generar ids en el render. El `done` (si ya existe) se preserva porque
+                    upTasks() normaliza antes de mutar y acá solo tocamos `.text`. */}
+                <input className="input" value={taskText(t)} onChange={(e) => upTasks((ts) => { ts[j] = { ...ts[j], text: e.target.value }; return ts })} style={{ flex: 1 }} placeholder="Una tarea concreta de la semana" />
                 <RowTools i={j} len={(w.tasks || []).length} onUp={() => upTasks((ts) => moveItem(ts, j, -1))} onDown={() => upTasks((ts) => moveItem(ts, j, 1))} onRemove={() => upTasks((ts) => ts.filter((_, k) => k !== j))} removeTitle="Quitar item" />
               </div>
             ))}
           </div>
-          <button type="button" className="btn btn-sm" onClick={() => upTasks((ts) => [...ts, ''])} style={{ marginTop: 8 }}><I.plus width={13} height={13} /> Agregar item</button>
+          <button type="button" className="btn btn-sm" onClick={() => upTasks((ts) => [...ts, { id: uid(), text: '', done: false }])} style={{ marginTop: 8 }}><I.plus width={13} height={13} /> Agregar item</button>
 
           <div style={{ marginTop: 16 }}>
             <Field label="Entregable de la semana (opcional)"><input className="input" value={deliver.text ?? ''} onChange={(e) => up({ deliver: { kind: deliver.kind || 'doc', text: e.target.value } })} placeholder="Qué queda listo y visible al cierre de la semana." /></Field>
@@ -261,36 +269,17 @@ async function downloadPlanPDF(plan) {
 /* ============================================================================
    EDITOR — dos paneles
 ============================================================================ */
-function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, syncPublished }) {
+function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, publishSync, retryPublish }) {
   const frameRef = useRef(null)
   const set = (fn) => patchPlan(plan.id, fn)
 
-  // Auto-sync: una vez publicado, cada edición se sube sola a published_plans
-  // (debounce 800ms). El sitio en Vercel escucha ese cambio y se refresca solo,
-  // así que el cliente ve lo nuevo sin que nadie toque otro botón.
-  const [syncState, setSyncState] = useState('idle') // idle · saving · saved · error
-  const lastSyncRef = useRef(null)
-  useEffect(() => {
-    if (!plan.published) return
-    const snap = JSON.stringify(plan)
-    if (lastSyncRef.current === null) { lastSyncRef.current = snap; return } // al abrir un plan ya publicado no re-subimos
-    if (snap === lastSyncRef.current) return
-    setSyncState('saving')
-    const t = setTimeout(async () => {
-      const { error } = await syncPublished(plan)
-      if (error) { setSyncState('error'); return }
-      lastSyncRef.current = snap
-      setSyncState('saved')
-    }, 800)
-    return () => clearTimeout(t)
-  }, [plan, syncPublished])
-  const retrySync = async () => {
-    setSyncState('saving')
-    const { error } = await syncPublished(plan)
-    if (error) { setSyncState('error'); return }
-    lastSyncRef.current = JSON.stringify(plan)
-    setSyncState('saved')
-  }
+  // Auto-sync a published_plans: centralizado en el store (usePlans, InsightsApp.jsx
+  // §6b). Una vez publicado, cada patchPlan() que cambia el plan dispara el debounce
+  // SOLO dentro del store — acá solo leemos su estado para pintar el chip y pedimos
+  // un reintento si hace falta. `publishSync` puede no traer todavía una entrada para
+  // este plan (nunca sincronizó) → default 'idle'.
+  const syncState = (publishSync && publishSync[plan.id]) || 'idle' // idle · saving · saved · error
+  const retrySync = () => { if (typeof retryPublish === 'function') retryPublish(plan.id) }
 
   // Preview: memo + debounce 300ms + key estable (G3 / T12).
   const html = useMemo(() => {
@@ -495,7 +484,7 @@ function PlanList({ plans, projects, onEdit, onNew, onPublish, onDelete }) {
 ============================================================================ */
 export default function PlannerView() {
   usePlannerCss()
-  const { data, logActivity, supabase, plans, plansReady, createPlan: addPlan, patchPlan, deletePlan: deletePlanRow } = useApp()
+  const { data, logActivity, supabase, plans, plansReady, createPlan: addPlan, patchPlan, deletePlan: deletePlanRow, publishSync, retryPublish } = useApp()
   const [editingId, setEditingId] = useState(null)
   const [newOpen, setNewOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -516,15 +505,14 @@ export default function PlannerView() {
   }
 
   // Publicar (primera vez): sube el plan a published_plans y le guarda su dirección
-  // pública. A partir de ahí, el editor lo mantiene sincronizado solo (auto-sync).
+  // pública. A partir de ahí, el store (usePlans) lo mantiene sincronizado solo
+  // cada vez que patchPlan cambia un plan publicado (ver publishSync/retryPublish).
   const publishPlan = async (plan) => {
     const { error } = await upsertPublished(supabase, plan)
     if (error) { window.alert('No se pudo publicar el plan.\n\n' + error.message); return }
     patchPlan(plan.id, (p) => ({ ...p, published: true, publishedUrl: `${PLAN_SITE_BASE}/${p.slug}` }))
     if (logActivity) logActivity({ type: 'plan-publish', text: `publicó el plan "${plan.title}"` })
   }
-  // Sync silencioso (lo llama el editor en cada cambio de un plan ya publicado).
-  const syncPublished = (plan) => upsertPublished(supabase, plan)
 
   const deletePlan = async (plan) => {
     const ok = window.confirm(
@@ -560,7 +548,8 @@ export default function PlannerView() {
         patchPlan={patchPlan}
         onExit={() => setEditingId(null)}
         onPublish={publishPlan}
-        syncPublished={syncPublished}
+        publishSync={publishSync}
+        retryPublish={retryPublish}
       />
     )
   }

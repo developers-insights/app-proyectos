@@ -18,6 +18,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@supabase/supabase-js'
 import OnboardingLanding from './Onboarding'
 import { uid, I, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
+import {
+  taskText, taskDone, weekProgress, planProgress,
+  toggleTaskDone, setWeekAllDone, sprintForWeek, hitoForWeek,
+} from './plan/planModel.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
 
@@ -820,12 +824,33 @@ function useAppData() {
      de nuestra propia escritura y writes con updatedAt más viejo).
 ============================================================================ */
 const PLAN_SAVE_DEBOUNCE = 500
+const PLAN_PUBLISH_DEBOUNCE = 700   // sync a published_plans (el link público) tras marcar avance
+
+/**
+ * Sube (o pisa) el plan en published_plans — la tabla que lee el sitio público de
+ * planes en Vercel. Gemela de upsertPublished() de PlannerView.jsx, pero acá vive en
+ * el store para que marcar avance desde el PROYECTO (no solo editar en el planner)
+ * también refresque el link del cliente. Requiere sesión (RLS) → usa el cliente
+ * supabase autenticado del módulo. Idempotente: upsert por slug.
+ */
+async function upsertPublishedPlan(plan) {
+  if (!supabase) return { error: { message: 'No estás conectado a la base (modo local).' } }
+  return supabase
+    .from('published_plans')
+    .upsert({ slug: plan.slug, data: plan, updated_at: new Date().toISOString() }, { onConflict: 'slug' })
+}
+
 function usePlans() {
   const [plans, setPlansState] = useState([])
   const [ready, setReady] = useState(!cloudEnabled)
   const plansRef = useRef([])
   const timers = useRef(new Map())    // id -> timeout del guardado debounced
   const pending = useRef(new Map())   // id -> última versión aún NO confirmada en el server
+  // Auto-sync al link público (published_plans). Centralizado en el store para que
+  // marcar avance desde el proyecto refresque el link, no solo editar en el planner.
+  const [publishSync, setPublishSync] = useState({})   // { [id]: 'saving'|'saved'|'error' }
+  const pubTimers = useRef(new Map())   // id -> timeout del sync a published_plans
+  const pubLatest = useRef(new Map())   // id -> última versión del plan a sincronizar
 
   // Fuente de verdad = plansRef (siempre fresca, sin closures viejos). Cada
   // mutación recalcula desde el ref y empuja al estado de React.
@@ -855,6 +880,9 @@ function usePlans() {
     timers.current.forEach((t) => clearTimeout(t))
     timers.current.clear()
     pending.current.forEach((plan) => { writePlan(plan) })
+    // También vaciar el sync al link que haya quedado en debounce (avance sin perder).
+    pubTimers.current.forEach((t, id) => { clearTimeout(t); const p = pubLatest.current.get(id); if (p) upsertPublishedPlan(p) })
+    pubTimers.current.clear()
   }
 
   // Carga la lista desde el server sin pisar ediciones locales aún sin sincronizar.
@@ -930,6 +958,40 @@ function usePlans() {
     t.set(plan.id, setTimeout(() => { t.delete(plan.id); writePlan(plan) }, PLAN_SAVE_DEBOUNCE))
   }
 
+  // ── Sync al link público (published_plans) ────────────────────────────────
+  // Sube la última versión del plan. Si mientras subíamos llegó una edición más
+  // nueva, no marcamos 'saved' (la deja el run siguiente). Idempotente (upsert por slug).
+  const runPublishSync = async (id) => {
+    const plan = pubLatest.current.get(id)
+    if (!plan) return
+    setPublishSync((m) => ({ ...m, [id]: 'saving' }))
+    const { error } = await upsertPublishedPlan(plan)
+    if (error) { setPublishSync((m) => ({ ...m, [id]: 'error' })); return }
+    const latest = pubLatest.current.get(id)
+    if (latest && latest.updatedAt !== plan.updatedAt) return   // hay una versión más nueva en camino
+    setPublishSync((m) => ({ ...m, [id]: 'saved' }))
+  }
+
+  // Programa el sync al link (debounce ~700ms por id). Solo planes publicados con slug.
+  const schedulePublishSync = (plan) => {
+    if (!cloudEnabled || !plan || !plan.published || !plan.slug) return
+    pubLatest.current.set(plan.id, plan)
+    setPublishSync((m) => (m[plan.id] === 'saving' ? m : { ...m, [plan.id]: 'saving' }))
+    const t = pubTimers.current
+    clearTimeout(t.get(plan.id))
+    t.set(plan.id, setTimeout(() => { t.delete(plan.id); runPublishSync(plan.id) }, PLAN_PUBLISH_DEBOUNCE))
+  }
+
+  // Reintento manual (chip del editor). Sube ya la última versión conocida del plan.
+  const retryPublish = (id) => {
+    if (!pubLatest.current.get(id)) {
+      const p = plansRef.current.find((x) => x.id === id)
+      if (p) pubLatest.current.set(id, p)
+    }
+    clearTimeout(pubTimers.current.get(id)); pubTimers.current.delete(id)
+    runPublishSync(id)
+  }
+
   // Crear: escritura inmediata (sin debounce) para que exista en el server ya.
   // Si falla (ej. sin red), queda como pendiente y se reintenta.
   const createPlan = async (plan) => {
@@ -950,7 +1012,8 @@ function usePlans() {
       saved = { ...fn(p), updatedAt: new Date().toISOString() }
       return saved
     }))
-    if (saved) scheduleSave(saved)
+    // Guardado a la tabla `plans` (siempre) + sync al link público (si está publicado).
+    if (saved) { scheduleSave(saved); schedulePublishSync(saved) }
     return saved
   }
 
@@ -959,13 +1022,15 @@ function usePlans() {
   const deletePlan = async (id) => {
     clearTimeout(timers.current.get(id)); timers.current.delete(id)
     pending.current.delete(id)   // que un flush no reescriba un plan recién borrado
+    clearTimeout(pubTimers.current.get(id)); pubTimers.current.delete(id)   // ni re-suba su link
+    pubLatest.current.delete(id)
     applyLocal((cur) => cur.filter((p) => p.id !== id))
     if (!cloudEnabled) return { error: null }
     const { error } = await supabase.from('plans').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     return { error }
   }
 
-  return { plans, plansReady: ready, createPlan, patchPlan, deletePlan }
+  return { plans, plansReady: ready, createPlan, patchPlan, deletePlan, publishSync, retryPublish }
 }
 
 /* ============================================================================
@@ -2004,7 +2069,7 @@ function ImportSprintsModal({ open, team, defaultDevId, hasSprints, onClose, onI
   )
 }
 
-function SprintBoard({ project, patch, onOpenSprint }) {
+function SprintBoard({ project, patch, onOpenSprint, linkedPlan, patchPlan }) {
   const { data, logActivity } = useApp()
   const [boardView, setBoardView] = useState('table')
   const [dragId, setDragId] = useState(null)
@@ -2021,6 +2086,17 @@ function SprintBoard({ project, patch, onOpenSprint }) {
     const prev = sprints.find((s) => s.id === sid)
     patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
     if (fields.status && normSprint(fields.status) === 'terminado' && prev && normSprint(prev.status) !== 'terminado' && logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${prev.name}" de ${project.name}` })
+    // Sync sprint→plan: entrar/salir de "terminado" marca/desmarca toda la semana apareada.
+    // Usa setWeekAllDone (no toggle) → idempotente, sin loop con el toggle de tareas.
+    if (fields.status && linkedPlan && patchPlan) {
+      const idx = sprints.findIndex((s) => s.id === sid)
+      const weekN = (sprints[idx] && sprints[idx].week) || (idx + 1)
+      const nextDone = normSprint(fields.status) === 'terminado'
+      const prevDone = normSprint(prev && prev.status) === 'terminado'
+      if (nextDone !== prevDone) {
+        patchPlan(linkedPlan.id, (p) => ({ ...p, weeks: (p.weeks || []).map((w) => w.n === weekN ? setWeekAllDone(w, nextDone) : w) }))
+      }
+    }
   }
   const addSprint = () => { patch((p) => ({ ...p, sprints: [...p.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', week: (p.sprints.length + 1), estimatedDate: NOW.toISOString(), actualDate: null, assigneeIds: devId ? [devId] : [], description: '', comments: [] }] })); logActivity && logActivity({ type: 'sprint-add', text: `agregó un sprint a ${project.name}` }) }
 
@@ -3608,6 +3684,206 @@ function ShareModal({ open, project, onClose, patch }) {
   )
 }
 
+/* ============================================================================
+   15b · AVANCE DEL PLAN — acordeón de semanas con tachado de tareas
+   El equipo tacha tareas semana a semana; el % sube y el cliente lo ve en su link
+   público en vivo (patchPlan → sync a published_plans en el store). Vínculo
+   bidireccional semana↔sprint: completar una semana termina su sprint, y viceversa.
+============================================================================ */
+
+/* Checkbox custom con check animado (spring). Naranja/verde según el tema de la app. */
+function PlanTaskCheck({ done }) {
+  return (
+    <span style={{
+      width: 20, height: 20, borderRadius: 6, flexShrink: 0,
+      border: '1.5px solid ' + (done ? 'var(--green)' : 'var(--border-strong)'),
+      background: done ? 'var(--green)' : 'transparent',
+      display: 'grid', placeItems: 'center',
+      transition: 'background .2s ease, border-color .2s ease',
+    }}>
+      <motion.span initial={false} animate={{ scale: done ? 1 : 0, opacity: done ? 1 : 0 }}
+        transition={{ type: 'spring', stiffness: 520, damping: 24 }} style={{ display: 'grid', placeItems: 'center' }}>
+        <I.check width={13} height={13} style={{ color: '#0A0A0A' }} />
+      </motion.span>
+    </span>
+  )
+}
+
+/* Una semana del acordeón: cabecera colapsable + lista de tareas al expandir. */
+function PlanWeekRow({ plan, week, sprint, onToggleTask }) {
+  const [open, setOpen] = useState(false)
+  const prog = weekProgress(week)
+  const complete = prog.total > 0 && prog.pct === 100
+  const hito = hitoForWeek(plan, week.n)
+  const tasks = Array.isArray(week.tasks) ? week.tasks : []
+  const sMeta = sprint ? sprintMeta(sprint.status) : null
+  return (
+    <div style={{
+      border: '1px solid ' + (complete ? 'var(--green-soft)' : 'var(--border)'),
+      borderRadius: 12, marginBottom: 8, overflow: 'hidden',
+      background: complete ? 'var(--green-soft)' : 'var(--card)',
+      transition: 'background .3s ease, border-color .3s ease',
+    }}>
+      <button onClick={() => setOpen((o) => !o)} className="row-hover" style={{
+        display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '11px 14px', cursor: 'pointer',
+      }}>
+        <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2, ease: 'easeOut' }}
+          style={{ display: 'grid', placeItems: 'center', color: complete ? 'var(--green)' : 'var(--text-faint)', flexShrink: 0 }}>
+          <I.chevR width={16} height={16} />
+        </motion.span>
+        <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: complete ? 'var(--green)' : 'var(--text-dim)', minWidth: 52, letterSpacing: '.03em' }}>
+          SEM {String(week.n).padStart(2, '0')}
+        </span>
+        <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {week.title || <span style={{ color: 'var(--text-faint)', fontWeight: 500 }}>Sin título</span>}
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 99, background: hito.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {hito.label}{hito.title ? ` · ${hito.title}` : ''}
+            </span>
+          </span>
+        </span>
+        {sMeta && (
+          <span className="tag hide-mobile" style={{
+            color: sMeta.tone === 'neutral' ? 'var(--text-dim)' : `var(--${sMeta.tone})`,
+            background: sMeta.tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${sMeta.tone}-soft)`,
+          }}>{sMeta.label}</span>
+        )}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+          <span style={{ width: 74, height: 6, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}>
+            <motion.span initial={false} animate={{ width: `${prog.pct}%` }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              style={{ display: 'block', height: '100%', background: complete ? 'var(--green)' : 'var(--accent)', borderRadius: 999 }} />
+          </span>
+          <span className="mono" style={{ fontSize: 11.5, color: complete ? 'var(--green)' : 'var(--text-dim)', minWidth: 32, textAlign: 'right' }}>
+            {prog.done}/{prog.total}
+          </span>
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div key="body" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }} style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '5px 8px 9px', borderTop: '1px solid var(--border)' }}>
+              {tasks.length === 0 && (
+                <div style={{ fontSize: 12.5, color: 'var(--text-faint)', padding: '10px 12px' }}>Esta semana no tiene tareas cargadas.</div>
+              )}
+              {tasks.map((t, i) => {
+                const done = taskDone(t)
+                const text = taskText(t)
+                return (
+                  <button key={i} onClick={() => onToggleTask(week.n, i)} className="row-hover" style={{
+                    display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
+                  }}>
+                    <PlanTaskCheck done={done} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
+                        <span style={{ fontSize: 13.5, lineHeight: 1.45, color: done ? 'var(--text-faint)' : 'var(--text)', transition: 'color .25s ease' }}>
+                          {text || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>Tarea sin texto</span>}
+                        </span>
+                        <motion.span initial={false} animate={{ scaleX: done ? 1 : 0 }} transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                          style={{ position: 'absolute', left: 0, right: 0, top: '52%', height: 1.5, background: 'var(--text-faint)', transformOrigin: 'left', borderRadius: 2, pointerEvents: 'none' }} />
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+/* Sección "Avance del plan": barra global + acordeón de TODAS las semanas del plan
+   asociado. Tachar tareas dispara el sync plan→sprint (idempotente, plano). */
+function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate }) {
+  const { logActivity } = useApp()
+
+  if (!linkedPlan) {
+    return (
+      <section style={{ marginBottom: 26 }}>
+        <h2 style={{ fontSize: 19, marginBottom: 12 }}>Avance del plan</h2>
+        <div className="surface" style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 5 }}>Asociá un plan para trackear el avance del cliente</div>
+            <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.55 }}>
+              Vinculá un plan del Planificador y vas a poder tachar tareas semana a semana. El cliente ve el avance en vivo en su link público.
+            </div>
+          </div>
+          <button className="btn btn-accent" onClick={onAssociate}><I.calendar width={15} height={15} /> Asociar un plan</button>
+        </div>
+      </section>
+    )
+  }
+
+  const weeks = [...(linkedPlan.weeks || [])].sort((a, b) => (a.n || 0) - (b.n || 0))
+  const prog = planProgress(linkedPlan)
+  const complete = prog.total > 0 && prog.pct === 100
+
+  // Tachar/destachar una tarea → guarda el plan (síncrono) y sincroniza el sprint apareado.
+  const onToggleTask = (weekN, taskIndex) => {
+    const updated = patchPlan(linkedPlan.id, (p) => ({
+      ...p,
+      weeks: (p.weeks || []).map((w) => (w.n === weekN ? toggleTaskDone(w, taskIndex) : w)),
+    }))
+    if (!updated) return
+    const w = (updated.weeks || []).find((x) => x.n === weekN)
+    const prg = weekProgress(w)
+    const sp = sprintForWeek(project.sprints, weekN)
+    if (sp) {
+      const st = normSprint(sp.status)
+      if (prg.total > 0 && prg.done === prg.total && st !== 'terminado') {
+        patchSprint(sp.id, { status: 'terminado' })
+        if (logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${sp.name}" de ${project.name}` })
+      } else if (prg.done < prg.total && st === 'terminado') {
+        patchSprint(sp.id, { status: 'en proceso' })
+      }
+    }
+  }
+
+  return (
+    <section style={{ marginBottom: 26 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
+          <h2 style={{ fontSize: 19 }}>Avance del plan</h2>
+          <span style={{ fontSize: 12.5, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkedPlan.title || 'Plan'}</span>
+        </div>
+        {linkedPlan.publishedUrl && (
+          <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ color: 'var(--accent)' }}>
+            <I.ext width={14} height={14} /> Ver link del cliente
+          </a>
+        )}
+      </div>
+
+      <div className="surface" style={{ padding: '16px 18px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11, gap: 12 }}>
+          <span style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 600 }}>Progreso general</span>
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span className="mono" style={{ fontSize: 23, fontWeight: 700, color: complete ? 'var(--green)' : 'var(--accent)', letterSpacing: '-0.02em' }}>{prog.pct}%</span>
+            <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>{prog.done}/{prog.total} tareas</span>
+          </span>
+        </div>
+        <div style={{ height: 10, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          <motion.div initial={false} animate={{ width: `${prog.pct}%` }} transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+            style={{ height: '100%', background: complete ? 'var(--green)' : 'linear-gradient(90deg, var(--accent), #FB923C)', borderRadius: 999 }} />
+        </div>
+      </div>
+
+      <div>
+        {weeks.length === 0 && (
+          <div className="surface" style={{ padding: 16, color: 'var(--text-faint)', fontSize: 13 }}>Este plan todavía no tiene semanas.</div>
+        )}
+        {weeks.map((w) => (
+          <PlanWeekRow key={w.n} plan={linkedPlan} week={w} sprint={sprintForWeek(project.sprints, w.n)} onToggleTask={onToggleTask} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function ProjectDetail({ projectId, onBack }) {
   const { data, setData, logActivity, plans, patchPlan } = useApp()
   const project = data.projects.find((p) => p.id === projectId)
@@ -3637,6 +3913,21 @@ function ProjectDetail({ projectId, onBack }) {
   const setPlanUrl = (url) => { if (project.planId) patchPlan(project.planId, (pl) => ({ ...pl, publishedUrl: url })) }
   const saveProject = (draft) => patch((p) => ({ ...draft, chats: p.chats }))
   const patchSprint = (sid, fields) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
+  // Igual que patchSprint pero, si el estado entra/sale de "terminado", sincroniza la
+  // semana apareada del plan (mismo criterio que SprintBoard). Lo usa el modal de detalle.
+  const patchSprintSynced = (sid, fields) => {
+    const prev = project.sprints.find((s) => s.id === sid)
+    patchSprint(sid, fields)
+    if (fields.status && linkedPlan && patchPlan) {
+      const idx = project.sprints.findIndex((s) => s.id === sid)
+      const weekN = (project.sprints[idx] && project.sprints[idx].week) || (idx + 1)
+      const nextDone = normSprint(fields.status) === 'terminado'
+      const prevDone = normSprint(prev && prev.status) === 'terminado'
+      if (nextDone !== prevDone) {
+        patchPlan(linkedPlan.id, (p) => ({ ...p, weeks: (p.weeks || []).map((w) => w.n === weekN ? setWeekAllDone(w, nextDone) : w) }))
+      }
+    }
+  }
   const openSprint = project.sprints.find((s) => s.id === openSprintId)
   // tareas del equipo (vienen de la sección Tareas, filtradas por proyecto) y tareas/dependencias del cliente
   const userOf = (id) => (data.team || []).find((u) => u.id === id)
@@ -3694,7 +3985,10 @@ function ProjectDetail({ projectId, onBack }) {
         </motion.div>
 
         {/* SPRINTS — tabla (drag para reordenar) o kanban */}
-        <SprintBoard project={project} patch={patch} onOpenSprint={(id) => setOpenSprintId(id)} />
+        <SprintBoard project={project} patch={patch} onOpenSprint={(id) => setOpenSprintId(id)} linkedPlan={linkedPlan} patchPlan={patchPlan} />
+
+        {/* AVANCE DEL PLAN — acordeón de semanas: tachado + % en vivo para el cliente */}
+        <PlanProgress project={project} linkedPlan={linkedPlan} patchPlan={patchPlan} patchSprint={patchSprint} onAssociate={() => setPlanOpen(true)} />
 
         {/* TAREAS DEL EQUIPO (sincronizadas con Tareas) + DEL CLIENTE (dependencias) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 26 }}>
@@ -3759,7 +4053,7 @@ function ProjectDetail({ projectId, onBack }) {
       </Modal>
 
       <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} onDelete={(id) => { setData((dd) => ({ ...dd, projects: dd.projects.filter((p) => p.id !== id) })); onBack() }} />
-      <SprintDetailModal open={!!openSprint} sprint={openSprint} team={data.team} defaultId={project.assignments?.dev?.userId || null} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprint(openSprintId, fields)} />
+      <SprintDetailModal open={!!openSprint} sprint={openSprint} team={data.team} defaultId={project.assignments?.dev?.userId || null} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprintSynced(openSprintId, fields)} />
       <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
       <Modal open={driveOpen} onClose={() => setDriveOpen(false)} title="Drive del proyecto" sub={project.name} width={440}>
@@ -4614,7 +4908,7 @@ function EditorView() {
       <iframe
         src={src}
         title="Editor de video"
-        allow="clipboard-write; fullscreen"
+        allow="clipboard-write; fullscreen; webgpu"
         style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
       />
     </div>
@@ -4858,7 +5152,7 @@ function CenterScreen({ children }) {
 /* the authenticated app */
 function AppShell({ session, onLogout }) {
   const [data, setData, sync] = useAppData()
-  const planStore = usePlans()   // { plans, plansReady, createPlan, patchPlan, deletePlan }
+  const planStore = usePlans()   // { plans, plansReady, createPlan, patchPlan, deletePlan, publishSync, retryPublish }
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [route, setRoute] = useState({ view: 'projects' })
   const [collapsed, setCollapsed] = useState(false)
@@ -4909,6 +5203,14 @@ function AppShell({ session, onLogout }) {
   const [pmAlertSeen, setPmAlertSeen] = useState(false)
   const pmProjects = (data.projects || []).filter((p) => myId && p.assignments?.pm?.userId === myId && p.status === 'active')
 
+  // El editor de video vive en un iframe cuyo estado (clips, cortes, subtítulos,
+  // transcripción Whisper) existe solo en la memoria de ese documento: desmontarlo
+  // al cambiar de pestaña lo recarga y pierde todo. Una vez abierto, queda montado
+  // fuera del switch de vistas y se oculta con display:none. El ref evita pagar la
+  // carga del bundle del editor si el usuario nunca abre esa pestaña.
+  const editorEverOpenedRef = useRef(route.view === 'editor')
+  if (route.view === 'editor') editorEverOpenedRef.current = true
+
   return (
     <AppCtx.Provider value={{ data, setData, logActivity, supabase, ...planStore }}>
       <div className="app-shell">
@@ -4926,9 +5228,14 @@ function AppShell({ session, onLogout }) {
               {route.view === 'assistant' && <AssistantView />}
               {route.view === 'planner' && <PlannerView />}
               {route.view === 'bot' && <BotView />}
-              {route.view === 'editor' && <EditorView />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
             </motion.div>
+            {/* el iframe del editor NO se desmonta al navegar: solo se oculta (ver editorEverOpenedRef) */}
+            {editorEverOpenedRef.current && (
+              <div style={{ position: 'absolute', inset: 0, display: route.view === 'editor' ? 'block' : 'none' }}>
+                <EditorView />
+              </div>
+            )}
           </main>
         </div>
         <Settings open={settings} onClose={() => setSettings(false)} />

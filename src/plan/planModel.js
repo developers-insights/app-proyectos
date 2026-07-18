@@ -184,6 +184,74 @@ export function weekHasContent(w) {
   return hasTitle || hasTasks
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tareas de semana — avance del plan (tachado + % vinculado a sprints)
+//
+// `week.tasks` históricamente es `string[]`. Pasa a `{id,text,done}[]`, con
+// retrocompatibilidad total: en disco puede seguir habiendo strings de planes
+// viejos. Lectura (render) NUNCA genera ids — usa taskText/taskDone, que
+// aceptan ambas formas. Escritura (toggle/editor/migración) SIEMPRE normaliza
+// con normalizeTask/normalizeTasks, que sí generan id vía uid().
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Texto de una tarea, venga como string vieja o como Task. Nunca genera id. */
+export function taskText(t) { return typeof t === 'string' ? t : (t && t.text) || '' }
+
+/** ¿Está tachada? Un string viejo nunca lo está. Nunca genera id. */
+export function taskDone(t) { return typeof t === 'string' ? false : !!(t && t.done) }
+
+/** Normaliza una TaskLike a Task, generando id si falta (o si viene de un string viejo). */
+export function normalizeTask(t) {
+  if (t && typeof t === 'object') return { id: t.id || uid(), text: t.text || '', done: !!t.done }
+  return { id: uid(), text: String(t == null ? '' : t), done: false }
+}
+
+/** normalizeTask aplicado a todo `week.tasks`. */
+export function normalizeTasks(tasks) { return (Array.isArray(tasks) ? tasks : []).map(normalizeTask) }
+
+/** Avance de una semana: cuántas tareas están done sobre el total. pct entero 0..100 (0 si total===0). */
+export function weekProgress(week) {
+  const ts = Array.isArray(week && week.tasks) ? week.tasks : []
+  const total = ts.length
+  const done = ts.filter(taskDone).length
+  return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
+}
+
+/** Avance de todo el plan: suma de weekProgress() de cada semana. */
+export function planProgress(plan) {
+  const weeks = Array.isArray(plan && plan.weeks) ? plan.weeks : []
+  let done = 0, total = 0
+  for (const w of weeks) { const p = weekProgress(w); done += p.done; total += p.total }
+  return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
+}
+
+/**
+ * Togglea el done de la tarea en `index` (índice del render, referencia estable
+ * del click en el acordeón). Devuelve una NUEVA week con `tasks` normalizadas
+ * (inmutable: no muta `week` ni sus tasks).
+ */
+export function toggleTaskDone(week, index) {
+  const tasks = normalizeTasks(week && week.tasks)
+  if (index < 0 || index >= tasks.length) return { ...week, tasks }
+  tasks[index] = { ...tasks[index], done: !tasks[index].done }
+  return { ...week, tasks }
+}
+
+/** Marca TODAS las tareas de una semana como done (o no-done). Misma inmutabilidad que toggleTaskDone. */
+export function setWeekAllDone(week, done) {
+  const tasks = normalizeTasks(week && week.tasks).map((t) => ({ ...t, done: !!done }))
+  return { ...week, tasks }
+}
+
+/**
+ * El sprint apareado con la semana `n`: por `sprint.week`, o por su posición
+ * (i+1) como fallback. Primer match. Pura — `sprints` es `project.sprints`.
+ */
+export function sprintForWeek(sprints, n) {
+  const arr = Array.isArray(sprints) ? sprints : []
+  return arr.find((s, i) => (s.week || (i + 1)) === n) || null
+}
+
 /** Tope duro de semanas. Ningún plan real se acerca; existe para acotar el input. */
 export const MAX_WEEKS = 200
 
