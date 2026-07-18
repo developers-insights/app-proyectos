@@ -195,6 +195,18 @@ export default function BotView() {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'wa_status' }, (payload) => {
         if (payload.new && payload.new.id === 'main') setStatus(payload.new)
       })
+      /* grupo nuevo (el bot lo detecta apenas lo agregan, sin esperar un mensaje) */
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_groups' }, (payload) => {
+        const g = payload.new
+        if (!g) return
+        setGroups((gs) => (gs.some((x) => x.group_jid === g.group_jid) ? gs : [...gs, g]))
+      })
+      /* mapeo/activo/umbral tocado por otro usuario, o el bot completó el auto-match */
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'wa_groups' }, (payload) => {
+        const g = payload.new
+        if (!g) return
+        setGroups((gs) => gs.map((x) => (x.group_jid === g.group_jid ? g : x)))
+      })
       .subscribe()
     return () => { alive = false; supabase.removeChannel(channel) }
   }, [supabase])
