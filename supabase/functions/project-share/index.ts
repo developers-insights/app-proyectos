@@ -56,7 +56,14 @@ Deno.serve(async (req) => {
       .map((c: any) => ({ type: 'llamada', date: c.date, note: c.summary || '', link: c.fathomUrl || '', photos: [], author: c.advisor || '' }))
     const activity = [...manual, ...projCalls].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
-    const teamTasks = (st.tasks || []).filter((t: any) => t.projectId === project.id)
+    // Las tareas se movieron de app_state a su propia tabla `tasks` (una fila por
+    // tarea, anti-clobber). Se leen desde ahí (service_role, sin bloqueo de RLS),
+    // con fallback a cualquier tarea legacy que aún viva embebida en app_state.
+    const { data: taskRows } = await supa.from('tasks').select('data').is('deleted_at', null)
+    const tasksAll: any[] = (taskRows || []).map((r: any) => r.data).filter(Boolean)
+    const seen = new Set(tasksAll.map((t: any) => t.id))
+    for (const lt of (st.tasks || [])) { if (lt && !seen.has(lt.id)) tasksAll.push(lt) }
+    const teamTasks = tasksAll.filter((t: any) => t.projectId === project.id)
       .map((t: any) => ({ name: t.name, status: norm(t.status), assignee: nameOf(t.assigneeId) }))
     const clientTasks = (project.clientTasks || []).map((c: any) => ({ text: c.text, done: !!c.done }))
 

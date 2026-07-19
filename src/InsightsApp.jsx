@@ -645,8 +645,11 @@ function migrate(state) {
   if (!state.calls) state.calls = seedCalls()
   state.calls = state.calls.map((c) => ({ ...c, priority: c.priority || 'normal', type: c.type || 'soporte', summary: c.summary || '', transcript: c.transcript || '' }))
   if (!state.assistantChats) state.assistantChats = []
-  if (!state.tasks) state.tasks = seedTasks()
-  state.tasks = state.tasks.map((t) => ({ ...t, priority: t.priority || 'normal', assigneeId: REMOVED_MEMBER_IDS.includes(t.assigneeId) ? '' : t.assigneeId }))
+  // Las tareas ya NO viven dentro de app_state (documento monolítico,
+  // último-en-escribir-gana). Ahora cada tarea es su propia fila en la tabla
+  // `tasks` (ver useTasks). Las sacamos del blob para que ninguna pestaña con
+  // estado viejo pueda pisarlas ni borrarlas al guardar app_state.
+  if (state.tasks) delete state.tasks
   if (!state.activity) state.activity = []
   // actividad sin autor (actorId vacío o de un miembro que ya no está) → atribuir a Nacho Cachaza
   const _nacho = state.team.find((u) => /nacho/i.test(u.name || '') || String(u.email || '').toLowerCase() === 'nachocachaza@insightsapps.tech')
@@ -792,15 +795,20 @@ function useAppData() {
 
   // persist: localStorage always + cloud (debounced) when something actually changed
   useEffect(() => {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(data)) } catch (e) { /* quota */ }
+    // Defensa en profundidad: las tareas viven en su propia tabla (ver useTasks)
+    // y NUNCA deben volver a persistirse dentro del documento monolítico. Aunque
+    // migrate() ya las saca al cargar, las stripeamos también al guardar para que
+    // ningún camino (código viejo, eco de otra pestaña) pueda reintroducirlas.
+    const clean = ('tasks' in data) ? (() => { const c = { ...data }; delete c.tasks; return c })() : data
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(clean)) } catch (e) { /* quota */ }
     if (!cloudEnabled || !loaded.current) return
-    const js = JSON.stringify(data)
+    const js = JSON.stringify(clean)
     if (js === lastSaved.current) return
     setSync('saving')
     clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       try {
-        const { error } = await supabase.from('app_state').upsert({ id: CLOUD_ROW, data, updated_at: new Date().toISOString() })
+        const { error } = await supabase.from('app_state').upsert({ id: CLOUD_ROW, data: clean, updated_at: new Date().toISOString() })
         if (error) throw error
         lastSaved.current = js
         setSync('saved')
@@ -1031,6 +1039,175 @@ function usePlans() {
   }
 
   return { plans, plansReady: ready, createPlan, patchPlan, deletePlan, publishSync, retryPublish }
+}
+
+/* ============================================================================
+   6c · TASKS STORE — cada tarea es una fila en la tabla `tasks` de Supabase.
+   Mismo blindaje que `plans` (6b): las tareas ya NO viven dentro de app_state
+   (documento monolítico, último-en-escribir-gana), así una pestaña con estado
+   viejo NO puede pisar ni borrar las tareas que otro subió y ella nunca vio.
+   Cada mutación toca UNA fila; realtime por tabla + soft-delete + merge por
+   updatedAt. No importa si otra pestaña quedó abierta con estado viejo.
+============================================================================ */
+const TASK_SAVE_DEBOUNCE = 500
+
+// Normaliza una tarea (server/seed/realtime): default de prioridad y baja de
+// asignados que ya no están en el equipo. Espeja lo que hacía migrate() cuando
+// las tareas vivían en el blob.
+function normalizeTask(t) {
+  return {
+    ...t,
+    priority: t.priority || 'normal',
+    assigneeId: REMOVED_MEMBER_IDS.includes(t.assigneeId) ? '' : (t.assigneeId || ''),
+    comments: t.comments || [],
+  }
+}
+
+function useTasks() {
+  const [tasks, setTasksState] = useState(() => (cloudEnabled ? [] : seedTasks().map(normalizeTask)))
+  const [ready, setReady] = useState(!cloudEnabled)
+  const tasksRef = useRef(tasks)
+  const timers = useRef(new Map())    // id -> timeout del guardado debounced
+  const pending = useRef(new Map())   // id -> última versión aún NO confirmada en el server
+
+  // Fuente de verdad = tasksRef (siempre fresca, sin closures viejos).
+  const applyLocal = (fn) => {
+    const next = fn(tasksRef.current)
+    tasksRef.current = next
+    setTasksState(next)
+  }
+
+  // Escritura real de una fila. Al confirmar, saca el pendiente si sigue siendo
+  // esta misma versión (si el usuario editó más, queda un pendiente nuevo).
+  const writeTask = async (task) => {
+    if (!cloudEnabled) return
+    try {
+      await supabase.from('tasks').upsert(
+        { id: task.id, data: task, updated_at: task.updatedAt || new Date().toISOString() },
+        { onConflict: 'id' },
+      )
+      const still = pending.current.get(task.id)
+      if (still && still.updatedAt === task.updatedAt) pending.current.delete(task.id)
+    } catch (e) { /* queda pendiente; se reintenta en la próxima edición o en flush() */ }
+  }
+
+  // Vacía a disco lo que quedó en debounce. Se llama al ocultar/cerrar la
+  // pestaña para no perder la última edición dentro de la ventana de debounce.
+  const flush = () => {
+    timers.current.forEach((t) => clearTimeout(t))
+    timers.current.clear()
+    pending.current.forEach((task) => { writeTask(task) })
+  }
+
+  // Carga la lista del server sin pisar ediciones locales aún sin sincronizar.
+  const loadTasks = async () => {
+    if (!cloudEnabled) return
+    const { data: rows, error } = await supabase
+      .from('tasks').select('data').is('deleted_at', null)
+      .order('updated_at', { ascending: false })
+    if (error) return
+    applyLocal(() => {
+      const server = (rows || []).map((r) => normalizeTask(r.data))
+      if (pending.current.size === 0) return server
+      const byId = new Map(server.map((t) => [t.id, t]))
+      pending.current.forEach((local, id) => {
+        const s = byId.get(id)
+        if (!s || (local.updatedAt || '') >= (s.updatedAt || '')) byId.set(id, local)
+      })
+      return [...byId.values()].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+    })
+  }
+
+  useEffect(() => {
+    if (!cloudEnabled) return
+    let alive = true
+    ;(async () => { try { await loadTasks() } finally { if (alive) setReady(true) } })()
+
+    let subscribedOnce = false
+    const channel = supabase
+      .channel('tasks_all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
+        const row = payload.new
+        if (payload.eventType === 'DELETE') {
+          const goneId = payload.old && payload.old.id
+          applyLocal((cur) => cur.filter((t) => t.id !== goneId)); return
+        }
+        if (!row) return
+        if (row.deleted_at) { applyLocal((cur) => cur.filter((t) => t.id !== row.id)); return }
+        const incoming = row.data
+        if (!incoming || !incoming.id) return
+        applyLocal((cur) => {
+          const idx = cur.findIndex((t) => t.id === incoming.id)
+          const norm = normalizeTask(incoming)
+          if (idx === -1) return [norm, ...cur]
+          const localT = cur[idx].updatedAt || ''
+          const remoteT = incoming.updatedAt || ''
+          if (remoteT <= localT) return cur   // nuestro eco o una versión más vieja → ignorar
+          const nx = [...cur]; nx[idx] = norm; return nx
+        })
+      })
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return
+        // Reconexión del realtime: pudimos habernos perdido eventos → resync.
+        if (subscribedOnce) loadTasks()
+        subscribedOnce = true
+      })
+
+    return () => { alive = false; flush(); supabase.removeChannel(channel) }
+  }, [])
+
+  // Al ocultar/cerrar la pestaña, no esperar el debounce: guardar ya.
+  useEffect(() => {
+    if (!cloudEnabled) return
+    const onHide = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onHide)
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onHide) }
+  }, [])
+
+  const scheduleSave = (task) => {
+    if (!cloudEnabled) return
+    pending.current.set(task.id, task)
+    const t = timers.current
+    clearTimeout(t.get(task.id))
+    t.set(task.id, setTimeout(() => { t.delete(task.id); writeTask(task) }, TASK_SAVE_DEBOUNCE))
+  }
+
+  // Crear: escritura inmediata (sin debounce) para que exista en el server ya.
+  // Si falla (ej. sin red), queda pendiente y se reintenta.
+  const createTask = async (task) => {
+    const t = { ...normalizeTask(task), updatedAt: new Date().toISOString() }
+    applyLocal((cur) => [t, ...cur])
+    if (!cloudEnabled) return { error: null }
+    const { error } = await supabase.from('tasks').insert({ id: t.id, data: t, updated_at: t.updatedAt })
+    if (error) scheduleSave(t)
+    return { error }
+  }
+
+  // Editar: patch por id, optimista + guardado debounced de esa sola fila.
+  const patchTask = (id, fn) => {
+    let saved = null
+    applyLocal((cur) => cur.map((t) => {
+      if (t.id !== id) return t
+      saved = { ...fn(t), updatedAt: new Date().toISOString() }
+      return saved
+    }))
+    if (saved) scheduleSave(saved)
+    return saved
+  }
+
+  // Borrar: soft-delete (tombstone). El upsert de una edición vieja no toca
+  // deleted_at, así que una pestaña vieja no puede resucitar una tarea borrada.
+  const deleteTask = async (id) => {
+    clearTimeout(timers.current.get(id)); timers.current.delete(id)
+    pending.current.delete(id)   // que un flush no reescriba una tarea recién borrada
+    applyLocal((cur) => cur.filter((t) => t.id !== id))
+    if (!cloudEnabled) return { error: null }
+    const { error } = await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    return { error }
+  }
+
+  return { tasks, tasksReady: ready, createTask, patchTask, deleteTask }
 }
 
 /* ============================================================================
@@ -3885,7 +4062,7 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
 }
 
 function ProjectDetail({ projectId, onBack }) {
-  const { data, setData, logActivity, plans, patchPlan } = useApp()
+  const { data, setData, logActivity, plans, patchPlan, createTask, patchTask } = useApp()
   const project = data.projects.find((p) => p.id === projectId)
   const client = data.clients.find((c) => c.id === project?.clientId)
   const gh = useGithubCommit(project?.githubRepo)
@@ -3933,8 +4110,8 @@ function ProjectDetail({ projectId, onBack }) {
   const userOf = (id) => (data.team || []).find((u) => u.id === id)
   const teamTasks = (data.tasks || []).filter((t) => t.projectId === projectId)
   const clientTasks = project.clientTasks || []
-  const addTeamTask = (name) => setData((d) => ({ ...d, tasks: [{ id: uid(), name, projectId, scope: 'cliente', assigneeId: project.assignments?.dev?.userId || '', priority: 'normal', status: 'pendiente', notes: '', comments: [] }, ...(d.tasks || [])] }))
-  const setTeamStatus = (id, status) => setData((d) => ({ ...d, tasks: d.tasks.map((t) => (t.id === id ? { ...t, status } : t)) }))
+  const addTeamTask = (name) => createTask({ id: uid(), name, projectId, scope: 'cliente', assigneeId: project.assignments?.dev?.userId || '', priority: 'normal', status: 'pendiente', notes: '', comments: [] })
+  const setTeamStatus = (id, status) => patchTask(id, (t) => ({ ...t, status }))
   const addClientTask = (text) => patch((p) => ({ ...p, clientTasks: [...(p.clientTasks || []), { id: uid(), text, done: false, date: new Date().toISOString() }] }))
   const toggleClient = (id) => patch((p) => ({ ...p, clientTasks: (p.clientTasks || []).map((c) => (c.id === id ? { ...c, done: !c.done } : c)) }))
   const delClient = (id) => patch((p) => ({ ...p, clientTasks: (p.clientTasks || []).filter((c) => c.id !== id) }))
@@ -4546,7 +4723,7 @@ function TaskDetailModal({ open, task, team, projects, onClose, onPatch, onDelet
 }
 
 function TasksView() {
-  const { data, setData, logActivity } = useApp()
+  const { data, createTask, patchTask, deleteTask, logActivity } = useApp()
   const [view, setView] = useState('table')
   const [openId, setOpenId] = useState(null)
   const [dragId, setDragId] = useState(null)
@@ -4554,14 +4731,15 @@ function TasksView() {
   const tasks = data.tasks || []
   const team = data.team || []
   const userOf = (id) => team.find((u) => u.id === id)
-  const setTasks = (fn) => setData((d) => ({ ...d, tasks: fn(d.tasks || []) }))
-  const addTask = () => { const id = uid(); setTasks((ts) => [{ id, name: 'Nueva tarea', assigneeId: '', priority: 'normal', status: 'pendiente', scope: 'interno', projectId: '', notes: '', comments: [] }, ...ts]); setOpenId(id); logActivity && logActivity({ type: 'task-add', text: 'creó una tarea' }) }
+  // Mutaciones por fila contra la tabla `tasks` (nunca setData → nunca vuelven al
+  // blob monolítico). createTask/patchTask/deleteTask vienen del store useTasks.
+  const addTask = () => { const id = uid(); createTask({ id, name: 'Nueva tarea', assigneeId: '', priority: 'normal', status: 'pendiente', scope: 'interno', projectId: '', notes: '', comments: [] }); setOpenId(id); logActivity && logActivity({ type: 'task-add', text: 'creó una tarea' }) }
   const updateTask = (id, fields) => {
     const prev = tasks.find((t) => t.id === id)
-    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...fields } : t)))
+    patchTask(id, (t) => ({ ...t, ...fields }))
     if (fields.status === 'terminado' && prev && prev.status !== 'terminado' && logActivity) logActivity({ type: 'task-done', text: `terminó la tarea "${prev.name}"` })
   }
-  const delTask = (id) => setTasks((ts) => ts.filter((t) => t.id !== id))
+  const delTask = (id) => deleteTask(id)
   const openTask = tasks.find((t) => t.id === openId)
 
   const PrioFlag = ({ p, withLabel }) => {
@@ -5153,6 +5331,11 @@ function CenterScreen({ children }) {
 function AppShell({ session, onLogout }) {
   const [data, setData, sync] = useAppData()
   const planStore = usePlans()   // { plans, plansReady, createPlan, patchPlan, deletePlan, publishSync, retryPublish }
+  const taskStore = useTasks()   // { tasks, tasksReady, createTask, patchTask, deleteTask }
+  // Las tareas ya no viven en `data` (app_state), pero muchos componentes leen
+  // `data.tasks`. Se las inyectamos como vista de solo lectura; toda MUTACIÓN va
+  // por createTask/patchTask/deleteTask (nunca por setData), así no vuelven al blob.
+  const dataView = useMemo(() => ({ ...data, tasks: taskStore.tasks }), [data, taskStore.tasks])
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [route, setRoute] = useState({ view: 'projects' })
   const [collapsed, setCollapsed] = useState(false)
@@ -5212,7 +5395,7 @@ function AppShell({ session, onLogout }) {
   if (route.view === 'editor') editorEverOpenedRef.current = true
 
   return (
-    <AppCtx.Provider value={{ data, setData, logActivity, supabase, ...planStore }}>
+    <AppCtx.Provider value={{ data: dataView, setData, logActivity, supabase, ...planStore, ...taskStore }}>
       <div className="app-shell">
         <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
