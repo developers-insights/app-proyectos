@@ -226,6 +226,18 @@ export function planProgress(plan) {
 }
 
 /**
+ * El número de la semana "en curso": la primera semana (en orden) que todavía
+ * no tiene el 100% de sus tareas tildadas. No exige que esa semana tenga
+ * ninguna tarea marcada — solo que las anteriores estén completas. `null` si
+ * no hay semanas o si todas están al 100%.
+ */
+export function currentWeekNumber(plan) {
+  const weeks = Array.isArray(plan && plan.weeks) ? plan.weeks : []
+  const w = weeks.find((w) => weekProgress(w).pct < 100)
+  return w ? w.n : null
+}
+
+/**
  * Togglea el done de la tarea en `index` (índice del render, referencia estable
  * del click en el acordeón). Devuelve una NUEVA week con `tasks` normalizadas
  * (inmutable: no muta `week` ni sus tasks).

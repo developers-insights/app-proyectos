@@ -35,6 +35,7 @@ import {
   COLOR_RE,
   HREF_RE,
   planProgress,
+  currentWeekNumber,
 } from './planModel.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -594,7 +595,7 @@ WEEKS.forEach((w,i)=>{
   const b=document.createElement('button');
   b.type='button';
   b.className='pill';b.style.setProperty('--col',col);
-  b.innerHTML='<span class="node">'+w.n+'</span><span class="lbl">'+PHASES[w.phase].label+'</span>';
+  b.innerHTML='<span class="node">'+w.n+'</span><span class="lbl">'+(w.current?'En curso':PHASES[w.phase].label)+'</span>';
   b.addEventListener('click',()=>go(i));
   pillsEl.appendChild(b);
 });
@@ -1109,9 +1110,15 @@ ${bentoHtml}
   })
   phasesObj._neutral = { label: NEUTRAL_HITO.label, col: 'var(--c-hito-_neutral)' }
 
+  // La semana "en curso" (primera con avance <100%) pisa la etiqueta del pill
+  // con "En curso", sin tocar a qué hito pertenece (color y chip de detalle
+  // siguen siendo los del hito real).
+  const curN = currentWeekNumber(sp)
+
   const weeksData = weeks.map((w) => ({
     n: w.n,
     phase: safeIdOf(hitoForWeek(sp, w.n)),
+    current: w.n === curN,
     days: daysForWeek(sp, w) || ('Semana ' + w.n),
     title: w.title,
     type: w.type,

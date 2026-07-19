@@ -218,14 +218,17 @@ function seedClients() {
 const REMOVED_MEMBER_IDS = ['u4']   // Nicolas Arditi
 /* email de login (Supabase) por miembro — para auto-vincular al iniciar sesión sin duplicar */
 const SEED_EMAILS = { u1: 'federicog@insightsapps.tech', u2: 'lisandropiva@insightsapps.tech', u3: 'manuelnavarro@insightsapps.tech', u5: 'juanp@insightsapps.tech', u7: 'nachocachaza@insightsapps.tech' }
+/* rango de cada miembro: 'pm' | 'dev' | '' (vacío = Otro, ej. CEO o Closer) — determina en qué filtro de Proyectos aparece */
+const SEED_ROLES = { u1: '', u2: 'dev', u3: 'dev', u5: '', u6: 'dev', u7: 'pm' }
+const TEAM_ROLES = [{ key: '', label: 'Otro' }, { key: 'pm', label: 'PM' }, { key: 'dev', label: 'Dev' }]
 function seedTeam() {
   return [
-    { id: 'u1', name: 'Federico Garbarino', email: SEED_EMAILS.u1, color: '#F97316', initials: 'FG' },
-    { id: 'u2', name: 'Lisandro', email: SEED_EMAILS.u2, color: '#6366F1', initials: 'L' },
-    { id: 'u3', name: 'Manuel Navarro', email: SEED_EMAILS.u3, color: '#10B981', initials: 'MN' },
-    { id: 'u5', name: 'Juan Pamies', email: SEED_EMAILS.u5, color: '#38BDF8', initials: 'JP' },
-    { id: 'u6', name: 'Valentin Toledo', color: '#A855F7', initials: 'VT' },
-    { id: 'u7', name: 'Nacho Cachaza', email: SEED_EMAILS.u7, color: '#F43F5E', initials: 'NC' },
+    { id: 'u1', name: 'Federico Garbarino', email: SEED_EMAILS.u1, color: '#F97316', initials: 'FG', role: SEED_ROLES.u1 },
+    { id: 'u2', name: 'Lisandro', email: SEED_EMAILS.u2, color: '#6366F1', initials: 'L', role: SEED_ROLES.u2 },
+    { id: 'u3', name: 'Manuel Navarro', email: SEED_EMAILS.u3, color: '#10B981', initials: 'MN', role: SEED_ROLES.u3 },
+    { id: 'u5', name: 'Juan Pamies', email: SEED_EMAILS.u5, color: '#38BDF8', initials: 'JP', role: SEED_ROLES.u5 },
+    { id: 'u6', name: 'Valentin Toledo', color: '#A855F7', initials: 'VT', role: SEED_ROLES.u6 },
+    { id: 'u7', name: 'Nacho Cachaza', email: SEED_EMAILS.u7, color: '#F43F5E', initials: 'NC', role: SEED_ROLES.u7 },
   ]
 }
 /* default demo assignments for the original 5 projects (rol por proyecto) */
@@ -640,6 +643,8 @@ function migrate(state) {
   state.team = state.team.filter((u) => !REMOVED_MEMBER_IDS.includes(u.id))
   // backfill del email de login en miembros que no lo tienen (auto-vincula sin duplicar)
   state.team = state.team.map((u) => (!u.email && SEED_EMAILS[u.id]) ? { ...u, email: SEED_EMAILS[u.id] } : u)
+  // backfill del rango (PM/Dev/Otro) — solo la primera vez que aparece cada miembro, no pisa ediciones manuales futuras
+  state.team = state.team.map((u) => (u.role === undefined) ? { ...u, role: SEED_ROLES[u.id] ?? '' } : u)
   if (!state.clients) state.clients = seedClients()
   if (!state.projects) state.projects = seedProjects()
   if (!state.calls) state.calls = seedCalls()
@@ -1344,10 +1349,11 @@ const taskStatusMeta = (s) => TASK_STATUS.find((x) => x.key === s) || TASK_STATU
 /* prioridad de tarea: banderita roja / amarilla / blanca */
 const TASK_PRIORITY = [
   { key: 'urgente', label: 'Urgente', color: 'var(--red)' },
+  { key: 'alta', label: 'Alta', color: '#F97316' },
   { key: 'normal', label: 'Normal', color: 'var(--yellow)' },
   { key: 'bajo', label: 'Bajo', color: 'var(--text)' },
 ]
-const taskPrioMeta = (p) => TASK_PRIORITY.find((x) => x.key === p) || TASK_PRIORITY[1]
+const taskPrioMeta = (p) => TASK_PRIORITY.find((x) => x.key === p) || TASK_PRIORITY.find((x) => x.key === 'normal')
 /* y-m-d local (para comparar fecha de entrega con hoy/mañana sin líos de zona horaria) */
 const localYMD = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` }
 /* origen de la tarea: cliente (ligada a un proyecto) o interna de Insights */
@@ -2616,11 +2622,11 @@ function Projects({ onOpenProject }) {
         </select>
         <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={pmFilter} onChange={(e) => setPmFilter(e.target.value)}>
           <option value="all">PM: todos</option>
-          {data.team.map((u) => <option key={u.id} value={u.id}>PM: {u.name}</option>)}
+          {data.team.filter((u) => u.role === 'pm').map((u) => <option key={u.id} value={u.id}>PM: {u.name}</option>)}
         </select>
         <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={devFilter} onChange={(e) => setDevFilter(e.target.value)}>
           <option value="all">Dev: todos</option>
-          {data.team.map((u) => <option key={u.id} value={u.id}>Dev: {u.name}</option>)}
+          {data.team.filter((u) => u.role === 'dev').map((u) => <option key={u.id} value={u.id}>Dev: {u.name}</option>)}
         </select>
         <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
           <option value="all">Etiqueta: todas</option>
@@ -4259,15 +4265,17 @@ function ProjectDetail({ projectId, onBack }) {
           </Field>
           {linkedPlan ? (
             <>
-              <Field label="Enlace publicado">
-                <input className="input" value={linkedPlan.publishedUrl || ''} onChange={(e) => setPlanUrl(e.target.value)} placeholder="https://insights-planes.vercel.app/rdx" />
-              </Field>
+              {linkedPlan.publishedUrl && (
+                <Field label="Enlace publicado">
+                  <input className="input" value={linkedPlan.publishedUrl} onChange={(e) => setPlanUrl(e.target.value)} />
+                </Field>
+              )}
               {linkedPlan.publishedUrl
                 ? <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-accent" style={{ justifyContent: 'center' }}><I.ext width={14} height={14} /> Abrir plan</a>
-                : <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Este plan todavía no está publicado. Se publica exportando el HTML desde el Planificador y subiéndolo al sitio de planes; después pegá acá el enlace.</div>}
+                : <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Este plan todavía no está publicado. Tocá "Publicar" en el Planificador — el enlace va a aparecer acá solo, no hace falta pegarlo a mano.</div>}
             </>
           ) : (
-            <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Asociá un plan del Planificador para abrirlo desde acá. El plan se publica exportando su HTML y subiéndolo al sitio de planes, no desde este panel.</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Asociá un plan del Planificador para abrirlo desde acá. Publicalo con el botón "Publicar" del Planificador y el enlace va a quedar vinculado automáticamente.</div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={() => setPlanOpen(false)}><I.check width={15} height={15} /> Listo</button></div>
         </div>
@@ -4909,11 +4917,12 @@ function TeamManager({ open, onClose }) {
   const team = data.team || []
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [role, setRole] = useState('')
   const add = () => {
     const n = name.trim(); if (!n) return
-    const m = { id: uid(), name: n, email: email.trim(), initials: autoInitials(n), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length] }
+    const m = { id: uid(), name: n, email: email.trim(), initials: autoInitials(n), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length], role }
     setData((d) => ({ ...d, team: [...(d.team || []), m] }))
-    setName(''); setEmail('')
+    setName(''); setEmail(''); setRole('')
   }
   const update = (id, fields) => setData((d) => ({ ...d, team: d.team.map((u) => (u.id === id ? { ...u, ...fields } : u)) }))
   const remove = (id) => { if (window.confirm('¿Quitar a esta persona del equipo? Sus asignaciones quedarán sin nadie (no se borran proyectos ni tareas).')) setData((d) => ({ ...d, team: d.team.filter((u) => u.id !== id) })) }
@@ -4926,6 +4935,9 @@ function TeamManager({ open, onClose }) {
               <Avatar user={u} size={30} ring="var(--bg-elevated)" />
               <input className="input" value={u.name} onChange={(e) => update(u.id, { name: e.target.value, initials: autoInitials(e.target.value) })} placeholder="Nombre" style={{ flex: '1 1 130px', padding: '6px 9px', fontSize: 13 }} />
               <input className="input mono" value={u.email || ''} onChange={(e) => update(u.id, { email: e.target.value })} placeholder="email@insightsapps.tech" style={{ flex: '1 1 160px', padding: '6px 9px', fontSize: 12.5 }} />
+              <select className="input" value={u.role || ''} onChange={(e) => update(u.id, { role: e.target.value })} title="Rango (define en qué filtro de Proyectos aparece)" style={{ flex: '0 0 88px', padding: '6px 9px', fontSize: 12.5 }}>
+                {TEAM_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+              </select>
               <button className="btn btn-sm btn-ghost" onClick={() => remove(u.id)} title="Quitar del equipo" style={{ padding: 6, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
             </div>
           ))}
@@ -4936,6 +4948,9 @@ function TeamManager({ open, onClose }) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre y apellido" style={{ flex: '1 1 130px' }} />
             <input className="input mono" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }} placeholder="email (para auto-login)" style={{ flex: '1 1 160px' }} />
+            <select className="input" value={role} onChange={(e) => setRole(e.target.value)} title="Rango" style={{ flex: '0 0 88px' }}>
+              {TEAM_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </select>
             <button className="btn btn-accent" onClick={add}><I.plus width={15} height={15} /> Agregar</button>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 9 }}>
