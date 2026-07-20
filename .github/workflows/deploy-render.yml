@@ -26,28 +26,37 @@ jobs:
     env:
       SERVICE_ID: srv-d8u0gspo3t8c73c5dn6g
     steps:
-      - name: Resync del repo en Render (refresca el ref que Render conoce)
+      - name: Diagnostico auth + resync (imprime codigos HTTP y bodies)
         run: |
-          curl -fsS -X PATCH "https://api.render.com/v1/services/${SERVICE_ID}" \
-            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{"repo":"https://github.com/developers-insights/app-proyectos","branch":"main"}' > /dev/null
+          set -uo pipefail
+          AUTH="Authorization: Bearer ${{ secrets.RENDER_API_KEY }}"
+          echo "== GET service (sanity check del token) =="
+          code=$(curl -sS -o /tmp/svc.json -w '%{http_code}' "https://api.render.com/v1/services/${SERVICE_ID}" -H "$AUTH")
+          echo "GET /services/{id} -> HTTP $code"
+          echo "BODY>>>$(cat /tmp/svc.json)<<<"
+
+          echo "== PATCH resync =="
+          code=$(curl -sS -o /tmp/patch.json -w '%{http_code}' -X PATCH "https://api.render.com/v1/services/${SERVICE_ID}" \
+            -H "$AUTH" -H "Content-Type: application/json" \
+            -d '{"repo":"https://github.com/developers-insights/app-proyectos","branch":"main"}')
+          echo "PATCH /services/{id} -> HTTP $code"
+          echo "BODY>>>$(cat /tmp/patch.json)<<<"
           sleep 8
 
       - name: Deploy del commit exacto de este push + polling del estado real
         run: |
           set -uo pipefail
+          AUTH="Authorization: Bearer ${{ secrets.RENDER_API_KEY }}"
           echo "== POST /deploys para commit ${GITHUB_SHA} =="
-          RESP=$(curl -sS -X POST "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
-            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
-            -H "Content-Type: application/json" \
+          code=$(curl -sS -o /tmp/post.json -w '%{http_code}' -X POST "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
+            -H "$AUTH" -H "Content-Type: application/json" \
             -d "{\"commitId\":\"${GITHUB_SHA}\"}")
+          echo "POST /deploys -> HTTP $code"
+          RESP=$(cat /tmp/post.json)
           echo "RAW_POST_RESPONSE>>>${RESP}<<<"
-          # Parseo defensivo: la respuesta puede venir plana ({id,...}), envuelta
-          # ({deploy:{id,...}}) o como array. Sacamos id/status/commit de donde sea.
           DEP_ID=$(printf '%s' "$RESP" | jq -r '(.. | objects | select(has("id")) | .id) // empty' 2>/dev/null | head -n1)
           echo "DEP_ID=[${DEP_ID}]"
-          if [ -z "${DEP_ID}" ]; then echo "::error::No pude extraer el deploy id de la respuesta"; exit 1; fi
+          if [ -z "${DEP_ID}" ]; then echo "::error::POST /deploys fallo (HTTP $code) o sin id"; exit 1; fi
 
           for i in $(seq 1 40); do
             sleep 15
