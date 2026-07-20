@@ -1216,6 +1216,247 @@ function useTasks() {
 }
 
 /* ============================================================================
+   6d · ROW-COLLECTION STORE — factory genérica anti-clobber.
+   Generaliza usePlans (6b) y useTasks (6c): cada ítem es su propia fila en su
+   tabla de Supabase (id text pk, data jsonb, updated_at, deleted_at). Ninguna
+   pestaña con estado viejo puede pisar ni borrar lo que otro subió, porque cada
+   escritura toca UNA fila y el merge de realtime solo acepta lo más nuevo (por
+   updatedAt). Incluye: cache local (carga instantánea/offline), realtime por
+   tabla, RESYNC al reconectar el socket (lo que a app_state le faltaba) y flush
+   al ocultar/cerrar la pestaña (no perder el debounce).
+   opts: { table, normalize, seed, cacheKey, loadLimit }
+============================================================================ */
+const ROW_SAVE_DEBOUNCE = 500
+
+function useRowCollection({ table, normalize = (x) => x, seed = () => [], cacheKey, loadLimit = 0 }) {
+  const readCache = () => {
+    if (!cacheKey) return null
+    try { const raw = localStorage.getItem(cacheKey); if (raw) return JSON.parse(raw) } catch (e) { /* ignore */ }
+    return null
+  }
+  const [items, setItemsState] = useState(() => {
+    const cached = readCache()
+    if (cached) return cached.map(normalize)
+    return cloudEnabled ? [] : seed().map(normalize)
+  })
+  const [ready, setReady] = useState(!cloudEnabled)
+  const [saving, setSaving] = useState(false)
+  const itemsRef = useRef(items)
+  const timers = useRef(new Map())    // id -> timeout del guardado debounced
+  const pending = useRef(new Map())   // id -> última versión aún NO confirmada en el server
+  const deletedIds = useRef(new Set())   // ids con tombstone conocido → el borrado gana, nunca se resucita
+
+  const writeCache = (list) => { if (cacheKey) { try { localStorage.setItem(cacheKey, JSON.stringify(list)) } catch (e) { /* quota */ } } }
+  const syncSaving = () => setSaving(pending.current.size > 0)
+
+  // Fuente de verdad = itemsRef (siempre fresca, sin closures viejos). Cada
+  // mutación recalcula desde el ref, empuja al estado de React y cachea a disco.
+  const applyLocal = (fn) => {
+    const next = fn(itemsRef.current)
+    itemsRef.current = next
+    setItemsState(next)
+    writeCache(next)
+  }
+
+  // Escritura real de una fila. Al confirmar, saca el pendiente si sigue siendo
+  // esta misma versión (si el usuario editó más, queda un pendiente nuevo).
+  const writeRow = async (item) => {
+    if (!cloudEnabled) return
+    try {
+      await supabase.from(table).upsert(
+        { id: item.id, data: item, updated_at: item.updatedAt || new Date().toISOString() },
+        { onConflict: 'id' },
+      )
+      const still = pending.current.get(item.id)
+      if (still && still.updatedAt === item.updatedAt) { pending.current.delete(item.id); syncSaving() }
+    } catch (e) { /* queda pendiente; se reintenta en la próxima edición o en flush() */ }
+  }
+
+  // Vacía a disco todo lo que quedó en debounce. Se llama al ocultar/cerrar la
+  // pestaña, para no perder la última edición dentro de la ventana de debounce.
+  const flush = () => {
+    timers.current.forEach((t) => clearTimeout(t))
+    timers.current.clear()
+    pending.current.forEach((item) => { writeRow(item) })
+  }
+
+  // Carga la lista del server sin pisar ediciones locales aún sin sincronizar.
+  const loadRows = async () => {
+    if (!cloudEnabled) return
+    let q = supabase.from(table).select('data').is('deleted_at', null).order('updated_at', { ascending: false })
+    if (loadLimit) q = q.limit(loadLimit)
+    const { data: rows, error } = await q
+    if (error) return
+    // Si hay ediciones locales sin sincronizar, chequeá cuáles de esas filas fueron
+    // borradas (tombstone) en otra pestaña, para NO resucitarlas al mergear el pending.
+    if (pending.current.size > 0) {
+      const ids = [...pending.current.keys()]
+      const { data: tomb } = await supabase.from(table).select('id').in('id', ids).not('deleted_at', 'is', null)
+      ;(tomb || []).forEach((r) => deletedIds.current.add(r.id))
+    }
+    applyLocal(() => {
+      const server = (rows || []).map((r) => normalize(r.data)).filter((x) => x && x.id)
+      if (pending.current.size === 0) return server
+      const byId = new Map(server.map((x) => [x.id, x]))
+      pending.current.forEach((local, id) => {
+        if (deletedIds.current.has(id)) return   // borrado remoto → no resucitar el pending
+        const s = byId.get(id)
+        if (!s || (local.updatedAt || '') >= (s.updatedAt || '')) byId.set(id, local)
+      })
+      return [...byId.values()].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+    })
+  }
+
+  useEffect(() => {
+    if (!cloudEnabled) return
+    let alive = true
+    ;(async () => { try { await loadRows() } finally { if (alive) setReady(true) } })()
+
+    let subscribedOnce = false
+    const channel = supabase
+      .channel(table + '_all')
+      .on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+        if (payload.eventType === 'DELETE') {
+          const goneId = payload.old && payload.old.id
+          if (goneId) deletedIds.current.add(goneId)
+          applyLocal((cur) => cur.filter((x) => x.id !== goneId)); return
+        }
+        const row = payload.new
+        if (!row) return
+        if (row.deleted_at) { deletedIds.current.add(row.id); applyLocal((cur) => cur.filter((x) => x.id !== row.id)); return }
+        const incoming = row.data
+        if (!incoming || !incoming.id) return
+        if (deletedIds.current.has(incoming.id)) return   // ya borrado → no resucitar por un eco viejo/fuera de orden
+        applyLocal((cur) => {
+          const idx = cur.findIndex((x) => x.id === incoming.id)
+          const norm = normalize(incoming)
+          if (idx === -1) return [norm, ...cur]
+          const localT = cur[idx].updatedAt || ''
+          const remoteT = incoming.updatedAt || ''
+          if (remoteT <= localT) return cur   // nuestro eco o una versión más vieja → ignorar
+          const nx = [...cur]; nx[idx] = norm; return nx
+        })
+      })
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return
+        // Reconexión del realtime: pudimos habernos perdido eventos → resync.
+        if (subscribedOnce) loadRows()
+        subscribedOnce = true
+      })
+
+    return () => { alive = false; flush(); supabase.removeChannel(channel) }
+  }, [])
+
+  // Al ocultar/cerrar la pestaña, no esperar el debounce: guardar ya.
+  useEffect(() => {
+    if (!cloudEnabled) return
+    const onHide = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onHide)
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onHide) }
+  }, [])
+
+  const scheduleSave = (item) => {
+    if (!cloudEnabled) return
+    pending.current.set(item.id, item); syncSaving()
+    const t = timers.current
+    clearTimeout(t.get(item.id))
+    t.set(item.id, setTimeout(() => { t.delete(item.id); writeRow(item) }, ROW_SAVE_DEBOUNCE))
+  }
+
+  // Crear: escritura inmediata (sin debounce) para que exista en el server ya.
+  // Si falla (ej. sin red), queda pendiente y se reintenta.
+  const create = async (item) => {
+    const it = { ...normalize(item), updatedAt: item.updatedAt || new Date().toISOString() }
+    applyLocal((cur) => [it, ...cur.filter((x) => x.id !== it.id)])
+    if (!cloudEnabled) return { error: null, item: it }
+    const { error } = await supabase.from(table).insert({ id: it.id, data: it, updated_at: it.updatedAt })
+    if (error) scheduleSave(it)
+    return { error, item: it }
+  }
+
+  // Editar: patch por id, optimista + guardado debounced de esa sola fila.
+  const patch = (id, fn) => {
+    let saved = null
+    applyLocal((cur) => cur.map((x) => {
+      if (x.id !== id) return x
+      saved = normalize({ ...fn(x), updatedAt: new Date().toISOString() })
+      return saved
+    }))
+    if (saved) scheduleSave(saved)
+    return saved
+  }
+
+  // Upsert por id (patch si existe, crea si no) — para los helpers "saveX".
+  const upsert = (item) => (itemsRef.current.some((x) => x.id === item.id) ? patch(item.id, () => item) : create(item))
+
+  // Borrar: soft-delete (tombstone). El upsert de una edición vieja no toca
+  // deleted_at, así que una pestaña vieja no puede resucitar lo borrado.
+  const remove = async (id) => {
+    clearTimeout(timers.current.get(id)); timers.current.delete(id)
+    pending.current.delete(id); syncSaving()
+    deletedIds.current.add(id)   // tombstone local → ningún eco ni resync lo resucita
+    applyLocal((cur) => cur.filter((x) => x.id !== id))
+    if (!cloudEnabled) return { error: null }
+    const { error } = await supabase.from(table).update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    return { error }
+  }
+
+  return { items, ready, saving, create, patch, upsert, remove }
+}
+
+/* Normalizadores por colección — espejan lo que hacía migrate() cuando estas
+   colecciones vivían dentro del blob app_state. Idempotentes. */
+const stripRemovedAssign = (as) => {
+  const r = { pm: as?.pm || null, dev: as?.dev || null }
+  if (r.pm && REMOVED_MEMBER_IDS.includes(r.pm.userId)) r.pm = null
+  if (r.dev && REMOVED_MEMBER_IDS.includes(r.dev.userId)) r.dev = null
+  return r
+}
+function normalizeProject(p) {
+  const { devUrl, ...rest } = p   // devUrl eliminado del modelo (igual que migrate)
+  return {
+    ...rest,
+    assignments: stripRemovedAssign(rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null }),
+    tags: rest.tags || [],
+    priority: rest.priority || 'normal',
+    createdAt: rest.createdAt || new Date().toISOString(),
+    avances: rest.avances || [],
+    comms: rest.comms || [],
+    scopeFiles: rest.scopeFiles || [],
+    salesLinks: rest.salesLinks || [],
+    scopeNotes: rest.scopeNotes || [],
+    risks: rest.risks || [],
+    pendingAgency: rest.pendingAgency || [],
+    pendingClient: rest.pendingClient || [],
+    chats: rest.chats || [],
+    activity: rest.activity || [],
+    driveUrl: rest.driveUrl || '',
+    clientTasks: rest.clientTasks || [],
+    planId: rest.planId ?? null,
+    sprints: (rest.sprints || []).map((s) => ({
+      ...s,
+      status: normSprint(s.status),
+      description: s.description || '',
+      comments: s.comments || [],
+      assigneeIds: s.assigneeIds || [],
+    })),
+  }
+}
+const normalizeClient = (c) => c
+function normalizeTeamMember(u) {
+  let m = u
+  if (!m.email && SEED_EMAILS[m.id]) m = { ...m, email: SEED_EMAILS[m.id] }
+  if (m.role === undefined) m = { ...m, role: SEED_ROLES[m.id] ?? '' }
+  return m
+}
+const normalizeCall = (c) => ({ ...c, priority: c.priority || 'normal', type: c.type || 'soporte', summary: c.summary || '', transcript: c.transcript || '' })
+const normalizeSopProcess = (p) => ({ ...p, links: p.links || [], images: p.images || [] })
+const normalizeSopCategory = (c) => c
+const normalizeActivity = (a) => a
+const normalizeChat = (c) => c
+
+/* ============================================================================
    7 · GITHUB INTEGRATION HOOK
 ============================================================================ */
 function useGithubCommit(repo) {
@@ -2518,7 +2759,7 @@ function SprintGantt({ projects, clientOf, onOpen }) {
    12 · PROJECTS LIST
 ============================================================================ */
 function Projects({ onOpenProject }) {
-  const { data, setData, logActivity } = useApp()
+  const { data, logActivity, projectStore } = useApp()
   const [newOpen, setNewOpen] = useState(false)
   const qp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
   const [tab, setTab] = useState(qp.get('tab') || 'active')
@@ -2535,8 +2776,8 @@ function Projects({ onOpenProject }) {
   const [cardCfgFor, setCardCfgFor] = useState(null)   // id del proyecto para editar la tarjeta (links + qué mostrar)
   const clientOf = (id) => data.clients.find((c) => c.id === id)
   const userOf = (id) => data.team.find((u) => u.id === id)
-  const updateProject = (id, fields) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, ...fields } : p)) }))
-  const patchProject = (id, fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? fn(p) : p)) }))
+  const updateProject = (id, fields) => projectStore.patch(id, (p) => ({ ...p, ...fields }))
+  const patchProject = (id, fn) => projectStore.patch(id, fn)
   const setStatus = (id, status) => { updateProject(id, { status }); if (status === 'pending') setPendingFor(id) }
   const createProject = ({ name, clientId, whatsappUrl, testingUrl }) => {
     const id = uid()
@@ -2550,7 +2791,7 @@ function Projects({ onOpenProject }) {
       totalAmount: 0, paidAmount: 0, lastDeployDate: null, githubRepo: '', kickoff: '', stack: '',
       cardActions: { scope: true, testing: true, whatsapp: true },
     }
-    setData((d) => ({ ...d, projects: [proj, ...d.projects] }))
+    projectStore.create(proj)
     if (logActivity) logActivity({ type: 'project-add', text: `creó el proyecto "${name}"` })
     setNewOpen(false)
     onOpenProject(id)   // abre la tarjeta nueva para cargar los sprints
@@ -3188,7 +3429,7 @@ function ScopeModal({ open, project, onClose, patch }) {
    13 · CLIENTS
 ============================================================================ */
 function Clients() {
-  const { data, setData } = useApp()
+  const { data, clientStore } = useApp()
   const [edit, setEdit] = useState(null)       // client being viewed/edited
   const [creating, setCreating] = useState(false)
   const projectsOf = (id) => data.projects.filter((p) => p.clientId === id && p.status === 'active').length
@@ -3196,15 +3437,13 @@ function Clients() {
   const blank = { id: '', name: '', company: '', email: '', phone: '', onboardDate: NOW.toISOString(), onboarding: { businessDescription: '', goals: '', existingTech: '', approvedBudget: 0, notes: '' } }
 
   const saveClient = (c) => {
-    setData((d) => {
-      const exists = d.clients.some((x) => x.id === c.id)
-      return { ...d, clients: exists ? d.clients.map((x) => (x.id === c.id ? c : x)) : [...d.clients, { ...c, id: uid() }] }
-    })
+    if (c.id && clientStore.items.some((x) => x.id === c.id)) clientStore.patch(c.id, () => c)
+    else clientStore.create({ ...c, id: uid() })
     setEdit(null); setCreating(false)
   }
 
   const deleteClient = (id) => {
-    setData((d) => ({ ...d, clients: d.clients.filter((x) => x.id !== id) }))
+    clientStore.remove(id)
     setEdit(null)
   }
 
@@ -3347,7 +3586,7 @@ function SopLink({ link }) {
 }
 
 function Sops() {
-  const { data, setData } = useApp()
+  const { data, sopCatStore, sopProcStore } = useApp()
   const sops = data.sops || { categories: [], processes: [] }
   const cats = sops.categories || []
   const procs = sops.processes || []
@@ -3368,25 +3607,25 @@ function Sops() {
   const searchResults = searching ? procs.filter((p) => (p.title + ' ' + (p.description || '') + ' ' + (p.content || '')).toLowerCase().includes(query)) : []
 
   // mutaciones
-  const saveProcess = (p) => setData((d) => {
-    const list = d.sops.processes; const exists = list.some((x) => x.id === p.id)
+  const saveProcess = (p) => {
     const now = new Date().toISOString()
-    const next = exists ? list.map((x) => (x.id === p.id ? { ...p, updatedAt: now } : x)) : [...list, { ...p, id: p.id || ('sop-' + uid()), createdAt: now, updatedAt: now }]
-    return { ...d, sops: { ...d.sops, processes: next } }
-  })
-  const deleteProcess = (id) => setData((d) => ({ ...d, sops: { ...d.sops, processes: d.sops.processes.filter((x) => x.id !== id) } }))
-  const saveCategory = (c) => setData((d) => {
-    const list = d.sops.categories; const exists = c.id && list.some((x) => x.id === c.id)
-    const next = exists ? list.map((x) => (x.id === c.id ? { ...x, name: c.name, parentId: c.parentId } : x)) : [...list, { id: 'sopc-' + uid(), name: c.name, parentId: c.parentId || null, createdAt: new Date().toISOString() }]
-    return { ...d, sops: { ...d.sops, categories: next } }
-  })
-  const deleteCategory = (id) => setData((d) => {
-    const cat = d.sops.categories.find((x) => x.id === id); const parent = cat ? (cat.parentId || null) : null
-    return { ...d, sops: {
-      categories: d.sops.categories.filter((x) => x.id !== id).map((x) => x.parentId === id ? { ...x, parentId: parent } : x),
-      processes: d.sops.processes.map((x) => x.categoryId === id ? { ...x, categoryId: parent } : x),
-    } }
-  })
+    const exists = p.id && sopProcStore.items.some((x) => x.id === p.id)
+    if (exists) sopProcStore.patch(p.id, (x) => ({ ...x, ...p, updatedAt: now }))
+    else sopProcStore.create({ ...p, id: p.id || ('sop-' + uid()), createdAt: now, updatedAt: now })
+  }
+  const deleteProcess = (id) => sopProcStore.remove(id)
+  const saveCategory = (c) => {
+    const exists = c.id && sopCatStore.items.some((x) => x.id === c.id)
+    if (exists) sopCatStore.patch(c.id, (x) => ({ ...x, name: c.name, parentId: c.parentId }))
+    else sopCatStore.create({ id: 'sopc-' + uid(), name: c.name, parentId: c.parentId || null, createdAt: new Date().toISOString() })
+  }
+  const deleteCategory = (id) => {
+    const cat = sopCatStore.items.find((x) => x.id === id); const parent = cat ? (cat.parentId || null) : null
+    // reparent: las subcarpetas suben al abuelo y los procesos van al padre; recién ahí se borra
+    sopCatStore.items.filter((x) => x.parentId === id).forEach((x) => sopCatStore.patch(x.id, (y) => ({ ...y, parentId: parent })))
+    sopProcStore.items.filter((x) => x.categoryId === id).forEach((x) => sopProcStore.patch(x.id, (y) => ({ ...y, categoryId: parent })))
+    sopCatStore.remove(id)
+  }
 
   const openProc = procs.find((p) => p.id === openId)
   const subFolders = childrenCats(folder)
@@ -3516,7 +3755,7 @@ function Sops() {
 
       {editProc && <SopEditor proc={editProc} cats={cats} onClose={() => setEditProc(null)} onSave={(p, newCatName) => {
         let cid = p.categoryId
-        if (newCatName && newCatName.trim()) { cid = 'sopc-' + uid(); setData((d) => ({ ...d, sops: { ...d.sops, categories: [...d.sops.categories, { id: cid, name: newCatName.trim(), parentId: null, createdAt: new Date().toISOString() }] } })) }
+        if (newCatName && newCatName.trim()) { cid = 'sopc-' + uid(); sopCatStore.create({ id: cid, name: newCatName.trim(), parentId: null, createdAt: new Date().toISOString() }) }
         saveProcess({ ...p, categoryId: cid }); setEditProc(null)
       }} />}
 
@@ -3748,7 +3987,7 @@ function FathomAccountsModal({ open, onClose, accounts, onReload }) {
 }
 
 function Calls() {
-  const { data, setData, logActivity } = useApp()
+  const { data, logActivity, callStore } = useApp()
   const [editing, setEditing] = useState(null)   // {call, isNew} | null
   const [fathomOpen, setFathomOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -3762,11 +4001,11 @@ function Calls() {
 
   const saveCall = (call) => {
     const isNew = !data.calls.some((c) => c.id === call.id)
-    setData((d) => ({ ...d, calls: d.calls.some((c) => c.id === call.id) ? d.calls.map((c) => (c.id === call.id ? call : c)) : [call, ...d.calls] }))
+    callStore.upsert(call)
     if (isNew && logActivity) logActivity({ type: 'call-add', text: `agregó una llamada con ${clientOf(call.clientId)?.company || 'un cliente'}` })
   }
-  const deleteCall = (id) => setData((d) => ({ ...d, calls: d.calls.filter((c) => c.id !== id) }))
-  const patchManual = (id, fields) => setData((d) => ({ ...d, calls: d.calls.map((c) => c.id === id ? { ...c, ...fields } : c) }))
+  const deleteCall = (id) => callStore.remove(id)
+  const patchManual = (id, fields) => callStore.patch(id, (c) => ({ ...c, ...fields }))
 
   const loadFathomCalls = async () => { if (!cloudEnabled) return; const { data: rows } = await supabase.from('fathom_calls').select('*').order('call_date', { ascending: false }); if (rows) setFathomCalls(rows) }
   const loadAccounts = async () => { if (!cloudEnabled) return; try { const { data: res } = await supabase.functions.invoke('fathom-sync', { body: { action: 'list_accounts' } }); if (res?.accounts) setAccounts(res.accounts) } catch (e) { /* fn no desplegada */ } }
@@ -4142,7 +4381,7 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
 }
 
 function ProjectDetail({ projectId, onBack }) {
-  const { data, setData, logActivity, plans, patchPlan, createTask, patchTask } = useApp()
+  const { data, logActivity, plans, patchPlan, createTask, patchTask, projectStore } = useApp()
   const project = data.projects.find((p) => p.id === projectId)
   const client = data.clients.find((c) => c.id === project?.clientId)
   const gh = useGithubCommit(project?.githubRepo)
@@ -4159,7 +4398,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [accountsOpen, setAccountsOpen] = useState(false)
 
   if (!project) return null
-  const patch = (fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === projectId ? fn(p) : p)) }))
+  const patch = (fn) => projectStore.patch(projectId, fn)
   // Plan asociado (D10: el enlace vive SOLO en plan.publishedUrl; el proyecto solo guarda planId)
   const linkedPlan = (plans || []).find((pl) => pl.id === project.planId) || null
   const associatePlan = (id) => {
@@ -4313,7 +4552,7 @@ function ProjectDetail({ projectId, onBack }) {
         )}
       </Modal>
 
-      <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} onDelete={(id) => { setData((dd) => ({ ...dd, projects: dd.projects.filter((p) => p.id !== id) })); onBack() }} />
+      <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} onDelete={(id) => { projectStore.remove(id); onBack() }} />
       <SprintDetailModal open={!!openSprint} sprint={openSprint} team={data.team} defaultId={project.assignments?.dev?.userId || null} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprintSynced(openSprintId, fields)} />
       <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
@@ -4639,7 +4878,7 @@ const ASSISTANT_SUGGESTIONS = [
 ]
 
 function AssistantView() {
-  const { data, setData } = useApp()
+  const { data, chatStore } = useApp()
   const chats = data.assistantChats || []
   const [activeId, setActiveId] = useState(chats[0]?.id || null)
   const [input, setInput] = useState('')
@@ -4648,23 +4887,23 @@ function AssistantView() {
   const scrollRef = useRef(null)
   const active = chats.find((c) => c.id === activeId)
 
-  const setChats = (fn) => setData((d) => ({ ...d, assistantChats: fn(d.assistantChats || []) }))
+  // Las conversaciones se guardan por fila (chatStore): create + patch por id.
   useEffect(() => { scrollRef.current?.scrollTo({ top: 1e9, behavior: 'smooth' }) }, [active?.messages.length, sending])
 
-  const newChat = () => { const id = uid(); setChats((cs) => [{ id, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }, ...cs]); setActiveId(id) }
+  const newChat = () => { const id = uid(); chatStore.create({ id, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }); setActiveId(id) }
 
   const sendText = async (text) => {
     text = (text || '').trim()
     if (!text || sending) return
     let chatId = activeId
-    if (!chatId) { chatId = uid(); setChats((cs) => [{ id: chatId, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }, ...cs]); setActiveId(chatId) }
-    const prev = (data.assistantChats || []).find((c) => c.id === chatId)?.messages || []
+    if (!chatId) { chatId = uid(); chatStore.create({ id: chatId, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }); setActiveId(chatId) }
+    const prev = (chatStore.items.find((c) => c.id === chatId)?.messages) || []
     const userMsg = { role: 'user', content: text, timestamp: Date.now() }
-    setChats((cs) => cs.map((c) => c.id === chatId ? { ...c, messages: [...c.messages, userMsg], title: c.messages.length === 0 ? (text.length > 42 ? text.slice(0, 42) + '…' : text) : c.title } : c))
+    chatStore.patch(chatId, (c) => ({ ...c, messages: [...c.messages, userMsg], title: c.messages.length === 0 ? (text.length > 42 ? text.slice(0, 42) + '…' : text) : c.title }))
     setInput(''); setSending(true); setError(null)
     try {
       const reply = await anthropicChat({ system: buildGlobalSystemPrompt(data), messages: [...prev, userMsg] })
-      setChats((cs) => cs.map((c) => c.id === chatId ? { ...c, messages: [...c.messages, { role: 'assistant', content: reply, timestamp: Date.now() }] } : c))
+      chatStore.patch(chatId, (c) => ({ ...c, messages: [...c.messages, { role: 'assistant', content: reply, timestamp: Date.now() }] }))
     } catch (e) {
       if (e.message === 'NO_KEY') setError('Configurá tu Anthropic API key en ⚙ Ajustes para usar el asistente.')
       else setError(e.message)
@@ -4992,7 +5231,7 @@ const autoInitials = (name) => ((name || '').trim().split(/\s+/).slice(0, 2).map
 
 /* gestor del equipo: agregar / editar / quitar miembros que aparecen en asignaciones y @menciones */
 function TeamManager({ open, onClose }) {
-  const { data, setData } = useApp()
+  const { data, teamStore } = useApp()
   const team = data.team || []
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -5000,11 +5239,11 @@ function TeamManager({ open, onClose }) {
   const add = () => {
     const n = name.trim(); if (!n) return
     const m = { id: uid(), name: n, email: email.trim(), initials: autoInitials(n), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length], role }
-    setData((d) => ({ ...d, team: [...(d.team || []), m] }))
+    teamStore.create(m)
     setName(''); setEmail(''); setRole('')
   }
-  const update = (id, fields) => setData((d) => ({ ...d, team: d.team.map((u) => (u.id === id ? { ...u, ...fields } : u)) }))
-  const remove = (id) => { if (window.confirm('¿Quitar a esta persona del equipo? Sus asignaciones quedarán sin nadie (no se borran proyectos ni tareas).')) setData((d) => ({ ...d, team: d.team.filter((u) => u.id !== id) })) }
+  const update = (id, fields) => teamStore.patch(id, (u) => ({ ...u, ...fields }))
+  const remove = (id) => { if (window.confirm('¿Quitar a esta persona del equipo? Sus asignaciones quedarán sin nadie (no se borran proyectos ni tareas).')) teamStore.remove(id) }
   return (
     <Modal open={open} onClose={onClose} title="Equipo" sub="Miembros que aparecen en asignaciones, comentarios y @menciones" width={560}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -5042,14 +5281,14 @@ function TeamManager({ open, onClose }) {
 }
 
 function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
-  const { data, setData } = useApp()
+  const { data, teamStore } = useApp()
   const [open, setOpen] = useState(false)
   const [teamOpen, setTeamOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
   const team = data.team || []
   const me = team.find((u) => u.id === myId)
-  const updateMember = (id, fields) => setData((d) => ({ ...d, team: d.team.map((u) => (u.id === id ? { ...u, ...fields } : u)) }))
+  const updateMember = (id, fields) => teamStore.patch(id, (u) => ({ ...u, ...fields }))
   const onPick = async (e) => {
     const f = e.target.files && e.target.files[0]
     if (!f || !me) return
@@ -5423,13 +5662,41 @@ function CenterScreen({ children }) {
 
 /* the authenticated app */
 function AppShell({ session, onLogout }) {
-  const [data, setData, sync] = useAppData()
   const planStore = usePlans()   // { plans, plansReady, createPlan, patchPlan, deletePlan, publishSync, retryPublish }
   const taskStore = useTasks()   // { tasks, tasksReady, createTask, patchTask, deleteTask }
-  // Las tareas ya no viven en `data` (app_state), pero muchos componentes leen
-  // `data.tasks`. Se las inyectamos como vista de solo lectura; toda MUTACIÓN va
-  // por createTask/patchTask/deleteTask (nunca por setData), así no vuelven al blob.
-  const dataView = useMemo(() => ({ ...data, tasks: taskStore.tasks }), [data, taskStore.tasks])
+  // Cada colección compartida es ahora su propia tabla por-fila (patrón anti-clobber
+  // de usePlans/useTasks, generalizado en useRowCollection 6d). Ya NO hay documento
+  // monolítico app_state: una pestaña con estado viejo no puede pisar lo de otro.
+  const projectStore = useRowCollection({ table: 'projects', normalize: normalizeProject, seed: seedProjects, cacheKey: 'rc_projects_v1' })
+  const clientStore = useRowCollection({ table: 'clients', normalize: normalizeClient, seed: seedClients, cacheKey: 'rc_clients_v1' })
+  const teamStore = useRowCollection({ table: 'team_members', normalize: normalizeTeamMember, seed: seedTeam, cacheKey: 'rc_team_v1' })
+  const callStore = useRowCollection({ table: 'calls', normalize: normalizeCall, seed: seedCalls, cacheKey: 'rc_calls_v1' })
+  const activityStore = useRowCollection({ table: 'activity', normalize: normalizeActivity, seed: () => [], cacheKey: 'rc_activity_v1', loadLimit: 300 })
+  const sopCatStore = useRowCollection({ table: 'sops_categories', normalize: normalizeSopCategory, seed: () => seedSops().categories, cacheKey: 'rc_sopcat_v1' })
+  const sopProcStore = useRowCollection({ table: 'sops_processes', normalize: normalizeSopProcess, seed: () => seedSops().processes, cacheKey: 'rc_sopproc_v1' })
+  const chatStore = useRowCollection({ table: 'assistant_chats', normalize: normalizeChat, seed: () => [], cacheKey: 'rc_chats_v1' })
+
+  // Vista de solo lectura con la forma histórica de `data` — para que TODOS los
+  // reads `data.projects`/`data.team`/… sigan funcionando sin tocarlos. Toda
+  // MUTACIÓN va por las acciones de cada store (nunca por setData).
+  const sops = useMemo(() => ({ categories: sopCatStore.items, processes: sopProcStore.items }), [sopCatStore.items, sopProcStore.items])
+  const dataView = useMemo(() => ({
+    team: teamStore.items.filter((u) => !REMOVED_MEMBER_IDS.includes(u.id)),
+    clients: clientStore.items,
+    projects: projectStore.items,
+    calls: callStore.items,
+    activity: activityStore.items,
+    assistantChats: chatStore.items,
+    sops,
+    tasks: taskStore.tasks,
+  }), [teamStore.items, clientStore.items, projectStore.items, callStore.items, activityStore.items, chatStore.items, sops, taskStore.tasks])
+  const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore }
+
+  // Badge de sync: agregado del estado de todas las tablas.
+  const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore]
+  const anyLoading = !planStore.plansReady || !taskStore.tasksReady || allStores.some((s) => !s.ready)
+  const anySaving = allStores.some((s) => s.saving)
+  const sync = !cloudEnabled ? 'local' : anyLoading ? 'loading' : anySaving ? 'saving' : 'saved'
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [route, setRoute] = useState({ view: 'projects' })
   const [collapsed, setCollapsed] = useState(false)
@@ -5451,34 +5718,34 @@ function AppShell({ session, onLogout }) {
   useEffect(() => {
     if (!session?.user?.email) return
     const email = session.user.email
-    const team = data.team || []
+    const team = teamStore.items
     // 1) ya hay un miembro con ese email → vincular
     const byEmail = team.find((u) => u.email && u.email.toLowerCase() === email.toLowerCase())
     if (byEmail) { if (myId !== byEmail.id) setMyId(byEmail.id); return }
     // 2) ya elegiste tu nombre ("Sos:") pero ese miembro no tiene email → completárselo (evita duplicar)
     if (myId) {
       const mine = team.find((u) => u.id === myId)
-      if (mine && !mine.email) setData((d) => ({ ...d, team: d.team.map((u) => (u.id === myId ? { ...u, email } : u)) }))
+      if (mine && !mine.email) teamStore.patch(myId, (u) => ({ ...u, email }))
       return
     }
     // 3) nadie coincide → dar de alta al usuario en el equipo desde su sesión de Supabase
     const meta = session.user.user_metadata || {}
     const name = meta.name || meta.full_name || email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     const nid = uid()
-    setData((d) => ({ ...d, team: [...(d.team || []), { id: nid, name, email, initials: autoInitials(name), color: AVATAR_COLORS[(d.team || []).length % AVATAR_COLORS.length] }] }))
+    teamStore.create({ id: nid, name, email, initials: autoInitials(name), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length] })
     setMyId(nid)
-  }, [session, data.team, myId])
+  }, [session, teamStore.items, myId])
 
   const openProject = (id) => setRoute({ view: 'project', projectId: id })
-  const logActivity = (entry) => setData((d) => {
-    const nacho = (d.team || []).find((u) => /nacho/i.test(u.name || '') || String(u.email || '').toLowerCase() === 'nachocachaza@insightsapps.tech')
+  const logActivity = (entry) => {
+    const nacho = teamStore.items.find((u) => /nacho/i.test(u.name || '') || String(u.email || '').toLowerCase() === 'nachocachaza@insightsapps.tech')
     const actorId = localStorage.getItem('my_team_id') || (nacho ? nacho.id : '')
-    return { ...d, activity: [{ id: uid(), date: new Date().toISOString(), actorId, ...entry }, ...(d.activity || [])].slice(0, 200) }
-  })
+    activityStore.create({ id: uid(), date: new Date().toISOString(), actorId, ...entry })
+  }
 
   // pop-up de inicio para el PM con el estado de seguimiento de sus proyectos
   const [pmAlertSeen, setPmAlertSeen] = useState(false)
-  const pmProjects = (data.projects || []).filter((p) => myId && p.assignments?.pm?.userId === myId && p.status === 'active')
+  const pmProjects = projectStore.items.filter((p) => myId && p.assignments?.pm?.userId === myId && p.status === 'active')
 
   // El editor de video vive en un iframe cuyo estado (clips, cortes, subtítulos,
   // transcripción Whisper) existe solo en la memoria de ese documento: desmontarlo
@@ -5489,7 +5756,7 @@ function AppShell({ session, onLogout }) {
   if (route.view === 'editor') editorEverOpenedRef.current = true
 
   return (
-    <AppCtx.Provider value={{ data: dataView, setData, logActivity, supabase, ...planStore, ...taskStore }}>
+    <AppCtx.Provider value={{ data: dataView, logActivity, supabase, ...planStore, ...taskStore, ...collectionStores }}>
       <div className="app-shell">
         <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
@@ -5517,7 +5784,7 @@ function AppShell({ session, onLogout }) {
         </div>
         <Settings open={settings} onClose={() => setSettings(false)} />
         <UserProfile session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} hidden={route.view === 'project'} />
-        <PmStartupAlert open={!pmAlertSeen && pmProjects.length > 0} projects={pmProjects} clients={data.clients} onClose={() => setPmAlertSeen(true)} onOpenProject={openProject} />
+        <PmStartupAlert open={!pmAlertSeen && pmProjects.length > 0} projects={pmProjects} clients={clientStore.items} onClose={() => setPmAlertSeen(true)} onOpenProject={openProject} />
       </div>
     </AppCtx.Provider>
   )

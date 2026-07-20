@@ -1,8 +1,13 @@
 // ============================================================================
 // Onboarding público — Supabase Edge Function (Deno)
-// Deploy:  supabase functions deploy onboarding-signup   (o desde el dashboard, Via Editor)
-// Recibe el formulario de la landing y crea, en app_state, un cliente nuevo + un
-// proyecto nuevo (PM = Nacho, Dev = el que tenga menos proyectos, tag "Nuevo proyecto").
+// Deploy:  supabase functions deploy onboarding-signup   (o desde el dashboard)
+// Recibe el formulario de la landing y crea un cliente nuevo + un proyecto nuevo
+// (PM = Nacho, Dev = el que tenga menos proyectos, tag "Nuevo proyecto").
+//
+// PERSISTENCIA POR-FILA (anti-clobber): escribe UNA fila en cada tabla
+// (clients / projects / activity). Ya NO hace read-modify-write del documento
+// monolítico app_state, así que dos onboardings simultáneos (o un onboarding
+// mientras el equipo edita) no se pisan nunca.
 // ============================================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -24,14 +29,14 @@ Deno.serve(async (req) => {
     if (!projectName) return json({ error: 'Falta el nombre del proyecto.' }, 400)
 
     const supa = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-    const { data: row, error: readErr } = await supa.from('app_state').select('data').eq('id', 'main').maybeSingle()
-    if (readErr) throw readErr
-    const st: any = row?.data
-    if (!st) return json({ error: 'No se pudo cargar la base.' }, 500)
 
-    const team: any[] = st.team || []
-    const projects: any[] = st.projects || []
-    const clients: any[] = st.clients || []
+    // Equipo + proyectos actuales para calcular PM/Dev — desde las tablas por-fila.
+    const [{ data: teamRows }, { data: projRows }] = await Promise.all([
+      supa.from('team_members').select('data').is('deleted_at', null),
+      supa.from('projects').select('data').is('deleted_at', null),
+    ])
+    const team: any[] = (teamRows || []).map((r: any) => r.data).filter(Boolean)
+    const projects: any[] = (projRows || []).map((r: any) => r.data).filter(Boolean)
 
     // PM = Nacho
     const nacho = team.find((u) => /nacho/i.test(u.name || '') || String(u.email || '').toLowerCase() === 'nachocachaza@insightsapps.tech')
@@ -43,10 +48,12 @@ Deno.serve(async (req) => {
     candidates.sort((a, b) => (counts[a.id] || 0) - (counts[b.id] || 0))
     const dev = candidates[0] || null
 
+    const now = new Date().toISOString()
     const clientId = 'c-' + rid()
     const client = {
       id: clientId, name: String(b.name || '').trim(), company, email: String(b.email || '').trim(), phone: String(b.phone || '').trim(), address: String(b.address || '').trim(),
       onboarding: { businessDescription: String(b.businessDescription || '').trim(), goals: String(b.goals || '').trim(), existingTech: '', approvedBudget: 0, notes: b.address ? ('Dirección: ' + b.address) : '' },
+      updatedAt: now,
     }
     const projId = 'p-' + rid()
     const project = {
@@ -54,19 +61,18 @@ Deno.serve(async (req) => {
       assignments: { pm: nacho ? { userId: nacho.id, roleLabel: 'Project Manager' } : null, dev: dev ? { userId: dev.id, roleLabel: 'Developer' } : null },
       tags: [{ id: rid(), text: 'Nuevo proyecto', color: '#22C55E' }],
       sprints: [], avances: [], comms: [], scopeFiles: [], salesLinks: [], scopeNotes: [], risks: [], pendingAgency: [], pendingClient: [], chats: [], activity: [], clientTasks: [],
-      createdAt: new Date().toISOString(),
+      createdAt: now, updatedAt: now,
       testingUrl: '', whatsappUrl: '', productionUrl: '', driveUrl: '', totalAmount: 0, paidAmount: 0, lastDeployDate: null, githubRepo: '', kickoff: String(b.businessDescription || '').trim(), stack: '',
       cardActions: { scope: true, testing: true, whatsapp: true },
     }
+    const act = { id: rid(), date: now, actorId: nacho?.id || '', type: 'project-add', text: `entró un proyecto nuevo por onboarding: "${projectName}" (${company || 'cliente'})`, updatedAt: now }
 
-    const next = {
-      ...st,
-      clients: [...clients, client],
-      projects: [project, ...projects],
-      activity: [{ id: rid(), date: new Date().toISOString(), actorId: nacho?.id || '', type: 'project-add', text: `entró un proyecto nuevo por onboarding: "${projectName}" (${company || 'cliente'})` }, ...(st.activity || [])].slice(0, 200),
-    }
-    const { error: upErr } = await supa.from('app_state').upsert({ id: 'main', data: next })
-    if (upErr) throw upErr
+    // Una fila por entidad — inserts independientes, sin pisar nada.
+    const { error: cErr } = await supa.from('clients').insert({ id: clientId, data: client, updated_at: now })
+    if (cErr) throw cErr
+    const { error: pErr } = await supa.from('projects').insert({ id: projId, data: project, updated_at: now })
+    if (pErr) throw pErr
+    await supa.from('activity').insert({ id: act.id, data: act, updated_at: now })   // best-effort (no bloquea el alta)
 
     return json({ ok: true, projectName, pm: nacho?.name || null, dev: dev?.name || null })
   } catch (e) {

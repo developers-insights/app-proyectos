@@ -98,10 +98,14 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'sync') {
-      // clientes/proyectos para matchear (del documento app_state)
+      // clientes/proyectos para matchear — desde las tablas por-fila (app_state retirado)
       let clients: any[] = [], projects: any[] = []
-      const { data: st } = await supa.from('app_state').select('data').eq('id', 'main').maybeSingle()
-      if (st?.data) { clients = st.data.clients || []; projects = st.data.projects || [] }
+      const [{ data: cliRows }, { data: projRows }] = await Promise.all([
+        supa.from('clients').select('data').is('deleted_at', null),
+        supa.from('projects').select('data').is('deleted_at', null),
+      ])
+      clients = (cliRows || []).map((r: any) => r.data).filter(Boolean)
+      projects = (projRows || []).map((r: any) => r.data).filter(Boolean)
 
       const { data: accounts, error: accErr } = await supa.from('fathom_accounts').select('*')
       if (accErr) throw accErr
