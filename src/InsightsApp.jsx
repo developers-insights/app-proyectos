@@ -3037,6 +3037,80 @@ function LinkAdder({ onAdd, cta = 'Agregar link' }) {
   )
 }
 
+/* CUENTAS del proyecto: checklist de accesos que hacen falta (Supabase, GitHub, Vercel…) */
+const ACCOUNT_PRESETS = [
+  { label: 'Supabase', color: '#3ecf8e' },
+  { label: 'GitHub', color: '#a3adba' },
+  { label: 'Vercel', color: '#cbd3dd' },
+  { label: 'App Store', color: '#0a84ff' },
+  { label: 'Play Store', color: '#00c853' },
+  { label: 'Twilio', color: '#f22f46' },
+]
+function AccountsModal({ open, project, onClose, patch }) {
+  const [draft, setDraft] = useState('')
+  if (!project) return <Modal open={open} onClose={onClose} title="Cuentas" />
+  const accounts = project.accounts || []
+  const has = (label) => accounts.some((a) => (a.label || '').trim().toLowerCase() === label.trim().toLowerCase())
+  const add = (label) => {
+    const name = (label || '').trim()
+    if (!name || has(name)) return
+    patch((p) => ({ ...p, accounts: [...(p.accounts || []), { id: uid(), label: name, done: false }] }))
+  }
+  const toggle = (id) => patch((p) => ({ ...p, accounts: (p.accounts || []).map((a) => (a.id === id ? { ...a, done: !a.done } : a)) }))
+  const remove = (id) => patch((p) => ({ ...p, accounts: (p.accounts || []).filter((a) => a.id !== id) }))
+  const addCustom = () => { add(draft); setDraft('') }
+  const pending = ACCOUNT_PRESETS.filter((pr) => !has(pr.label))
+  const doneCount = accounts.filter((a) => a.done).length
+
+  return (
+    <Modal open={open} onClose={onClose} title="Cuentas del proyecto" sub={project.name} width={500}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.6 }}>
+          Cuentas y accesos que hacen falta para arrancar. Sumá las que vayas a necesitar y marcá las que el cliente ya tenga creadas.
+        </div>
+
+        {/* Lista de cuentas cargadas */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {accounts.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Todavía no agregaste cuentas. Sumá las que vas a necesitar con los botones de abajo.</div>}
+          {accounts.map((a) => (
+            <div key={a.id} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button onClick={() => toggle(a.id)} title={a.done ? 'Ya la tiene creada' : 'Marcar como creada'} style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (a.done ? 'var(--green)' : 'var(--border-strong)'), background: a.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0, cursor: 'pointer' }}>{a.done && <I.check width={13} height={13} style={{ color: '#fff' }} />}</button>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, textDecoration: a.done ? 'line-through' : 'none', color: a.done ? 'var(--text-faint)' : 'var(--text)' }}>{a.label}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: a.done ? 'var(--green)' : 'var(--text-faint)' }}>{a.done ? 'Creada' : 'Falta'}</span>
+              <button className="btn btn-sm btn-ghost" onClick={() => remove(a.id)} title="Quitar" style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={13} height={13} /></button>
+            </div>
+          ))}
+        </div>
+
+        {/* Agregado rápido de presets */}
+        {pending.length > 0 && (
+          <div>
+            <div className="label" style={{ marginBottom: 8 }}>Agregar rápido</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {pending.map((pr) => (
+                <button key={pr.label} className="btn btn-sm" onClick={() => add(pr.label)}>
+                  <span style={{ width: 8, height: 8, borderRadius: 999, background: pr.color, display: 'inline-block', flexShrink: 0 }} /> {pr.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Cuenta personalizada */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input className="input" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustom() } }} placeholder="Otra cuenta (ej. Stripe, Cloudflare…)" style={{ flex: 1 }} />
+          <button className="btn btn-accent" onClick={addCustom} disabled={!draft.trim()}><I.plus width={15} height={15} /> Agregar</button>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{accounts.length ? `${doneCount}/${accounts.length} creadas` : ''}</span>
+          <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 /* ALCANCE del proyecto: archivos/PDFs + links + llamadas de venta + notas */
 function ScopeModal({ open, project, onClose, patch }) {
   const fileRef = useRef(null)
@@ -4082,6 +4156,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [driveOpen, setDriveOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
+  const [accountsOpen, setAccountsOpen] = useState(false)
 
   if (!project) return null
   const patch = (fn) => setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === projectId ? fn(p) : p)) }))
@@ -4153,6 +4228,9 @@ function ProjectDetail({ projectId, onBack }) {
           <a href={project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm" onClick={(e) => { if (!project.productionUrl) e.preventDefault() }}><I.rocket width={14} height={14} /> Producción</a>
           <button className="btn btn-sm" onClick={() => setScopeOpen(true)}><I.pdf width={14} height={14} /> Alcance{(() => { const n = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0); return n ? ` · ${n}` : '' })()}</button>
           <button className="btn btn-sm" onClick={() => setDriveOpen(true)} title="Carpeta de Drive compartida con el cliente" style={{ color: project.driveUrl ? 'var(--accent)' : undefined }}><I.folder width={14} height={14} /> Drive</button>
+          {(() => { const acc = project.accounts || []; const done = acc.filter((a) => a.done).length; const col = acc.length ? (done === acc.length ? 'var(--green)' : 'var(--accent)') : undefined; return (
+            <button className="btn btn-sm" onClick={() => setAccountsOpen(true)} title="Cuentas y accesos que necesita el proyecto (Supabase, GitHub, Vercel…)" style={{ color: col }}><I.key width={14} height={14} /> Cuentas{acc.length ? ` · ${done}/${acc.length}` : ''}</button>
+          ) })()}
           <button className="btn btn-sm" onClick={() => setShareOpen(true)} title="Compartir vista con el cliente (link + contraseña)" style={{ color: project.shareEnabled ? 'var(--green)' : undefined }}><I.eye width={14} height={14} /> Compartir</button>
           {linkedPlan && linkedPlan.publishedUrl
             ? <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-sm" title="Abrir el plan publicado" style={{ color: 'var(--accent)' }}><I.calendar width={14} height={14} /> Plan</a>
@@ -4239,6 +4317,7 @@ function ProjectDetail({ projectId, onBack }) {
       <SprintDetailModal open={!!openSprint} sprint={openSprint} team={data.team} defaultId={project.assignments?.dev?.userId || null} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprintSynced(openSprintId, fields)} />
       <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
+      <AccountsModal open={accountsOpen} project={project} onClose={() => setAccountsOpen(false)} patch={patch} />
       <Modal open={driveOpen} onClose={() => setDriveOpen(false)} title="Drive del proyecto" sub={project.name} width={440}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Field label="Enlace de Google Drive (compartido con el cliente)">
