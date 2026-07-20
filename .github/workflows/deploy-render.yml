@@ -26,57 +26,11 @@ jobs:
     env:
       SERVICE_ID: srv-d8u0gspo3t8c73c5dn6g
     steps:
-      - name: Diagnostico auth + resync (imprime codigos HTTP y bodies)
+      - name: Listar deploys recientes de Render (read-only, sin crear nada)
         run: |
           set -uo pipefail
           AUTH="Authorization: Bearer ${{ secrets.RENDER_API_KEY }}"
-          echo "== GET service (sanity check del token) =="
-          code=$(curl -sS -o /tmp/svc.json -w '%{http_code}' "https://api.render.com/v1/services/${SERVICE_ID}" -H "$AUTH")
-          echo "GET /services/{id} -> HTTP $code"
-          echo "BODY>>>$(cat /tmp/svc.json)<<<"
-
-          echo "== PATCH resync =="
-          code=$(curl -sS -o /tmp/patch.json -w '%{http_code}' -X PATCH "https://api.render.com/v1/services/${SERVICE_ID}" \
-            -H "$AUTH" -H "Content-Type: application/json" \
-            -d '{"repo":"https://github.com/developers-insights/app-proyectos","branch":"main"}')
-          echo "PATCH /services/{id} -> HTTP $code"
-          echo "BODY>>>$(cat /tmp/patch.json)<<<"
-          sleep 8
-
-      - name: Deploy del commit exacto de este push + polling del estado real
-        run: |
-          set -uo pipefail
-          AUTH="Authorization: Bearer ${{ secrets.RENDER_API_KEY }}"
-          echo "== POST /deploys para commit ${GITHUB_SHA} =="
-          code=$(curl -sS -o /tmp/post.json -w '%{http_code}' -X POST "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
-            -H "$AUTH" -H "Content-Type: application/json" \
-            -d "{\"commitId\":\"${GITHUB_SHA}\"}")
-          echo "POST /deploys -> HTTP $code"
-          RESP=$(cat /tmp/post.json)
-          echo "RAW_POST_RESPONSE>>>${RESP}<<<"
-          DEP_ID=$(printf '%s' "$RESP" | jq -r '(.. | objects | select(has("id")) | .id) // empty' 2>/dev/null | head -n1)
-          echo "DEP_ID=[${DEP_ID}]"
-          if [ -z "${DEP_ID}" ]; then echo "::error::POST /deploys fallo (HTTP $code) o sin id"; exit 1; fi
-
-          for i in $(seq 1 40); do
-            sleep 15
-            D=$(curl -sS "https://api.render.com/v1/services/${SERVICE_ID}/deploys/${DEP_ID}" \
-              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}")
-            ST=$(printf '%s' "$D" | jq -r '(.. | objects | select(has("status")) | .status) // "unknown"' 2>/dev/null | head -n1)
-            CM=$(printf '%s' "$D" | jq -r '(.. | objects | select(has("commit")) | .commit.id) // "?"' 2>/dev/null | head -n1)
-            echo "[$i] status=${ST}  commit=${CM}"
-            case "$ST" in
-              live)
-                echo "== LIVE con commit ${CM} =="
-                if [ "${CM}" = "${GITHUB_SHA}" ]; then echo "commit CORRECTO"; else echo "::warning::Render deployo un commit DISTINTO al esperado (${GITHUB_SHA})"; fi
-                exit 0
-                ;;
-              build_failed|update_failed|canceled|deactivated|pre_deploy_failed)
-                echo "::error::Deploy termino en estado ${ST}"
-                echo "RAW_DEPLOY>>>${D}<<<"
-                exit 1
-                ;;
-            esac
-          done
-          echo "::error::Timeout esperando estado terminal del deploy"
-          exit 1
+          echo "commit de este push (HEAD): ${GITHUB_SHA}"
+          echo "== ultimos 15 deploys en Render (mas nuevo primero) =="
+          curl -sS "https://api.render.com/v1/services/${SERVICE_ID}/deploys?limit=15" -H "$AUTH" \
+            | jq -r '.[] | .deploy | "\(.createdAt)  status=\(.status)  commit=\(.commit.id[0:8])  fin=\(.finishedAt // "-")  trigger=\(.trigger // "-")"'
