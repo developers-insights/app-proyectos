@@ -10,9 +10,15 @@ name: Deploy a Render
 # (verificado: 3 pushes seguidos deployaron el commit viejo sin este paso). Hay
 # que forzar el resync con un PATCH al mismo repo (nudge) ANTES de pedir el
 # deploy, y pedirlo con el commitId exacto para asegurar que toma el correcto.
+#
+# Ademas, el POST devuelve el deploy id: hacemos polling del estado hasta un
+# estado terminal e imprimimos el commit REAL que Render checkouteo, para no
+# quedarnos con un "success" del workflow mientras Render deploya codigo viejo o
+# el build falla en silencio.
 on:
   push:
     branches: [main]
+  workflow_dispatch: {}
 
 jobs:
   deploy:
@@ -25,12 +31,43 @@ jobs:
           curl -fsS -X PATCH "https://api.render.com/v1/services/${SERVICE_ID}" \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '{"repo":"https://github.com/developers-insights/app-proyectos","branch":"main"}'
-          sleep 5
+            -d '{"repo":"https://github.com/developers-insights/app-proyectos","branch":"main"}' > /dev/null
+          sleep 8
 
-      - name: Deploy del commit exacto de este push
+      - name: Deploy del commit exacto de este push (con clear cache) + polling
         run: |
-          curl -fsS -X POST "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
+          set -euo pipefail
+          echo "Pidiendo deploy del commit ${GITHUB_SHA} ..."
+          RESP=$(curl -fsS -X POST "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{\"commitId\":\"${GITHUB_SHA}\"}"
+            -d "{\"commitId\":\"${GITHUB_SHA}\",\"clearCache\":\"clear\"}")
+          echo "Respuesta POST /deploys:"; echo "$RESP" | jq '{id, status, commit: .commit.id}'
+          DEP_ID=$(echo "$RESP" | jq -r '.id')
+          echo "deploy id = $DEP_ID"
+
+          # Polling del estado hasta terminal (o timeout ~10 min)
+          for i in $(seq 1 40); do
+            sleep 15
+            D=$(curl -fsS "https://api.render.com/v1/services/${SERVICE_ID}/deploys/${DEP_ID}" \
+              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}")
+            ST=$(echo "$D" | jq -r '.status')
+            CM=$(echo "$D" | jq -r '.commit.id')
+            echo "[$i] status=$ST  commit=$CM"
+            case "$ST" in
+              live)
+                echo "OK: deploy LIVE con commit $CM"
+                if [ "$CM" != "${GITHUB_SHA}" ]; then
+                  echo "::warning::Render deployo un commit distinto al esperado (${GITHUB_SHA})"
+                fi
+                exit 0
+                ;;
+              build_failed|update_failed|canceled|deactivated|pre_deploy_failed)
+                echo "::error::Deploy termino en estado $ST"
+                echo "Detalle:"; echo "$D" | jq '{id,status,commit:.commit.id,finishedAt}'
+                exit 1
+                ;;
+            esac
+          done
+          echo "::error::Timeout esperando estado terminal del deploy"
+          exit 1
