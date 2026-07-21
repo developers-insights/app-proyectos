@@ -3384,22 +3384,16 @@ function AccountsModal({ open, project, onClose, patch }) {
 const VAULT_TYPES = [
   { key: 'email', label: 'Correo', Ico: I.mail, color: '#38BDF8' },
   { key: 'domain', label: 'Dominio', Ico: I.globe, color: '#2DD4BF' },
-  { key: 'hosting', label: 'Hosting', Ico: I.server, color: '#A855F7' },
-  { key: 'db', label: 'Base de datos', Ico: I.database, color: '#F59E0B' },
   { key: 'payments', label: 'Pagos', Ico: I.card, color: '#22C55E' },
   { key: 'social', label: 'Redes', Ico: I.at, color: '#EC4899' },
-  { key: 'cms', label: 'CMS / Panel', Ico: I.doc, color: '#6366F1' },
   { key: 'other', label: 'Otro', Ico: I.key, color: '#9CA3AF' },
 ]
 const vaultMeta = (k) => VAULT_TYPES.find((t) => t.key === k) || VAULT_TYPES[VAULT_TYPES.length - 1]
 const VAULT_PRESETS = [
   { label: 'Gmail / Correo', type: 'email' },
   { label: 'Dominio', type: 'domain' },
-  { label: 'Hosting / cPanel', type: 'hosting' },
-  { label: 'Supabase', type: 'db' },
   { label: 'Stripe / Mercado Pago', type: 'payments' },
   { label: 'Instagram', type: 'social' },
-  { label: 'WordPress', type: 'cms' },
 ]
 const emptyVaultItem = (type = 'other', label = '') => ({ id: uid(), type, label, username: '', password: '', url: '', notes: '' })
 const genPassword = () => {
