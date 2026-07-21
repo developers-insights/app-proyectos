@@ -3314,11 +3314,11 @@ function AccountsModal({ open, project, onClose, patch }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {accounts.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Todavía no agregaste cuentas. Sumá las que vas a necesitar con los botones de abajo.</div>}
           {accounts.map((a) => (
-            <div key={a.id} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button onClick={() => toggle(a.id)} title={a.done ? 'Ya la tiene creada' : 'Marcar como creada'} style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (a.done ? 'var(--green)' : 'var(--border-strong)'), background: a.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0, cursor: 'pointer' }}>{a.done && <I.check width={13} height={13} style={{ color: '#fff' }} />}</button>
+            <div key={a.id} className="surface surface-hover click" onClick={() => toggle(a.id)} title={a.done ? 'Marcar como no creada' : 'Marcar como creada'} style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+              <span style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (a.done ? 'var(--green)' : 'var(--border-strong)'), background: a.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{a.done && <I.check width={13} height={13} style={{ color: '#fff' }} />}</span>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, textDecoration: a.done ? 'line-through' : 'none', color: a.done ? 'var(--text-faint)' : 'var(--text)' }}>{a.label}</span>
               <span style={{ fontSize: 11.5, fontWeight: 600, color: a.done ? 'var(--green)' : 'var(--text-faint)' }}>{a.done ? 'Creada' : 'Falta'}</span>
-              <button className="btn btn-sm btn-ghost" onClick={() => remove(a.id)} title="Quitar" style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={13} height={13} /></button>
+              <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); remove(a.id) }} title="Quitar" style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={13} height={13} /></button>
             </div>
           ))}
         </div>
