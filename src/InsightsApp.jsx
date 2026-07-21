@@ -3375,6 +3375,194 @@ function AccountsModal({ open, project, onClose, patch }) {
   )
 }
 
+/* ============================================================================
+   BAÚL DE DATOS DEL CLIENTE — credenciales y accesos sensibles por proyecto.
+   Cada item: etiqueta + tipo + usuario/mail + contraseña + URL + notas.
+   Copiar al portapapeles y mostrar/ocultar por campo. Persiste per-fila en el
+   proyecto (campo `vault`). Solo lo ve el equipo (nunca sale en el link público).
+============================================================================ */
+const VAULT_TYPES = [
+  { key: 'email', label: 'Correo', Ico: I.mail, color: '#38BDF8' },
+  { key: 'domain', label: 'Dominio', Ico: I.globe, color: '#2DD4BF' },
+  { key: 'hosting', label: 'Hosting', Ico: I.server, color: '#A855F7' },
+  { key: 'db', label: 'Base de datos', Ico: I.database, color: '#F59E0B' },
+  { key: 'payments', label: 'Pagos', Ico: I.card, color: '#22C55E' },
+  { key: 'social', label: 'Redes', Ico: I.at, color: '#EC4899' },
+  { key: 'cms', label: 'CMS / Panel', Ico: I.doc, color: '#6366F1' },
+  { key: 'other', label: 'Otro', Ico: I.key, color: '#9CA3AF' },
+]
+const vaultMeta = (k) => VAULT_TYPES.find((t) => t.key === k) || VAULT_TYPES[VAULT_TYPES.length - 1]
+const VAULT_PRESETS = [
+  { label: 'Gmail / Correo', type: 'email' },
+  { label: 'Dominio', type: 'domain' },
+  { label: 'Hosting / cPanel', type: 'hosting' },
+  { label: 'Supabase', type: 'db' },
+  { label: 'Stripe / Mercado Pago', type: 'payments' },
+  { label: 'Instagram', type: 'social' },
+  { label: 'WordPress', type: 'cms' },
+]
+const emptyVaultItem = (type = 'other', label = '') => ({ id: uid(), type, label, username: '', password: '', url: '', notes: '' })
+const genPassword = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*?'
+  let s = ''
+  for (let i = 0; i < 16; i++) s += chars[Math.floor(Math.random() * chars.length)]
+  return s
+}
+
+/* Botón de copiar con micro-feedback (✓ verde durante ~1s) */
+function CopyBtn({ value, title = 'Copiar' }) {
+  const [ok, setOk] = useState(false)
+  if (!value) return null
+  const copy = async (e) => {
+    e.stopPropagation()
+    try {
+      if (navigator.clipboard) await navigator.clipboard.writeText(value)
+      else { const ta = document.createElement('textarea'); ta.value = value; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta) }
+      setOk(true); setTimeout(() => setOk(false), 1100)
+    } catch { /* ignore */ }
+  }
+  return (
+    <button className="btn btn-sm btn-ghost" onClick={copy} title={ok ? 'Copiado' : title} style={{ padding: 5, color: ok ? 'var(--green)' : 'var(--text-faint)', flexShrink: 0 }}>
+      {ok ? <I.check width={13} height={13} /> : <I.copy width={13} height={13} />}
+    </button>
+  )
+}
+
+/* Fila de un campo del item: icono + valor (mono) + ocultar (si es secreto) + copiar */
+function VaultRow({ Ico, value, mono = true, secret = false, isLink = false }) {
+  const [show, setShow] = useState(false)
+  if (!value) return null
+  const masked = secret && !show
+  const display = masked ? '•'.repeat(Math.min(Math.max(value.length, 6), 14)) : value
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
+      <Ico width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+      {isLink && !masked
+        ? <a href={value} target="_blank" rel="noreferrer" className={mono ? 'mono' : ''} style={{ flex: 1, fontSize: 12.5, color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</a>
+        : <span className={mono ? 'mono' : ''} style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: masked ? 2 : 0 }}>{display}</span>}
+      {secret && <button className="btn btn-sm btn-ghost" onClick={() => setShow((s) => !s)} title={show ? 'Ocultar' : 'Mostrar'} style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}>{show ? <I.eyeOff width={13} height={13} /> : <I.eye width={13} height={13} />}</button>}
+      <CopyBtn value={value} />
+    </div>
+  )
+}
+
+function VaultModal({ open, project, onClose, patch }) {
+  const [editing, setEditing] = useState(null)  // null | item (nuevo o en edición)
+  const [pwShow, setPwShow] = useState(false)
+  if (!project) return <Modal open={open} onClose={onClose} title="Datos del cliente" />
+  const items = project.vault || []
+
+  const startNew = (preset) => { setPwShow(false); setEditing(preset ? emptyVaultItem(preset.type, preset.label) : emptyVaultItem()) }
+  const startEdit = (it) => { setPwShow(false); setEditing({ ...it }) }
+  const set = (k, v) => setEditing((e) => ({ ...e, [k]: v }))
+  const save = () => {
+    const it = editing
+    const clean = { ...it, label: (it.label || '').trim() || vaultMeta(it.type).label }
+    patch((p) => {
+      const cur = p.vault || []
+      const exists = cur.some((x) => x.id === clean.id)
+      return { ...p, vault: exists ? cur.map((x) => (x.id === clean.id ? clean : x)) : [...cur, clean] }
+    })
+    setEditing(null)
+  }
+  const remove = (id) => { if (window.confirm('¿Eliminar este dato? No se puede deshacer.')) patch((p) => ({ ...p, vault: (p.vault || []).filter((x) => x.id !== id) })) }
+  const canSave = editing && ((editing.label || '').trim() || editing.username || editing.password || editing.url || editing.notes)
+
+  return (
+    <Modal open={open} onClose={onClose} title="Datos del cliente" sub={project.name} width={560}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.55, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
+          <I.lock width={15} height={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span>Guardá acá los accesos y datos del cliente: correos, contraseñas, dominios, hosting, pagos… Solo lo ve el equipo — nunca aparece en el link público.</span>
+        </div>
+
+        {editing ? (
+          /* ---- FORM de alta / edición ---- */
+          <div className="surface" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--card)' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+              {VAULT_TYPES.map((t) => {
+                const on = editing.type === t.key
+                return (
+                  <button key={t.key} onClick={() => set('type', t.key)} className="tag" style={{ cursor: 'pointer', color: on ? '#fff' : t.color, background: on ? t.color : t.color + '1f', borderColor: 'transparent', fontWeight: 600 }}>
+                    <t.Ico width={12} height={12} /> {t.label}
+                  </button>
+                )
+              })}
+            </div>
+            <Field label="Etiqueta"><input className="input" value={editing.label} onChange={(e) => set('label', e.target.value)} placeholder={vaultMeta(editing.type).label + ' del cliente'} autoFocus /></Field>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="Usuario / correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="usuario@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+              <Field label="Contraseña">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
+                  <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I.eyeOff width={14} height={14} /> : <I.eye width={14} height={14} />}</button>
+                  <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I.spark width={14} height={14} /></button>
+                </div>
+              </Field>
+            </div>
+            <Field label="URL / enlace (opcional)"><input className="input mono" value={editing.url} onChange={(e) => set('url', e.target.value)} placeholder="https://…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+            <Field label="Notas (opcional)"><textarea className="input" rows={2} value={editing.notes} onChange={(e) => set('notes', e.target.value)} placeholder="2FA, PIN, datos de recuperación, etc." style={{ resize: 'none' }} /></Field>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn" onClick={() => setEditing(null)}>Cancelar</button>
+              <button className="btn btn-accent" onClick={save} disabled={!canSave}><I.check width={15} height={15} /> Guardar dato</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* ---- LISTA de datos guardados ---- */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {items.length === 0 && (
+                <div className="surface" style={{ padding: '22px 16px', textAlign: 'center', color: 'var(--text-faint)', fontSize: 13, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <I.lock width={22} height={22} style={{ color: 'var(--text-faint)', opacity: 0.7 }} />
+                  Todavía no guardaste ningún dato. Sumá el primero con los accesos rápidos o el botón de abajo.
+                </div>
+              )}
+              {items.map((it) => { const m = vaultMeta(it.type); return (
+                <div key={it.id} className="surface surface-hover" style={{ padding: 0, overflow: 'hidden', borderLeft: `3px solid ${m.color}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderBottom: (it.username || it.password || it.url || it.notes) ? '1px solid var(--border)' : 'none' }}>
+                    <span style={{ width: 28, height: 28, borderRadius: 8, background: m.color + '22', color: m.color, display: 'grid', placeItems: 'center', flexShrink: 0 }}><m.Ico width={15} height={15} /></span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{m.label}</div>
+                    </div>
+                    <button className="btn btn-sm btn-ghost" onClick={() => startEdit(it)} title="Editar" style={{ padding: 5, color: 'var(--text-faint)' }}><I.pencil width={14} height={14} /></button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => remove(it.id)} title="Eliminar" style={{ padding: 5, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
+                  </div>
+                  {(it.username || it.password || it.url || it.notes) && (
+                    <div style={{ padding: '7px 13px 10px' }}>
+                      <VaultRow Ico={I.user} value={it.username} />
+                      <VaultRow Ico={I.lock} value={it.password} secret />
+                      <VaultRow Ico={I.link} value={it.url} isLink mono={false} />
+                      {it.notes && <div style={{ display: 'flex', gap: 8, padding: '5px 0' }}><I.comment width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0, marginTop: 2 }} /><span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{it.notes}</span></div>}
+                    </div>
+                  )}
+                </div>
+              )})}
+            </div>
+
+            {/* ---- Accesos rápidos ---- */}
+            <div>
+              <div className="label" style={{ marginBottom: 8 }}>Agregar rápido</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {VAULT_PRESETS.map((pr) => { const m = vaultMeta(pr.type); return (
+                  <button key={pr.label} className="btn btn-sm" onClick={() => startNew(pr)}>
+                    <m.Ico width={13} height={13} style={{ color: m.color }} /> {pr.label}
+                  </button>
+                )})}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{items.length ? `${items.length} dato${items.length === 1 ? '' : 's'} guardado${items.length === 1 ? '' : 's'}` : ''}</span>
+              <button className="btn btn-accent" onClick={() => startNew(null)}><I.plus width={15} height={15} /> Agregar dato</button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 /* ALCANCE del proyecto: archivos/PDFs + links + llamadas de venta + notas */
 function ScopeModal({ open, project, onClose, patch }) {
   const fileRef = useRef(null)
@@ -4420,6 +4608,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [shareOpen, setShareOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [accountsOpen, setAccountsOpen] = useState(false)
+  const [vaultOpen, setVaultOpen] = useState(false)
 
   if (!project) return null
   const patch = (fn) => projectStore.patch(projectId, fn)
@@ -4495,6 +4684,9 @@ function ProjectDetail({ projectId, onBack }) {
           <button className="btn btn-sm" onClick={() => setDriveOpen(true)} title="Carpeta de Drive compartida con el cliente" style={{ color: project.driveUrl ? 'var(--accent)' : undefined }}><I.folder width={14} height={14} /> Drive</button>
           {(() => { const acc = project.accounts || []; const done = acc.filter((a) => a.done).length; const col = acc.length ? (done === acc.length ? 'var(--green)' : 'var(--accent)') : undefined; return (
             <button className="btn btn-sm" onClick={() => setAccountsOpen(true)} title="Cuentas y accesos que necesita el proyecto (Supabase, GitHub, Vercel…)" style={{ color: col }}><I.key width={14} height={14} /> Cuentas{acc.length ? ` · ${done}/${acc.length}` : ''}</button>
+          ) })()}
+          {(() => { const n = (project.vault || []).length; return (
+            <button className="btn btn-sm" onClick={() => setVaultOpen(true)} title="Datos y credenciales del cliente (correos, contraseñas, dominios, hosting…)" style={{ color: n ? 'var(--accent)' : undefined }}><I.lock width={14} height={14} /> Datos{n ? ` · ${n}` : ''}</button>
           ) })()}
           <button className="btn btn-sm" onClick={() => setShareOpen(true)} title="Compartir vista con el cliente (link + contraseña)" style={{ color: project.shareEnabled ? 'var(--green)' : undefined }}><I.eye width={14} height={14} /> Compartir</button>
           {linkedPlan && linkedPlan.publishedUrl
@@ -4584,6 +4776,7 @@ function ProjectDetail({ projectId, onBack }) {
       <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
       <AccountsModal open={accountsOpen} project={project} onClose={() => setAccountsOpen(false)} patch={patch} />
+      <VaultModal open={vaultOpen} project={project} onClose={() => setVaultOpen(false)} patch={patch} />
       <Modal open={driveOpen} onClose={() => setDriveOpen(false)} title="Drive del proyecto" sub={project.name} width={440}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Field label="Enlace de Google Drive (compartido con el cliente)">
