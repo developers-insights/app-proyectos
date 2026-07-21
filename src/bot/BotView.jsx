@@ -225,7 +225,7 @@ export default function BotView() {
   const overdueDays = (g) => {
     if (!g || !g.active || !g.last_team_msg_at) return null
     const days = Math.floor((now - new Date(g.last_team_msg_at).getTime()) / DAY)
-    const thr = g.inactivity_threshold_days ?? 5
+    const thr = g.inactivity_threshold_days ?? 3
     return days > thr ? days : null
   }
 
@@ -763,7 +763,7 @@ function Grupos({ isMobile, groups, projects, clients, now, loading, groupTitle,
     </button>
   )
   const Umbral = ({ g }) => (
-    <input type="number" min={1} max={60} className="input mono" value={g.inactivity_threshold_days ?? 5}
+    <input type="number" min={1} max={60} className="input mono" value={g.inactivity_threshold_days ?? 3}
       onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v) && v > 0) patchGroup(g.group_jid, { inactivity_threshold_days: v }) }}
       style={{ width: 64, padding: '6px 8px', fontSize: 13, textAlign: 'center' }} />
   )
