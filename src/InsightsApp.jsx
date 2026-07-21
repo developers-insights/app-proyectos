@@ -1421,6 +1421,9 @@ function normalizeProject(p) {
     tags: rest.tags || [],
     priority: rest.priority || 'normal',
     createdAt: rest.createdAt || new Date().toISOString(),
+    // marca de "último avance" automática: se actualiza al tachar una tarea del
+    // roadmap o terminar un sprint (no depende del log manual de `avances`).
+    lastProgressAt: rest.lastProgressAt || null,
     avances: rest.avances || [],
     comms: rest.comms || [],
     scopeFiles: rest.scopeFiles || [],
@@ -1624,11 +1627,28 @@ function businessDaysSince(iso) {
 }
 /* convierte el value de un <input type=date> (YYYY-MM-DD) a ISO en hora local (mediodía) */
 const dateInputISO = (v) => (v ? new Date(v + 'T12:00:00').toISOString() : new Date().toISOString())
-/* estado de seguimiento de avance/comunicación de un proyecto (primer registro vs días sin) */
-function trackInfo(project, kind) {
-  const entries = (kind === 'avance' ? project.avances : project.comms) || []
-  if (entries.length) {
-    const days = businessDaysSince(entries[0].date)
+/* ISO más reciente de una lista, comparando por tiempo real (no orden lexical:
+   los timestamptz de Postgres terminan en "+00:00" y los de toISOString en "Z"). */
+function latestISO(...isos) {
+  let best = null, bestT = -Infinity
+  for (const iso of isos) {
+    if (!iso) continue
+    const t = new Date(iso).getTime()
+    if (Number.isFinite(t) && t > bestT) { bestT = t; best = iso }
+  }
+  return best
+}
+/* estado de seguimiento de avance/comunicación de un proyecto (primer registro vs días sin).
+   - 'avance' toma el más reciente entre el log manual y `lastProgressAt` (tachar una
+     tarea del roadmap o terminar un sprint cuenta como avance, sin cargar nada a mano).
+   - 'comm' toma el más reciente entre el log manual y `botCommAt` (último mensaje del
+     equipo en el grupo de WhatsApp, que reporta el bot). */
+function trackInfo(project, kind, botCommAt) {
+  const manual = (kind === 'avance' ? project.avances : project.comms)?.[0]?.date || null
+  const auto = kind === 'avance' ? (project.lastProgressAt || null) : (botCommAt || null)
+  const latest = latestISO(manual, auto)
+  if (latest) {
+    const days = businessDaysSince(latest)
     const threshold = kind === 'avance' ? 5 : 3
     return { first: false, days, overdue: days != null && days > threshold }
   }
@@ -2508,8 +2528,10 @@ function SprintBoard({ project, patch, onOpenSprint, linkedPlan, patchPlan }) {
   const weeks = [...new Set(sprints.map((s, i) => weekOf(s, i)))].sort((a, b) => a - b)
   const setSprint = (sid, fields) => {
     const prev = sprints.find((s) => s.id === sid)
-    patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
-    if (fields.status && normSprint(fields.status) === 'terminado' && prev && normSprint(prev.status) !== 'terminado' && logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${prev.name}" de ${project.name}` })
+    const becomingDone = !!fields.status && normSprint(fields.status) === 'terminado' && prev && normSprint(prev.status) !== 'terminado'
+    // terminar un sprint también cuenta como "último avance" del proyecto
+    patch((p) => ({ ...p, ...(becomingDone ? { lastProgressAt: new Date().toISOString() } : {}), sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
+    if (becomingDone && logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${prev.name}" de ${project.name}` })
     // Sync sprint→plan: entrar/salir de "terminado" marca/desmarca toda la semana apareada.
     // Usa setWeekAllDone (no toggle) → idempotente, sin loop con el toggle de tareas.
     if (fields.status && linkedPlan && patchPlan) {
@@ -2759,7 +2781,7 @@ function SprintGantt({ projects, clientOf, onOpen }) {
    12 · PROJECTS LIST
 ============================================================================ */
 function Projects({ onOpenProject }) {
-  const { data, logActivity, projectStore } = useApp()
+  const { data, logActivity, projectStore, botComms } = useApp()
   const [newOpen, setNewOpen] = useState(false)
   const qp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
   const [tab, setTab] = useState(qp.get('tab') || 'active')
@@ -2906,7 +2928,7 @@ function Projects({ onOpenProject }) {
             const testingUrl = p.testingUrl || p.productionUrl || ''
             const waUrl = p.whatsappUrl || ''
             const mini = (label, Icon, kind, firstLabel) => {
-              const t = trackInfo(p, kind)
+              const t = trackInfo(p, kind, kind === 'comm' ? (botComms || {})[p.id] : undefined)
               const bad = t.overdue
               const val = t.first ? firstLabel : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)
               return (
@@ -2974,7 +2996,7 @@ function Projects({ onOpenProject }) {
                 const cl = clientOf(p.clientId)
                 const cs = p.sprints.find((s) => normSprint(s.status) === 'en proceso')
                 const trackCell = (kind, firstLabel) => {
-                  const t = trackInfo(p, kind)
+                  const t = trackInfo(p, kind, kind === 'comm' ? (botComms || {})[p.id] : undefined)
                   const bad = t.overdue
                   const val = t.first ? firstLabel : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)
                   return (
@@ -3142,7 +3164,7 @@ function LogEntry({ entry, team, myId, projectName, onUpdate, onDelete, logActiv
 }
 
 function ProjectLogModal({ open, kind, project, onClose, patch }) {
-  const { data, logActivity } = useApp()
+  const { data, logActivity, botComms } = useApp()
   const [text, setText] = useState('')
   const [shots, setShots] = useState([])
   const [busy, setBusy] = useState(false)
@@ -3156,7 +3178,7 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
   const entries = project[cfg.field] || []
   const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
   const userOf = (id) => (data.team || []).find((u) => u.id === id)
-  const track = trackInfo(project, kind === 'comm' ? 'comm' : 'avance')
+  const track = trackInfo(project, kind === 'comm' ? 'comm' : 'avance', kind === 'comm' ? (botComms || {})[project.id] : undefined)
   const overdue = track.overdue
 
   const onFiles = async (e) => {
@@ -3231,8 +3253,9 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
 
 /* pop-up de inicio para el PM: estado de seguimiento de sus proyectos */
 function PmStartupAlert({ open, projects, clients, onClose, onOpenProject }) {
+  const { botComms } = useApp()
   const clientOf = (id) => clients.find((c) => c.id === id)
-  const rows = projects.map((p) => ({ p, av: trackInfo(p, 'avance'), comm: trackInfo(p, 'comm') }))
+  const rows = projects.map((p) => ({ p, av: trackInfo(p, 'avance'), comm: trackInfo(p, 'comm', (botComms || {})[p.id]) }))
     .sort((a, b) => (b.comm.overdue || b.av.overdue ? 1 : 0) - (a.comm.overdue || a.av.overdue ? 1 : 0))
   return (
     <Modal open={open} onClose={onClose} title="Seguimiento de tus clientes" sub="Como PM, tené al día la comunicación y los avances" width={640}>
@@ -4295,7 +4318,7 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask }) {
 
 /* Sección "Avance del plan": barra global + acordeón de TODAS las semanas del plan
    asociado. Tachar tareas dispara el sync plan→sprint (idempotente, plano). */
-function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate }) {
+function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate, markProgress }) {
   const { logActivity } = useApp()
 
   if (!linkedPlan) {
@@ -4326,6 +4349,7 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
       weeks: (p.weeks || []).map((w) => (w.n === weekN ? toggleTaskDone(w, taskIndex) : w)),
     }))
     if (!updated) return
+    if (markProgress) markProgress()   // tachar una tarea del roadmap = "último avance" hoy
     const w = (updated.weeks || []).find((x) => x.n === weekN)
     const prg = weekProgress(w)
     const sp = sprintForWeek(project.sprints, weekN)
@@ -4415,12 +4439,14 @@ function ProjectDetail({ projectId, onBack }) {
   const patchSprintSynced = (sid, fields) => {
     const prev = project.sprints.find((s) => s.id === sid)
     patchSprint(sid, fields)
-    if (fields.status && linkedPlan && patchPlan) {
-      const idx = project.sprints.findIndex((s) => s.id === sid)
-      const weekN = (project.sprints[idx] && project.sprints[idx].week) || (idx + 1)
+    if (fields.status) {
       const nextDone = normSprint(fields.status) === 'terminado'
       const prevDone = normSprint(prev && prev.status) === 'terminado'
-      if (nextDone !== prevDone) {
+      // terminar un sprint desde el modal de detalle también marca "último avance"
+      if (nextDone && !prevDone) patch((p) => ({ ...p, lastProgressAt: new Date().toISOString() }))
+      if (linkedPlan && patchPlan && nextDone !== prevDone) {
+        const idx = project.sprints.findIndex((s) => s.id === sid)
+        const weekN = (project.sprints[idx] && project.sprints[idx].week) || (idx + 1)
         patchPlan(linkedPlan.id, (p) => ({ ...p, weeks: (p.weeks || []).map((w) => w.n === weekN ? setWeekAllDone(w, nextDone) : w) }))
       }
     }
@@ -4484,11 +4510,12 @@ function ProjectDetail({ projectId, onBack }) {
           <KpiCard label="% Avance" value={`${sprintProgress}%`} tone={pctColor(sprintProgress)} sub="por sprints" onClick={() => setKpiModal('progress')} />
         </motion.div>
 
+        {/* AVANCE DEL ROADMAP (plan) — va ARRIBA de los sprints: acordeón de semanas,
+            tachado + % en vivo para el cliente. Tachar una tarea marca "último avance". */}
+        <PlanProgress project={project} linkedPlan={linkedPlan} patchPlan={patchPlan} patchSprint={patchSprint} onAssociate={() => setPlanOpen(true)} markProgress={() => patch((p) => ({ ...p, lastProgressAt: new Date().toISOString() }))} />
+
         {/* SPRINTS — tabla (drag para reordenar) o kanban */}
         <SprintBoard project={project} patch={patch} onOpenSprint={(id) => setOpenSprintId(id)} linkedPlan={linkedPlan} patchPlan={patchPlan} />
-
-        {/* AVANCE DEL PLAN — acordeón de semanas: tachado + % en vivo para el cliente */}
-        <PlanProgress project={project} linkedPlan={linkedPlan} patchPlan={patchPlan} patchSprint={patchSprint} onAssociate={() => setPlanOpen(true)} />
 
         {/* TAREAS DEL EQUIPO (sincronizadas con Tareas) + DEL CLIENTE (dependencias) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 26 }}>
@@ -5660,6 +5687,35 @@ function CenterScreen({ children }) {
   return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-faint)', fontSize: 14 }}>{children}</div>
 }
 
+/* Mapa proyecto → último mensaje del EQUIPO en su grupo de WhatsApp (lo escribe el
+   bot en wa_groups.last_team_msg_at). Alimenta el "Último mensaje" de las cards sin
+   que nadie lo cargue a mano. Refresca cada 5' y al volver a la pestaña. */
+function useBotComms() {
+  const [map, setMap] = useState({})
+  useEffect(() => {
+    if (!cloudEnabled) return
+    let alive = true
+    const load = async () => {
+      const { data, error } = await supabase.from('wa_groups').select('project_id,last_team_msg_at')
+      if (!alive || error || !data) return
+      const m = {}
+      for (const g of data) {
+        if (!g.project_id || !g.last_team_msg_at) continue
+        // un proyecto puede tener varios grupos: quedate con el mensaje más reciente
+        const cur = m[g.project_id]
+        if (!cur || new Date(g.last_team_msg_at) > new Date(cur)) m[g.project_id] = g.last_team_msg_at
+      }
+      setMap(m)
+    }
+    load()
+    const iv = setInterval(load, 5 * 60 * 1000)
+    const onVis = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { alive = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis) }
+  }, [])
+  return map
+}
+
 /* the authenticated app */
 function AppShell({ session, onLogout }) {
   const planStore = usePlans()   // { plans, plansReady, createPlan, patchPlan, deletePlan, publishSync, retryPublish }
@@ -5691,6 +5747,7 @@ function AppShell({ session, onLogout }) {
     tasks: taskStore.tasks,
   }), [teamStore.items, clientStore.items, projectStore.items, callStore.items, activityStore.items, chatStore.items, sops, taskStore.tasks])
   const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore }
+  const botComms = useBotComms()   // proyecto → último mensaje del equipo en WhatsApp (del bot)
 
   // Badge de sync: agregado del estado de todas las tablas.
   const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore]
@@ -5756,7 +5813,7 @@ function AppShell({ session, onLogout }) {
   if (route.view === 'editor') editorEverOpenedRef.current = true
 
   return (
-    <AppCtx.Provider value={{ data: dataView, logActivity, supabase, ...planStore, ...taskStore, ...collectionStores }}>
+    <AppCtx.Provider value={{ data: dataView, logActivity, supabase, botComms, ...planStore, ...taskStore, ...collectionStores }}>
       <div className="app-shell">
         <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
