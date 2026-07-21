@@ -3483,23 +3483,28 @@ function VaultModal({ open, project, onClose, patch }) {
               {VAULT_TYPES.map((t) => {
                 const on = editing.type === t.key
                 return (
-                  <button key={t.key} onClick={() => set('type', t.key)} className="tag" style={{ cursor: 'pointer', color: on ? '#fff' : t.color, background: on ? t.color : t.color + '1f', borderColor: 'transparent', fontWeight: 600 }}>
+                  <button key={t.key} onClick={() => setEditing((e) => ({ ...e, type: t.key, ...(t.key === 'email' ? { password: '' } : {}) }))} className="tag" style={{ cursor: 'pointer', color: on ? '#fff' : t.color, background: on ? t.color : t.color + '1f', borderColor: 'transparent', fontWeight: 600 }}>
                     <t.Ico width={12} height={12} /> {t.label}
                   </button>
                 )
               })}
             </div>
             <Field label="Etiqueta"><input className="input" value={editing.label} onChange={(e) => set('label', e.target.value)} placeholder={vaultMeta(editing.type).label + ' del cliente'} autoFocus /></Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="Usuario / correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="usuario@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
-              <Field label="Contraseña">
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
-                  <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I.eyeOff width={14} height={14} /> : <I.eye width={14} height={14} />}</button>
-                  <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I.spark width={14} height={14} /></button>
-                </div>
-              </Field>
-            </div>
+            {editing.type === 'email' ? (
+              /* Correo: solo anotar el mail, sin contraseña */
+              <Field label="Correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="cliente@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label="Usuario / correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="usuario@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+                <Field label="Contraseña">
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
+                    <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I.eyeOff width={14} height={14} /> : <I.eye width={14} height={14} />}</button>
+                    <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I.spark width={14} height={14} /></button>
+                  </div>
+                </Field>
+              </div>
+            )}
             <Field label="URL / enlace (opcional)"><input className="input mono" value={editing.url} onChange={(e) => set('url', e.target.value)} placeholder="https://…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
             <Field label="Notas (opcional)"><textarea className="input" rows={2} value={editing.notes} onChange={(e) => set('notes', e.target.value)} placeholder="2FA, PIN, datos de recuperación, etc." style={{ resize: 'none' }} /></Field>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
