@@ -4398,6 +4398,73 @@ function ShareModal({ open, project, onClose, patch }) {
 ============================================================================ */
 
 /* Checkbox custom con check animado (spring). Naranja/verde según el tema de la app. */
+/* ── Notas del cliente ────────────────────────────────────────────────────────
+   Notas que cualquiera deja desde el link público del plan (tabla plan_notes).
+   Lectura pública; marcar leída / borrar exige estar logueado (RLS). Realtime:
+   aparecen solas cuando el cliente escribe. Se agrupan por semana (week=null →
+   nota general del plan). */
+function useClientNotes(slug) {
+  const [notes, setNotes] = useState([])
+  useEffect(() => {
+    if (!supabase || !slug) { setNotes([]); return }
+    let alive = true
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('plan_notes')
+        .select('id,week,author,body,read,created_at')
+        .eq('slug', slug).is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (alive && !error) setNotes(data || [])
+    }
+    load()
+    const ch = supabase
+      .channel('pn-app-' + slug)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'plan_notes', filter: 'slug=eq.' + slug }, load)
+      .subscribe()
+    return () => { alive = false; supabase.removeChannel(ch) }
+  }, [slug])
+
+  const markRead = async (id, read = true) => {
+    setNotes((ns) => ns.map((n) => (n.id === id ? { ...n, read } : n)))
+    if (supabase) await supabase.from('plan_notes').update({ read }).eq('id', id)
+  }
+  const remove = async (id) => {
+    setNotes((ns) => ns.filter((n) => n.id !== id))
+    if (supabase) await supabase.from('plan_notes').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+  }
+  return { notes, markRead, remove }
+}
+
+/* Una nota del cliente: autor, fecha, cuerpo, y acciones (leída / borrar). */
+function NoteCard({ note, onRead, onDelete }) {
+  const date = note.created_at
+    ? new Date(note.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : ''
+  return (
+    <div style={{
+      border: '1px solid ' + (note.read ? 'var(--border)' : 'var(--accent-line, var(--accent))'),
+      borderRadius: 10, padding: '10px 12px', background: note.read ? 'var(--card)' : 'var(--accent-soft)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+        {!note.read && <span style={{ width: 7, height: 7, borderRadius: 99, background: 'var(--accent)', flexShrink: 0 }} />}
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{note.author || 'Anónimo'}</span>
+        <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{date}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button className="btn btn-sm btn-ghost" style={{ padding: '3px 8px', fontSize: 11.5 }}
+            onClick={() => onRead(note.id, !note.read)} title={note.read ? 'Marcar como no leída' : 'Marcar como leída'}>
+            {note.read ? 'No leída' : 'Leída'}
+          </button>
+          <button className="btn btn-sm btn-ghost" style={{ padding: '3px 8px', fontSize: 11.5, color: 'var(--red)' }}
+            onClick={() => { if (window.confirm('¿Borrar esta nota del cliente?')) onDelete(note.id) }} title="Borrar nota">
+            Borrar
+          </button>
+        </span>
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{note.body}</div>
+    </div>
+  )
+}
+
 function PlanTaskCheck({ done }) {
   return (
     <span style={{
@@ -4416,13 +4483,14 @@ function PlanTaskCheck({ done }) {
 }
 
 /* Una semana del acordeón: cabecera colapsable + lista de tareas al expandir. */
-function PlanWeekRow({ plan, week, sprint, onToggleTask }) {
+function PlanWeekRow({ plan, week, sprint, onToggleTask, notes = [], onReadNote, onDeleteNote }) {
   const [open, setOpen] = useState(false)
   const prog = weekProgress(week)
   const complete = prog.total > 0 && prog.pct === 100
   const hito = hitoForWeek(plan, week.n)
   const tasks = Array.isArray(week.tasks) ? week.tasks : []
   const sMeta = sprint ? sprintMeta(sprint.status) : null
+  const unread = notes.filter((n) => !n.read).length
   return (
     <div style={{
       border: '1px solid ' + (complete ? 'var(--green-soft)' : 'var(--border)'),
@@ -4451,6 +4519,12 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask }) {
             </span>
           </span>
         </span>
+        {notes.length > 0 && (
+          <span className="tag" title={`${notes.length} nota${notes.length === 1 ? '' : 's'} del cliente${unread ? ` · ${unread} sin leer` : ''}`}
+            style={{ color: unread ? 'var(--accent)' : 'var(--text-dim)', background: unread ? 'var(--accent-soft)' : 'var(--bg-elevated)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <I.comment width={11} height={11} /> {notes.length}{unread ? ` · ${unread}` : ''}
+          </span>
+        )}
         {sMeta && (
           <span className="tag hide-mobile" style={{
             color: sMeta.tone === 'neutral' ? 'var(--text-dim)' : `var(--${sMeta.tone})`,
@@ -4495,6 +4569,18 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask }) {
                   </button>
                 )
               })}
+              {notes.length > 0 && (
+                <div style={{ marginTop: 8, padding: '10px 12px 4px', borderTop: '1px dashed var(--border)' }}>
+                  <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <I.comment width={13} height={13} /> Notas del cliente ({notes.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {notes.map((n) => (
+                      <NoteCard key={n.id} note={n} onRead={onReadNote} onDelete={onDeleteNote} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -4507,6 +4593,8 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask }) {
    asociado. Tachar tareas dispara el sync plan→sprint (idempotente, plano). */
 function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate, markProgress }) {
   const { logActivity } = useApp()
+  // Notas del cliente dejadas desde el link público (se agrupan por semana abajo).
+  const { notes: clientNotes, markRead, remove: removeNote } = useClientNotes(linkedPlan?.slug)
 
   if (!linkedPlan) {
     return (
@@ -4528,6 +4616,15 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
   const weeks = [...(linkedPlan.weeks || [])].sort((a, b) => (a.n || 0) - (b.n || 0))
   const prog = planProgress(linkedPlan)
   const complete = prog.total > 0 && prog.pct === 100
+
+  // Agrupa las notas del cliente por semana (week=null → nota general del plan).
+  const notesByWeek = {}
+  const generalNotes = []
+  for (const n of clientNotes) {
+    if (n.week == null) generalNotes.push(n)
+    else (notesByWeek[n.week] = notesByWeek[n.week] || []).push(n)
+  }
+  const totalUnread = clientNotes.filter((n) => !n.read).length
 
   // Tachar/destachar una tarea → guarda el plan (síncrono) y sincroniza el sprint apareado.
   const onToggleTask = (weekN, taskIndex) => {
@@ -4557,6 +4654,12 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
           <h2 style={{ fontSize: 19 }}>Avance del plan</h2>
           <span style={{ fontSize: 12.5, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkedPlan.title || 'Plan'}</span>
+          {totalUnread > 0 && (
+            <span className="tag" title={`${totalUnread} nota${totalUnread === 1 ? '' : 's'} del cliente sin leer`}
+              style={{ color: 'var(--accent)', background: 'var(--accent-soft)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <I.comment width={11} height={11} /> {totalUnread} sin leer
+            </span>
+          )}
         </div>
         {linkedPlan.publishedUrl && (
           <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ color: 'var(--accent)' }}>
@@ -4584,9 +4687,23 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
           <div className="surface" style={{ padding: 16, color: 'var(--text-faint)', fontSize: 13 }}>Este plan todavía no tiene semanas.</div>
         )}
         {weeks.map((w) => (
-          <PlanWeekRow key={w.n} plan={linkedPlan} week={w} sprint={sprintForWeek(project.sprints, w.n)} onToggleTask={onToggleTask} />
+          <PlanWeekRow key={w.n} plan={linkedPlan} week={w} sprint={sprintForWeek(project.sprints, w.n)} onToggleTask={onToggleTask}
+            notes={notesByWeek[w.n] || []} onReadNote={markRead} onDeleteNote={removeNote} />
         ))}
       </div>
+
+      {generalNotes.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div className="label" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 7 }}>
+            <I.comment width={14} height={14} /> Notas generales del cliente ({generalNotes.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {generalNotes.map((n) => (
+              <NoteCard key={n.id} note={n} onRead={markRead} onDelete={removeNote} />
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   )
 }
