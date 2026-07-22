@@ -22,7 +22,6 @@
  */
 
 import {
-  PHASE_ICONS,
   SCHEMA_ICONS,
   UI_ICONS,
   BRAND_SPARK_ICON,
@@ -242,7 +241,6 @@ function safeIdsFor(hitos) {
   })
 }
 
-const phaseIcon = (k) => (hasOwn(PHASE_ICONS, k) ? PHASE_ICONS[k] : PHASE_ICONS.search)
 const schemaIcon = (k) => (hasOwn(SCHEMA_ICONS, k) ? SCHEMA_ICONS[k] : SCHEMA_ICONS.video)
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -983,7 +981,6 @@ export function buildPlanHTML(plan, opts = {}) {
   // Con el esquema oculto, "Esquema" no aparece (sería un ancla muerta).
   const navItems = [
     ...(sp.showSchema === false ? [] : [{ label: 'Esquema', href: '#trabajo' }]),
-    { label: 'Fases', href: '#fases' },
     { label: 'Semanas', href: '#semanas' },
   ]
   const navLinks = navItems.map((l) => `      <a href="${l.href}">${l.label}</a>`).join('\n')
@@ -1030,27 +1027,6 @@ ${bentoHtml}
   </div>
 </section>
 `
-
-  // ── #fases ─────────────────────────────────────────────────────────────────
-  const segsHtml = hitos
-    .map((h, i) => {
-      const span = Number.isFinite(h.weekTo - h.weekFrom) ? Math.max(1, h.weekTo - h.weekFrom + 1) : 1
-      return `      <div class="seg" style="--w:${span};--col:var(--c-hito-${safeIds[i]})"></div>`
-    })
-    .join('\n')
-
-  // .reveal solo define delays hasta d4. Con 5+ hitos, capamos el sufijo.
-  const phasesHtml = hitos
-    .map(
-      (h, i) => `      <div class="phase shell reveal d${Math.min(i + 1, 4)}" style="--col:var(--c-hito-${safeIds[i]})"><div class="core">
-        <div class="pic">${phaseIcon(h.icon)}</div>
-        <div class="pnum">${h.label}</div>
-        <h3>${h.title || h.label}</h3>
-        <div class="wk">${h.weeksLabel}</div>
-        <div class="desc">${h.description}</div>
-      </div></div>`,
-    )
-    .join('\n')
 
   // ── #semanas ───────────────────────────────────────────────────────────────
   const hasWeeks = weeks.length > 0
@@ -1194,23 +1170,6 @@ ${navLinks}
   </div>
 </header>
 ${schemaSection}
-<!-- FASES -->
-<section id="fases">
-  <div class="wrap">
-    <div class="sec-head reveal">
-      <span class="eyebrow"><span class="dot"></span> ${sp.sections.phases.eyebrow}</span>
-      <h2>${sp.sections.phases.title}</h2>
-      <p>${sp.sections.phases.lead}</p>
-    </div>
-    <div class="progress-track reveal">
-${segsHtml}
-    </div>
-    <div class="phases">
-${phasesHtml}
-    </div>
-  </div>
-</section>
-
 <!-- SEMANA A SEMANA -->
 <section id="semanas">
   <div class="wrap">
