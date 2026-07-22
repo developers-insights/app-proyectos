@@ -816,21 +816,6 @@ export function makePlanPdfDoc(plan, JsPDF) {
   doc.line(M, y, PW - M, y)
   y += 28
 
-  if (stages.length) {
-    font('bold', 8.5, FAINT)
-    doc.text('EL PLAN, ETAPA POR ETAPA', M, y, { charSpace: 1.5 })
-    y += 20
-    for (var c = 0; c < stages.length; c++) {
-      var st = stages[c], sc = stageColor(st)
-      doc.setFillColor(sc[0], sc[1], sc[2])
-      doc.roundedRect(M, y - 8, 9, 9, 2, 2, 'F')
-      font('bold', 10.5, INK)
-      doc.text(clean(st.title || st.label || ('Etapa ' + (c + 1))), M + 18, y)
-      if (st.weeksLabel) { font('normal', 9.5, FAINT); doc.text(clean(st.weeksLabel), PW - M, y, { align: 'right' }) }
-      y += 20
-    }
-  }
-
   var dd = new Date()
   var MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
   font('normal', 9, FAINT)
