@@ -79,6 +79,16 @@ export const EVIDENCIA_TIPOS = {
   doc:     'Documento',
 }
 
+/** Quién ejecuta la tarea. 'insights' es el default implícito (no se muestra chip);
+ *  'cliente'/'ambos' se resaltan para que se vea de un vistazo qué depende del
+ *  cliente. Multi-tenant: el nombre real ("RDEX", "iRowing"…) lo pone la UI desde
+ *  plan.clientName; acá sólo va el rol genérico. */
+export const RESPONSABLES = {
+  insights: { label: 'Insights', color: '#3ddc97' },
+  cliente:  { label: 'Cliente',  color: '#6db3f2' },
+  ambos:    { label: 'Ambos',    color: '#a896f7' },
+}
+
 /** Un plan con estos slugs pisaría archivos del sitio estático (T8). */
 export const SLUG_BLOCKLIST = ['index', 'robots', 'vercel', '404', 'favicon']
 
@@ -241,6 +251,7 @@ export function normalizeTask(t) {
   if (!t || typeof t !== 'object') return { id: uid(), text: String(t == null ? '' : t), done: false }
   const out = { id: t.id || uid(), text: t.text || '', done: !!t.done }
   if (t.estado === 'curso' || t.estado === 'bloqueada' || t.estado === 'pendiente') out.estado = t.estado
+  if (t.responsable === 'cliente' || t.responsable === 'ambos') out.responsable = t.responsable
   if (t.modulo) out.modulo = String(t.modulo)
   if (t.criterio) out.criterio = String(t.criterio)
   if (Number.isFinite(t.avance)) out.avance = Math.max(0, Math.min(100, Math.round(t.avance)))
@@ -348,6 +359,31 @@ export function planBoardSummary(plan, acceptedIds) {
     pctInsights: total ? Math.round((done / total) * 100) : 0,
     pctAceptado: total ? Math.round((aceptada / total) * 100) : 0,
   }
+}
+
+/** Quién ejecuta la tarea (default 'insights'). */
+export function taskResponsable(t) {
+  if (!t || typeof t !== 'object') return 'insights'
+  return (t.responsable === 'cliente' || t.responsable === 'ambos') ? t.responsable : 'insights'
+}
+
+/**
+ * Tareas que dependen del cliente (responsable cliente/ambos), para el bloque
+ * "Lo que necesitamos de <cliente>". Cada una: { week, text, responsable, done }.
+ */
+export function planPendingCliente(plan, acceptedIds) {
+  const acc = acceptedIds instanceof Set ? acceptedIds : new Set(acceptedIds || [])
+  const out = []
+  for (const w of (Array.isArray(plan && plan.weeks) ? plan.weeks : [])) {
+    for (const t of (Array.isArray(w && w.tasks) ? w.tasks : [])) {
+      const r = taskResponsable(t)
+      if (r === 'insights') continue
+      const id = t && typeof t === 'object' ? t.id : null
+      const est = taskEstado(t, !!(id && acc.has(id)))
+      out.push({ week: w.n, text: taskText(t), responsable: r, done: est === 'terminada' || est === 'aceptada' })
+    }
+  }
+  return out
 }
 
 /** Avance de una semana: cuántas tareas están done sobre el total. pct entero 0..100 (0 si total===0). */

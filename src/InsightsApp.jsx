@@ -22,7 +22,8 @@ import {
   taskText, taskDone, weekProgress,
   toggleTaskDone, setWeekAllDone, sprintForWeek, hitoForWeek,
   taskEstado, setTaskEstado, normalizeTask as normalizePlanTask, normalizeTasks, planBoardSummary,
-  TASK_ESTADOS, TASK_ESTADO_CHOICES, RIESGOS, EVIDENCIA_TIPOS,
+  taskResponsable, planPendingCliente,
+  TASK_ESTADOS, TASK_ESTADO_CHOICES, RIESGOS, EVIDENCIA_TIPOS, RESPONSABLES,
 } from './plan/planModel.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
@@ -4602,15 +4603,27 @@ function PlanTaskCheck({ done }) {
    candado si está bloqueada y cantidad de evidencias. Sólo muestra lo informativo
    — "pendiente" y "terminada" ya se leen por el check y el tachado — para no
    ensuciar la fila. */
-function TaskChips({ task, accepted }) {
+function TaskChips({ task, accepted, clientName }) {
   const est = taskEstado(task, accepted)
   const em = TASK_ESTADOS[est]
   const showEstado = est === 'curso' || est === 'bloqueada' || est === 'aceptada'
   const riskHigh = task && task.riesgo === 'alto' && est !== 'terminada' && est !== 'aceptada'
   const evCount = (task && Array.isArray(task.evidencia) && task.evidencia.length) || 0
-  if (!showEstado && !riskHigh && !evCount) return null
+  // Responsable: sólo se muestra cuando la tarea NO es de Insights, para que salte a
+  // la vista qué depende del cliente. El nombre real lo pone la UI (multi-tenant).
+  const resp = taskResponsable(task)
+  const showResp = resp === 'cliente' || resp === 'ambos'
+  const rm = RESPONSABLES[resp]
+  const cliente = (clientName && String(clientName).trim()) || 'Cliente'
+  const respLabel = resp === 'ambos' ? `Insights + ${cliente}` : cliente
+  if (!showEstado && !riskHigh && !evCount && !showResp) return null
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+      {showResp && rm && (
+        <span className="tag" title={`Lo hace: ${respLabel}`} style={{ color: rm.color, background: hexA(rm.color, 0.14), borderColor: hexA(rm.color, 0.34), display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <I.user width={10} height={10} /> {respLabel}
+        </span>
+      )}
       {showEstado && em && (
         <span className="tag" style={{ color: em.color, background: hexA(em.color, 0.14), borderColor: hexA(em.color, 0.28) }}>
           {est === 'bloqueada' && <I.lock width={10} height={10} />}
@@ -4717,7 +4730,7 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, acceptedI
                         </span>
                       </span>
                     </button>
-                    <TaskChips task={t} accepted={hasAccepted(tid)} />
+                    <TaskChips task={t} accepted={hasAccepted(tid)} clientName={plan.clientName} />
                     <button className="btn btn-sm btn-ghost" onClick={() => onOpenDetail && onOpenDetail(week.n, i, t)}
                       title="Seguimiento operativo de la tarea" style={{ padding: '4px 7px', color: 'var(--text-faint)', flexShrink: 0 }}>
                       <I.gear width={14} height={14} />
@@ -4755,7 +4768,7 @@ const ESTADO_SEG = { pendiente: 'Pendiente', curso: 'En curso', bloqueada: 'Bloq
    vía onEdit → patchPlan (misma fila del plan, sync al link público). La aceptación
    formal de RDEX es de sólo lectura acá: se revoca, no se fija (la fija el cliente
    desde el link público). */
-function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], accepted, acceptedInfo, onRevoke, onEdit }) {
+function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], accepted, acceptedInfo, clientName, onRevoke, onEdit }) {
   // La evidencia se edita en estado local para que una fila recién agregada (vacía)
   // sobreviva en pantalla: normalizeTask descarta las evidencias vacías del plan
   // guardado, pero acá la seguimos mostrando hasta que el usuario la complete.
@@ -4767,6 +4780,8 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], accepted, 
 
   const edit = (fields) => onEdit((t) => ({ ...t, ...fields }))
   const changeEstado = (v) => onEdit((t) => setTaskEstado(t, v))
+  // Elegir Insights limpia el campo (default implícito); cliente/ambos lo persisten.
+  const changeResponsable = (v) => onEdit((t) => ({ ...t, responsable: v === 'insights' ? undefined : v }))
   const editBloqueo = (fields) => onEdit((t) => ({ ...t, bloqueo: { ...(t.bloqueo || {}), ...fields } }))
   const writeEv = (rows) => { setEvRows(rows); onEdit((t) => ({ ...t, evidencia: rows })) }
   const addEv = () => writeEv([...evRows, { tipo: 'doc', label: '', url: '' }])
@@ -4774,6 +4789,9 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], accepted, 
   const delEv = (i) => writeEv(evRows.filter((_, j) => j !== i))
 
   const teamEstado = task ? taskEstado(task, false) : 'pendiente'   // estado que fijó el equipo (sin la capa RDEX)
+  const resp = task ? taskResponsable(task) : 'insights'   // quién ejecuta (default Insights)
+  const cliente = (clientName && String(clientName).trim()) || 'Cliente'
+  const RESP_LABELS = { insights: RESPONSABLES.insights.label, cliente, ambos: RESPONSABLES.ambos.label }
   const bl = (task && task.bloqueo) || {}
   const listId = tid ? `team-names-${tid}` : 'team-names-none'
   const GOLD = TASK_ESTADOS.aceptada.color
@@ -4856,6 +4874,28 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], accepted, 
           </div>
 
           <Field label="Impacto"><input className="input" value={task.impacto || ''} onChange={(e) => edit({ impacto: e.target.value })} placeholder="A qué afecta si se atrasa o falla." /></Field>
+
+          {/* ¿Quién la hace? — responsable de ejecución (Insights / cliente / ambos) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span className="label">¿Quién la hace?</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {['insights', 'cliente', 'ambos'].map((k) => {
+                const m = RESPONSABLES[k]
+                const on = resp === k
+                return (
+                  <button key={k} className="btn btn-sm" onClick={() => changeResponsable(k)}
+                    style={on ? { color: m.color, background: hexA(m.color, 0.16), borderColor: hexA(m.color, 0.5), fontWeight: 700 } : undefined}>
+                    <I.user width={12} height={12} /> {RESP_LABELS[k]}
+                  </button>
+                )
+              })}
+            </div>
+            {resp !== 'insights' && (
+              <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>
+                Se resalta en el roadmap para que se vea que {resp === 'ambos' ? `la comparten Insights y ${cliente}` : `depende de ${cliente}`}.
+              </span>
+            )}
+          </div>
 
           {/* Responsables */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -4941,6 +4981,10 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
   const summary = planBoardSummary(linkedPlan, acceptedIds)
   const allDone = summary.total > 0 && summary.pctInsights === 100
   const GOLD = TASK_ESTADOS.aceptada.color
+  const clientLabel = (linkedPlan.clientName && String(linkedPlan.clientName).trim()) || 'el cliente'
+  // Lo que todavía depende del cliente (responsable cliente/ambos, sin terminar).
+  const CLIENTE_COLOR = RESPONSABLES.cliente.color
+  const pendingCliente = planPendingCliente(linkedPlan, acceptedIds).filter((p) => !p.done)
   // Tarea con el detalle operativo abierto (se relee del plan en vivo, así el modal
   // refleja lo que se va guardando y la aceptación de RDEX que llega por realtime).
   const detailWeek = detail ? weeks.find((w) => w.n === detail.weekN) : null
@@ -5094,6 +5138,32 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
         </div>
       </div>
 
+      {/* LO QUE NECESITAMOS DEL CLIENTE — todo lo que depende de su lado y frena el avance. */}
+      {pendingCliente.length > 0 && (
+        <div className="surface" style={{ padding: '15px 17px', marginBottom: 14, borderColor: hexA(CLIENTE_COLOR, 0.35), background: hexA(CLIENTE_COLOR, 0.06) }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 11 }}>
+            <span style={{ width: 26, height: 26, borderRadius: 8, background: hexA(CLIENTE_COLOR, 0.18), display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <I.user width={15} height={15} style={{ color: CLIENTE_COLOR }} />
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: CLIENTE_COLOR }}>Lo que necesitamos de {clientLabel}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{pendingCliente.length} tarea{pendingCliente.length === 1 ? '' : 's'} pendiente{pendingCliente.length === 1 ? '' : 's'} de su lado</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {pendingCliente.map((p, i) => (
+              <div key={`${p.week}-${i}`} style={{ display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 13 }}>
+                <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: CLIENTE_COLOR, flexShrink: 0, minWidth: 62 }}>Semana {p.week}</span>
+                <span style={{ color: 'var(--text)', lineHeight: 1.45 }}>
+                  {p.text || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>Tarea sin texto</span>}
+                  {p.responsable === 'ambos' && <span style={{ color: 'var(--text-faint)', fontSize: 11.5 }}> · junto con Insights</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
         {weeks.length === 0 && (
           <div className="surface" style={{ padding: 16, color: 'var(--text-faint)', fontSize: 13 }}>Este plan todavía no tiene semanas.</div>
@@ -5106,6 +5176,7 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
       </div>
 
       <PlanTaskDetailModal open={!!detailTask} onClose={() => setDetail(null)} task={detailTask} weekN={detail?.weekN} team={team}
+        clientName={linkedPlan.clientName}
         accepted={detailTask ? acceptedIds.has(detailTask.id) : false}
         acceptedInfo={detailTask ? acceptedBy.get(detailTask.id) : null}
         onRevoke={() => { if (detailTask) revokeAcceptance(detailTask.id) }}
