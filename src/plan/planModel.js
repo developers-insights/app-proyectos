@@ -45,6 +45,40 @@ export const DELIVER_KINDS = {
   gate: 'Gate de anticipo', formal: 'Aceptación formal',
 }
 
+// ── Tablero operativo — seguimiento vivo por tarea (pedido RDEX, 2026-07) ───────
+// Cada tarea del roadmap puede llevar responsables, estado, avance, evidencia,
+// bloqueos, criterio de aceptación y riesgo. TODO viaja dentro del plan JSON
+// (plans.data → published_plans.data): cero cambios de schema. La "Aceptación por
+// RDEX" NO vive acá — es una fila en plan_acceptances que el cliente escribe desde
+// el link público (ver planes-web/sql/2026-07-22_plan_acceptances.sql). Acá el
+// estado llega hasta 'terminada' (= done); 'aceptada' lo superpone la UI.
+export const TASK_ESTADOS = {
+  pendiente: { label: 'Pendiente',              color: '#8a8a90' },
+  curso:     { label: 'En curso',               color: '#6db3f2' },
+  bloqueada: { label: 'Bloqueada',              color: '#f2789f' },
+  terminada: { label: 'Terminada por Insights', color: '#3ddc97' },
+  aceptada:  { label: 'Aceptada por RDEX',      color: '#f0b94d' },
+}
+
+/** Orden de estados que un miembro del equipo puede fijar a mano (sin 'aceptada'). */
+export const TASK_ESTADO_CHOICES = ['pendiente', 'curso', 'bloqueada', 'terminada']
+
+export const RIESGOS = {
+  '':    { label: '—',     color: '#8a8a90' },
+  bajo:  { label: 'Bajo',  color: '#3ddc97' },
+  medio: { label: 'Medio', color: '#f0b94d' },
+  alto:  { label: 'Alto',  color: '#f2789f' },
+}
+
+export const EVIDENCIA_TIPOS = {
+  codigo:  'Código',
+  pr:      'Pull request',
+  staging: 'Staging',
+  prueba:  'Prueba',
+  video:   'Video',
+  doc:     'Documento',
+}
+
 /** Un plan con estos slugs pisaría archivos del sitio estático (T8). */
 export const SLUG_BLOCKLIST = ['index', 'robots', 'vercel', '404', 'favicon']
 
@@ -200,14 +234,121 @@ export function taskText(t) { return typeof t === 'string' ? t : (t && t.text) |
 /** ¿Está tachada? Un string viejo nunca lo está. Nunca genera id. */
 export function taskDone(t) { return typeof t === 'string' ? false : !!(t && t.done) }
 
-/** Normaliza una TaskLike a Task, generando id si falta (o si viene de un string viejo). */
+/** Normaliza una TaskLike a Task, generando id si falta (o si viene de un string viejo).
+ *  Arrastra los campos de seguimiento operativo (RDEX) cuando existen, omitiéndolos
+ *  si están vacíos para no inflar el JSON del plan. */
 export function normalizeTask(t) {
-  if (t && typeof t === 'object') return { id: t.id || uid(), text: t.text || '', done: !!t.done }
-  return { id: uid(), text: String(t == null ? '' : t), done: false }
+  if (!t || typeof t !== 'object') return { id: uid(), text: String(t == null ? '' : t), done: false }
+  const out = { id: t.id || uid(), text: t.text || '', done: !!t.done }
+  if (t.estado === 'curso' || t.estado === 'bloqueada' || t.estado === 'pendiente') out.estado = t.estado
+  if (t.modulo) out.modulo = String(t.modulo)
+  if (t.criterio) out.criterio = String(t.criterio)
+  if (Number.isFinite(t.avance)) out.avance = Math.max(0, Math.min(100, Math.round(t.avance)))
+  if (t.prev) out.prev = String(t.prev)
+  if (t.hoy) out.hoy = String(t.hoy)
+  if (t.fecha) out.fecha = String(t.fecha)
+  if (t.dev) out.dev = String(t.dev)
+  if (t.rev) out.rev = String(t.rev)
+  if (t.dueno) out.dueno = String(t.dueno)
+  if (t.acept) out.acept = String(t.acept)
+  if (t.riesgo && RIESGOS[t.riesgo]) out.riesgo = t.riesgo
+  if (t.impacto) out.impacto = String(t.impacto)
+  const bloqueo = normalizeBloqueo(t.bloqueo)
+  if (bloqueo) out.bloqueo = bloqueo
+  const evidencia = normalizeEvidencia(t.evidencia)
+  if (evidencia.length) out.evidencia = evidencia
+  if (t.terminadaAt) out.terminadaAt = String(t.terminadaAt)
+  return out
 }
 
 /** normalizeTask aplicado a todo `week.tasks`. */
 export function normalizeTasks(tasks) { return (Array.isArray(tasks) ? tasks : []).map(normalizeTask) }
+
+/** Un bloqueo saneado, o null si está totalmente vacío. */
+export function normalizeBloqueo(b) {
+  if (!b || typeof b !== 'object') return null
+  const o = {
+    detalle:  String(b.detalle  || ''),
+    desde:    String(b.desde    || ''),
+    quien:    String(b.quien    || ''),
+    limite:   String(b.limite   || ''),
+    decision: String(b.decision || ''),
+  }
+  return (o.detalle || o.desde || o.quien || o.limite || o.decision) ? o : null
+}
+
+/** Lista de evidencias saneadas: cada una { tipo, label, url }. Descarta las vacías. */
+export function normalizeEvidencia(list) {
+  return (Array.isArray(list) ? list : []).map((e) => {
+    if (!e || typeof e !== 'object') return null
+    const url = String(e.url || ''), label = String(e.label || '')
+    if (!url && !label) return null
+    return { tipo: EVIDENCIA_TIPOS[e.tipo] ? e.tipo : 'doc', label, url }
+  }).filter(Boolean)
+}
+
+/**
+ * Estado efectivo de una tarea (retrocompat: si sólo hay `done`, deriva
+ * terminada/pendiente). NO cuenta la aceptación de RDEX — esa es externa
+ * (plan_acceptances); la UI la superpone pasando accepted=true.
+ */
+export function taskEstado(t, accepted = false) {
+  if (accepted) return 'aceptada'
+  if (!t || typeof t !== 'object') return 'pendiente'
+  if (t.done) return 'terminada'
+  if (t.estado === 'curso' || t.estado === 'bloqueada') return t.estado
+  if (t.bloqueo && (t.bloqueo.detalle || t.bloqueo.limite)) return 'bloqueada'
+  return 'pendiente'
+}
+
+/**
+ * Fija el estado elegido a mano por el equipo, manteniendo `done` como fuente de
+ * verdad de "Terminada por Insights" (así el % y la sync con sprints no cambian).
+ * 'aceptada' no se fija acá: la escribe RDEX en plan_acceptances.
+ */
+export function setTaskEstado(task, estado) {
+  const t = normalizeTask(task)
+  if (estado === 'terminada') {
+    return { ...t, done: true, estado: undefined, terminadaAt: t.terminadaAt || new Date().toISOString() }
+  }
+  const out = { ...t, done: false, estado: (estado === 'curso' || estado === 'bloqueada') ? estado : 'pendiente' }
+  delete out.terminadaAt
+  return out
+}
+
+/**
+ * Resumen del tablero para el encabezado (pronóstico + control). `acceptedIds` es
+ * un Set (o array) de task.id aceptados por RDEX (de plan_acceptances).
+ * → { total, done, aceptada, curso, bloqueada, pendiente, riesgoAlto, bloqueos[], nextFecha, pctInsights, pctAceptado }
+ */
+export function planBoardSummary(plan, acceptedIds) {
+  const acc = acceptedIds instanceof Set ? acceptedIds : new Set(acceptedIds || [])
+  const weeks = Array.isArray(plan && plan.weeks) ? plan.weeks : []
+  let total = 0, done = 0, aceptada = 0, curso = 0, bloqueada = 0, pendiente = 0, riesgoAlto = 0
+  const bloqueos = []
+  let nextFecha = null
+  for (const w of weeks) {
+    const ts = Array.isArray(w && w.tasks) ? w.tasks : []
+    for (const t of ts) {
+      total++
+      const id = t && typeof t === 'object' ? t.id : null
+      const est = taskEstado(t, !!(id && acc.has(id)))
+      if (est === 'aceptada') { aceptada++; done++ }
+      else if (est === 'terminada') done++
+      else if (est === 'bloqueada') { bloqueada++; if (t && t.bloqueo) bloqueos.push({ week: w.n, text: taskText(t), ...t.bloqueo }) }
+      else if (est === 'curso') curso++
+      else pendiente++
+      if (t && t.riesgo === 'alto' && est !== 'terminada' && est !== 'aceptada') riesgoAlto++
+      const f = t && t.fecha
+      if (f && est !== 'terminada' && est !== 'aceptada') { if (!nextFecha || f < nextFecha) nextFecha = f }
+    }
+  }
+  return {
+    total, done, aceptada, curso, bloqueada, pendiente, riesgoAlto, bloqueos, nextFecha,
+    pctInsights: total ? Math.round((done / total) * 100) : 0,
+    pctAceptado: total ? Math.round((aceptada / total) * 100) : 0,
+  }
+}
 
 /** Avance de una semana: cuántas tareas están done sobre el total. pct entero 0..100 (0 si total===0). */
 export function weekProgress(week) {

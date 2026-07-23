@@ -19,8 +19,10 @@ import { createClient } from '@supabase/supabase-js'
 import OnboardingLanding from './Onboarding'
 import { uid, I, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
 import {
-  taskText, taskDone, weekProgress, planProgress,
+  taskText, taskDone, weekProgress,
   toggleTaskDone, setWeekAllDone, sprintForWeek, hitoForWeek,
+  taskEstado, setTaskEstado, normalizeTask as normalizePlanTask, normalizeTasks, planBoardSummary,
+  TASK_ESTADOS, TASK_ESTADO_CHOICES, RIESGOS, EVIDENCIA_TIPOS,
 } from './plan/planModel.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
@@ -4505,6 +4507,50 @@ function useClientNotes(slug) {
   return { notes, markRead, remove }
 }
 
+/* ── Aceptaciones de RDEX por tarea ───────────────────────────────────────────
+   Cada fila de plan_acceptances = una tarea que el cliente aceptó formalmente
+   desde su link público. Lectura pública; revocar exige login (RPC revoke_plan_task
+   con RLS). Realtime: la aceptación aparece sola cuando el cliente la marca.
+   Degradación elegante: si la tabla / RPC todavía no existen (SQL sin correr),
+   devolvemos Sets vacíos y NUNCA rompemos la página del proyecto. */
+function usePlanAcceptances(slug) {
+  const [rows, setRows] = useState([])
+  useEffect(() => {
+    if (!supabase || !slug) { setRows([]); return }
+    let alive = true
+    const load = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('plan_acceptances')
+          .select('task_id,accepted_by,created_at')
+          .eq('slug', slug).is('revoked_at', null)
+        if (alive && !error) setRows(data || [])
+      } catch { /* tabla inexistente / red: degradar a vacío, sin romper */ }
+    }
+    load()
+    let ch = null
+    try {
+      ch = supabase
+        .channel('pa-app-' + slug)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'plan_acceptances', filter: 'slug=eq.' + slug }, load)
+        .subscribe()
+    } catch { /* sin realtime: la lectura inicial ya alcanza */ }
+    return () => { alive = false; if (ch) supabase.removeChannel(ch) }
+  }, [slug])
+
+  const acceptedIds = useMemo(() => new Set(rows.map((r) => r.task_id)), [rows])
+  const acceptedBy = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) m.set(r.task_id, { by: r.accepted_by, at: r.created_at })
+    return m
+  }, [rows])
+  const revoke = async (taskId) => {
+    setRows((rs) => rs.filter((r) => r.task_id !== taskId))   // optimista
+    if (supabase) { try { await supabase.rpc('revoke_plan_task', { p_slug: slug, p_task_id: taskId }) } catch { /* sin RPC: quedó revocado local */ } }
+  }
+  return { acceptedIds, acceptedBy, revoke }
+}
+
 /* Una nota del cliente: autor, fecha, cuerpo, y acciones (leída / borrar). */
 function NoteCard({ note, onRead, onDelete }) {
   const date = note.created_at
@@ -4552,9 +4598,39 @@ function PlanTaskCheck({ done }) {
   )
 }
 
+/* Chips operativos compactos por tarea (tablero RDEX): estado, riesgo alto,
+   candado si está bloqueada y cantidad de evidencias. Sólo muestra lo informativo
+   — "pendiente" y "terminada" ya se leen por el check y el tachado — para no
+   ensuciar la fila. */
+function TaskChips({ task, accepted }) {
+  const est = taskEstado(task, accepted)
+  const em = TASK_ESTADOS[est]
+  const showEstado = est === 'curso' || est === 'bloqueada' || est === 'aceptada'
+  const riskHigh = task && task.riesgo === 'alto' && est !== 'terminada' && est !== 'aceptada'
+  const evCount = (task && Array.isArray(task.evidencia) && task.evidencia.length) || 0
+  if (!showEstado && !riskHigh && !evCount) return null
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+      {showEstado && em && (
+        <span className="tag" style={{ color: em.color, background: hexA(em.color, 0.14), borderColor: hexA(em.color, 0.28) }}>
+          {est === 'bloqueada' && <I.lock width={10} height={10} />}
+          {em.label}
+        </span>
+      )}
+      {riskHigh && <span title="Riesgo alto" style={{ width: 8, height: 8, borderRadius: 999, background: RIESGOS.alto.color, flexShrink: 0 }} />}
+      {evCount > 0 && (
+        <span className="tag hide-mobile" title={`${evCount} evidencia${evCount === 1 ? '' : 's'}`} style={{ color: 'var(--text-dim)', background: 'var(--bg-elevated)' }}>
+          <I.paperclip width={10} height={10} /> {evCount}
+        </span>
+      )}
+    </span>
+  )
+}
+
 /* Una semana del acordeón: cabecera colapsable + lista de tareas al expandir. */
-function PlanWeekRow({ plan, week, sprint, onToggleTask, notes = [], onReadNote, onDeleteNote }) {
+function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, acceptedIds, notes = [], onReadNote, onDeleteNote }) {
   const [open, setOpen] = useState(false)
+  const hasAccepted = (id) => !!(id && acceptedIds && acceptedIds.has(id))
   const prog = weekProgress(week)
   const complete = prog.total > 0 && prog.pct === 100
   const hito = hitoForWeek(plan, week.n)
@@ -4622,21 +4698,31 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask, notes = [], onReadNote,
               {tasks.map((t, i) => {
                 const done = taskDone(t)
                 const text = taskText(t)
+                const tid = t && typeof t === 'object' ? t.id : null
                 return (
-                  <button key={i} onClick={() => onToggleTask(week.n, i)} className="row-hover" style={{
-                    display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
+                  <div key={tid || i} className="row-hover" style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '5px 8px', borderRadius: 10,
                   }}>
-                    <PlanTaskCheck done={done} />
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
-                        <span style={{ fontSize: 13.5, lineHeight: 1.45, color: done ? 'var(--text-faint)' : 'var(--text)', transition: 'color .25s ease' }}>
-                          {text || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>Tarea sin texto</span>}
+                    <button onClick={() => onToggleTask(week.n, i)} style={{
+                      display: 'flex', alignItems: 'center', gap: 11, flex: 1, minWidth: 0, textAlign: 'left', padding: '4px 4px', cursor: 'pointer', background: 'transparent',
+                    }}>
+                      <PlanTaskCheck done={done} />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
+                          <span style={{ fontSize: 13.5, lineHeight: 1.45, color: done ? 'var(--text-faint)' : 'var(--text)', transition: 'color .25s ease' }}>
+                            {text || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>Tarea sin texto</span>}
+                          </span>
+                          <motion.span initial={false} animate={{ scaleX: done ? 1 : 0 }} transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                            style={{ position: 'absolute', left: 0, right: 0, top: '52%', height: 1.5, background: 'var(--text-faint)', transformOrigin: 'left', borderRadius: 2, pointerEvents: 'none' }} />
                         </span>
-                        <motion.span initial={false} animate={{ scaleX: done ? 1 : 0 }} transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                          style={{ position: 'absolute', left: 0, right: 0, top: '52%', height: 1.5, background: 'var(--text-faint)', transformOrigin: 'left', borderRadius: 2, pointerEvents: 'none' }} />
                       </span>
-                    </span>
-                  </button>
+                    </button>
+                    <TaskChips task={t} accepted={hasAccepted(tid)} />
+                    <button className="btn btn-sm btn-ghost" onClick={() => onOpenDetail && onOpenDetail(week.n, i, t)}
+                      title="Seguimiento operativo de la tarea" style={{ padding: '4px 7px', color: 'var(--text-faint)', flexShrink: 0 }}>
+                      <I.gear width={14} height={14} />
+                    </button>
+                  </div>
                 )
               })}
               {notes.length > 0 && (
@@ -4659,12 +4745,180 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask, notes = [], onReadNote,
   )
 }
 
-/* Sección "Avance del plan": barra global + acordeón de TODAS las semanas del plan
-   asociado. Tachar tareas dispara el sync plan→sprint (idempotente, plano). */
+/* Etiquetas cortas del estado para el control segmentado del detalle (el label
+   largo "Terminada por Insights" no entra en un botón chico). */
+const ESTADO_SEG = { pendiente: 'Pendiente', curso: 'En curso', bloqueada: 'Bloqueada', terminada: 'Terminada' }
+
+/* Editor de seguimiento operativo de UNA tarea (tablero vivo pedido por RDEX).
+   Edita en vivo TODOS los campos del modelo: estado, avance, responsables, riesgo,
+   impacto, bloqueo, criterio de aceptación y evidencia. Cada cambio persiste solo
+   vía onEdit → patchPlan (misma fila del plan, sync al link público). La aceptación
+   formal de RDEX es de sólo lectura acá: se revoca, no se fija (la fija el cliente
+   desde el link público). */
+function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], accepted, acceptedInfo, onRevoke, onEdit }) {
+  // La evidencia se edita en estado local para que una fila recién agregada (vacía)
+  // sobreviva en pantalla: normalizeTask descarta las evidencias vacías del plan
+  // guardado, pero acá la seguimos mostrando hasta que el usuario la complete.
+  const [evRows, setEvRows] = useState([])
+  const tid = task && task.id
+  useEffect(() => {
+    setEvRows(task && Array.isArray(task.evidencia) ? task.evidencia.map((e) => ({ ...e })) : [])
+  }, [tid])
+
+  const edit = (fields) => onEdit((t) => ({ ...t, ...fields }))
+  const changeEstado = (v) => onEdit((t) => setTaskEstado(t, v))
+  const editBloqueo = (fields) => onEdit((t) => ({ ...t, bloqueo: { ...(t.bloqueo || {}), ...fields } }))
+  const writeEv = (rows) => { setEvRows(rows); onEdit((t) => ({ ...t, evidencia: rows })) }
+  const addEv = () => writeEv([...evRows, { tipo: 'doc', label: '', url: '' }])
+  const setEv = (i, f) => writeEv(evRows.map((e, j) => (j === i ? { ...e, ...f } : e)))
+  const delEv = (i) => writeEv(evRows.filter((_, j) => j !== i))
+
+  const teamEstado = task ? taskEstado(task, false) : 'pendiente'   // estado que fijó el equipo (sin la capa RDEX)
+  const bl = (task && task.bloqueo) || {}
+  const listId = tid ? `team-names-${tid}` : 'team-names-none'
+  const GOLD = TASK_ESTADOS.aceptada.color
+  const dateVal = (v) => (v ? String(v).slice(0, 10) : '')
+
+  return (
+    <Modal open={open && !!task} onClose={onClose} title={(task && task.text) || 'Tarea'}
+      sub={weekN ? `Semana ${weekN} · Seguimiento operativo` : 'Seguimiento operativo'} width={680}>
+      {task && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <datalist id={listId}>{team.map((u) => <option key={u.id} value={u.name} />)}</datalist>
+
+          {/* Aceptación formal de RDEX — sólo lectura + revocar */}
+          {accepted && (
+            <div className="surface" style={{ padding: '11px 13px', display: 'flex', alignItems: 'center', gap: 11, background: hexA(GOLD, 0.1), borderColor: hexA(GOLD, 0.32) }}>
+              <span style={{ width: 26, height: 26, borderRadius: 8, background: hexA(GOLD, 0.18), display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <I.check width={15} height={15} style={{ color: GOLD }} />
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: GOLD }}>Aceptada por RDEX</div>
+                {acceptedInfo && (acceptedInfo.by || acceptedInfo.at) && (
+                  <div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>
+                    {acceptedInfo.by || 'RDEX'}{acceptedInfo.at ? ` · ${fmtDate(acceptedInfo.at)}` : ''}
+                  </div>
+                )}
+              </div>
+              <button className="btn btn-sm" onClick={() => { if (window.confirm('¿Revocar la aceptación de RDEX de esta tarea? El cliente la va a volver a ver como pendiente de aceptar.')) onRevoke() }}
+                style={{ color: 'var(--red)' }}>Revocar aceptación</button>
+            </div>
+          )}
+
+          {/* Estado (segmentado) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span className="label">Estado</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {TASK_ESTADO_CHOICES.map((k) => {
+                const m = TASK_ESTADOS[k]
+                const on = teamEstado === k
+                return (
+                  <button key={k} className="btn btn-sm" onClick={() => changeEstado(k)}
+                    style={on ? { color: m.color, background: hexA(m.color, 0.16), borderColor: hexA(m.color, 0.5), fontWeight: 700 } : undefined}>
+                    {k === 'bloqueada' && <I.lock width={12} height={12} />}
+                    {k === 'terminada' && <I.check width={13} height={13} />}
+                    {ESTADO_SEG[k]}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Avance % + fecha pronosticada */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Field label="Avance (%)">
+              <input className="input mono" type="number" min="0" max="100" value={task.avance ?? ''}
+                onChange={(e) => edit({ avance: e.target.value === '' ? undefined : clamp(Math.round(Number(e.target.value)), 0, 100) })} placeholder="0" />
+            </Field>
+            <Field label="Fecha pronosticada">
+              <input className="input mono" type="date" value={dateVal(task.fecha)} onChange={(e) => edit({ fecha: e.target.value })} />
+            </Field>
+          </div>
+          <div style={{ height: 6, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}>
+            <div style={{ width: `${clamp(Number(task.avance) || (task.done ? 100 : 0), 0, 100)}%`, height: '100%', background: task.done ? 'var(--green)' : 'var(--accent)', borderRadius: 999, transition: 'width .3s ease' }} />
+          </div>
+
+          {/* Módulo + riesgo */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Field label="Módulo / componente"><input className="input" value={task.modulo || ''} onChange={(e) => edit({ modulo: e.target.value })} placeholder="Ej: Auth, Dashboard…" /></Field>
+            <Field label="Riesgo">
+              <select className="input" value={task.riesgo || ''} onChange={(e) => edit({ riesgo: e.target.value })}>
+                {Object.entries(RIESGOS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </Field>
+          </div>
+
+          <Field label="Criterio de aceptación"><textarea className="input" rows={2} value={task.criterio || ''} onChange={(e) => edit({ criterio: e.target.value })} placeholder="Qué tiene que cumplir para darse por aceptada." style={{ resize: 'vertical' }} /></Field>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Field label="Trabajo anterior"><textarea className="input" rows={2} value={task.prev || ''} onChange={(e) => edit({ prev: e.target.value })} placeholder="Lo que ya estaba hecho." style={{ resize: 'vertical' }} /></Field>
+            <Field label="Trabajo actual"><textarea className="input" rows={2} value={task.hoy || ''} onChange={(e) => edit({ hoy: e.target.value })} placeholder="Lo que se está haciendo ahora." style={{ resize: 'vertical' }} /></Field>
+          </div>
+
+          <Field label="Impacto"><input className="input" value={task.impacto || ''} onChange={(e) => edit({ impacto: e.target.value })} placeholder="A qué afecta si se atrasa o falla." /></Field>
+
+          {/* Responsables */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span className="label">Responsables</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <Field label="Desarrollador"><input className="input" list={listId} value={task.dev || ''} onChange={(e) => edit({ dev: e.target.value })} placeholder="Quién lo construye" /></Field>
+              <Field label="Revisor"><input className="input" list={listId} value={task.rev || ''} onChange={(e) => edit({ rev: e.target.value })} placeholder="Quién lo revisa" /></Field>
+              <Field label="Dueño funcional"><input className="input" list={listId} value={task.dueno || ''} onChange={(e) => edit({ dueno: e.target.value })} placeholder="Dueño del alcance" /></Field>
+              <Field label="Aceptador (RDEX)"><input className="input" value={task.acept || ''} onChange={(e) => edit({ acept: e.target.value })} placeholder="Quién acepta del lado del cliente" /></Field>
+            </div>
+          </div>
+
+          {/* Bloqueo */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '13px 14px', borderRadius: 12, border: '1px solid ' + hexA(TASK_ESTADOS.bloqueada.color, 0.28), background: hexA(TASK_ESTADOS.bloqueada.color, 0.06) }}>
+            <span className="label" style={{ display: 'flex', alignItems: 'center', gap: 7, color: TASK_ESTADOS.bloqueada.color }}><I.lock width={12} height={12} /> Bloqueo</span>
+            <Field label="Detalle del bloqueo"><textarea className="input" rows={2} value={bl.detalle || ''} onChange={(e) => editBloqueo({ detalle: e.target.value })} placeholder="Qué lo traba." style={{ resize: 'vertical' }} /></Field>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <Field label="Bloqueada desde"><input className="input mono" type="date" value={dateVal(bl.desde)} onChange={(e) => editBloqueo({ desde: e.target.value })} /></Field>
+              <Field label="Fecha límite"><input className="input mono" type="date" value={dateVal(bl.limite)} onChange={(e) => editBloqueo({ limite: e.target.value })} /></Field>
+              <Field label="Quién lo resuelve"><input className="input" list={listId} value={bl.quien || ''} onChange={(e) => editBloqueo({ quien: e.target.value })} placeholder="Responsable de destrabar" /></Field>
+              <Field label="Decisión requerida"><input className="input" value={bl.decision || ''} onChange={(e) => editBloqueo({ decision: e.target.value })} placeholder="Qué decisión falta" /></Field>
+            </div>
+          </div>
+
+          {/* Evidencia */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <span className="label" style={{ display: 'flex', alignItems: 'center', gap: 7 }}><I.paperclip width={12} height={12} /> Evidencia</span>
+              <button className="btn btn-sm" onClick={addEv}><I.plus width={13} height={13} /> Agregar</button>
+            </div>
+            {evRows.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>Sin evidencia cargada. Sumá links a código, PRs, staging, videos o documentos.</div>}
+            {evRows.map((e, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select className="input" value={e.tipo || 'doc'} onChange={(ev) => setEv(i, { tipo: ev.target.value })} style={{ width: 'auto', flexShrink: 0, padding: '8px 10px', fontSize: 13 }}>
+                  {Object.entries(EVIDENCIA_TIPOS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                </select>
+                <input className="input" value={e.label || ''} onChange={(ev) => setEv(i, { label: ev.target.value })} placeholder="Etiqueta" style={{ flex: '1 1 30%', minWidth: 0, padding: '8px 10px', fontSize: 13 }} />
+                <input className="input mono" value={e.url || ''} onChange={(ev) => setEv(i, { url: ev.target.value })} placeholder="https://…" style={{ flex: '1 1 45%', minWidth: 0, padding: '8px 10px', fontSize: 12.5 }} />
+                <button className="btn btn-sm btn-ghost" onClick={() => delEv(i)} title="Quitar" style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}><I.x width={13} height={13} /></button>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 2 }}>
+            <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+/* Sección "Avance del plan": tablero vivo (barra dual Insights/RDEX + chips) +
+   acordeón de TODAS las semanas del plan asociado. Tachar tareas o editar su estado
+   dispara el sync plan→sprint (idempotente, plano). */
 function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate, markProgress }) {
-  const { logActivity } = useApp()
+  const { logActivity, data } = useApp()
+  const team = (data && data.team) || []
   // Notas del cliente dejadas desde el link público (se agrupan por semana abajo).
   const { notes: clientNotes, markRead, remove: removeNote } = useClientNotes(linkedPlan?.slug)
+  // Aceptaciones formales de RDEX por tarea (plan_acceptances; degradación elegante).
+  const { acceptedIds, acceptedBy, revoke: revokeAcceptance } = usePlanAcceptances(linkedPlan?.slug)
+  const [detail, setDetail] = useState(null)   // { weekN, taskId } del detalle operativo abierto
 
   if (!linkedPlan) {
     return (
@@ -4684,8 +4938,13 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
   }
 
   const weeks = [...(linkedPlan.weeks || [])].sort((a, b) => (a.n || 0) - (b.n || 0))
-  const prog = planProgress(linkedPlan)
-  const complete = prog.total > 0 && prog.pct === 100
+  const summary = planBoardSummary(linkedPlan, acceptedIds)
+  const allDone = summary.total > 0 && summary.pctInsights === 100
+  const GOLD = TASK_ESTADOS.aceptada.color
+  // Tarea con el detalle operativo abierto (se relee del plan en vivo, así el modal
+  // refleja lo que se va guardando y la aceptación de RDEX que llega por realtime).
+  const detailWeek = detail ? weeks.find((w) => w.n === detail.weekN) : null
+  const detailTask = detailWeek ? (detailWeek.tasks || []).find((t) => t && t.id === detail.taskId) : null
 
   // Agrupa las notas del cliente por semana (week=null → nota general del plan).
   const notesByWeek = {}
@@ -4696,6 +4955,23 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
   }
   const totalUnread = clientNotes.filter((n) => !n.read).length
 
+  // Sincroniza el sprint apareado con una semana según su avance (idempotente, plano).
+  // Extraído de onToggleTask para reusarlo desde el editor de detalle (Estado→Terminada).
+  const syncSprintForWeek = (weekN, updatedPlan) => {
+    const w = (updatedPlan.weeks || []).find((x) => x.n === weekN)
+    if (!w) return
+    const prg = weekProgress(w)
+    const sp = sprintForWeek(project.sprints, weekN)
+    if (!sp) return
+    const st = normSprint(sp.status)
+    if (prg.total > 0 && prg.done === prg.total && st !== 'terminado') {
+      patchSprint(sp.id, { status: 'terminado' })
+      if (logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${sp.name}" de ${project.name}` })
+    } else if (prg.done < prg.total && st === 'terminado') {
+      patchSprint(sp.id, { status: 'en proceso' })
+    }
+  }
+
   // Tachar/destachar una tarea → guarda el plan (síncrono) y sincroniza el sprint apareado.
   const onToggleTask = (weekN, taskIndex) => {
     const updated = patchPlan(linkedPlan.id, (p) => ({
@@ -4704,18 +4980,52 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
     }))
     if (!updated) return
     if (markProgress) markProgress()   // tachar una tarea del roadmap = "último avance" hoy
+    syncSprintForWeek(weekN, updated)
+  }
+
+  // Edita UNA tarea (por id) dentro de su semana, normalizando el resultado. Si el
+  // cambio toca `done` (ej: Estado→Terminada por Insights) preserva el sync semana↔
+  // sprint y marca "último avance", igual que el check. El resto de los campos
+  // operativos (responsables, riesgo, evidencia…) no tocan el sprint.
+  const editTask = (weekN, taskId, mutate) => {
+    let before = null
+    const updated = patchPlan(linkedPlan.id, (p) => ({
+      ...p,
+      weeks: (p.weeks || []).map((w) => {
+        if (w.n !== weekN) return w
+        return {
+          ...w,
+          tasks: (w.tasks || []).map((t) => {
+            if (!(t && t.id === taskId)) return t
+            before = normalizePlanTask(t)
+            return normalizePlanTask(mutate(before))
+          }),
+        }
+      }),
+    }))
+    if (!updated || !before) return
     const w = (updated.weeks || []).find((x) => x.n === weekN)
-    const prg = weekProgress(w)
-    const sp = sprintForWeek(project.sprints, weekN)
-    if (sp) {
-      const st = normSprint(sp.status)
-      if (prg.total > 0 && prg.done === prg.total && st !== 'terminado') {
-        patchSprint(sp.id, { status: 'terminado' })
-        if (logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${sp.name}" de ${project.name}` })
-      } else if (prg.done < prg.total && st === 'terminado') {
-        patchSprint(sp.id, { status: 'en proceso' })
-      }
+    const after = w && (w.tasks || []).find((t) => t && t.id === taskId)
+    if (after && !!before.done !== !!after.done) {
+      if (markProgress) markProgress()
+      syncSprintForWeek(weekN, updated)
     }
+  }
+
+  // Abre el detalle operativo de una tarea. Si la tarea es legacy (string sin id),
+  // primero normaliza esa semana para asignarle ids (igual que hace el primer toggle)
+  // y recién ahí abre el modal apuntando por id estable.
+  const openTaskDetail = (weekN, taskIndex, task) => {
+    let id = task && typeof task === 'object' ? task.id : null
+    if (!id) {
+      const updated = patchPlan(linkedPlan.id, (p) => ({
+        ...p,
+        weeks: (p.weeks || []).map((w) => (w.n === weekN ? { ...w, tasks: normalizeTasks(w.tasks) } : w)),
+      }))
+      const w = updated && (updated.weeks || []).find((x) => x.n === weekN)
+      id = w && w.tasks[taskIndex] && w.tasks[taskIndex].id
+    }
+    if (id) setDetail({ weekN, taskId: id })
   }
 
   return (
@@ -4738,17 +5048,49 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
         )}
       </div>
 
+      {/* TABLERO DE AVANCE — barra dual (Terminado por Insights vs Aceptado por RDEX)
+          + chips de control. La porción dorada (RDEX) va anidada sobre la naranja
+          (Insights): siempre pctAceptado ≤ pctInsights, así se lee "de lo terminado,
+          esto ya lo aceptó el cliente". */}
       <div className="surface" style={{ padding: '16px 18px', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11, gap: 12 }}>
-          <span style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 600 }}>Progreso general</span>
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <span className="mono" style={{ fontSize: 23, fontWeight: 700, color: complete ? 'var(--green)' : 'var(--accent)', letterSpacing: '-0.02em' }}>{prog.pct}%</span>
-            <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>{prog.done}/{prog.total} tareas</span>
-          </span>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 13 }}>
+          <span style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 600 }}>Tablero de avance</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.1 }}>
+              <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: allDone ? 'var(--green)' : 'var(--accent)', letterSpacing: '-0.02em' }}>{summary.pctInsights}%</span>
+              <span style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700, marginTop: 3 }}>Terminado · Insights</span>
+            </div>
+            <div style={{ width: 1, height: 32, background: 'var(--border)' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.1 }}>
+              <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: GOLD, letterSpacing: '-0.02em' }}>{summary.pctAceptado}%</span>
+              <span style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700, marginTop: 3 }}>Aceptado · RDEX</span>
+            </div>
+          </div>
         </div>
-        <div style={{ height: 10, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}>
-          <motion.div initial={false} animate={{ width: `${prog.pct}%` }} transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-            style={{ height: '100%', background: complete ? 'var(--green)' : 'linear-gradient(90deg, var(--accent), #FB923C)', borderRadius: 999 }} />
+        <div style={{ position: 'relative', height: 12, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}
+          title={`${summary.done}/${summary.total} terminadas · ${summary.aceptada} aceptadas por RDEX`}>
+          <motion.div initial={false} animate={{ width: `${summary.pctInsights}%` }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: allDone ? 'var(--green)' : 'linear-gradient(90deg, var(--accent), #FB923C)', borderRadius: 999 }} />
+          <motion.div initial={false} animate={{ width: `${summary.pctAceptado}%` }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: GOLD, borderRadius: 999 }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+          <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{summary.done}/{summary.total} tareas</span>
+          {summary.curso > 0 && (
+            <span className="tag" style={{ color: TASK_ESTADOS.curso.color, background: hexA(TASK_ESTADOS.curso.color, 0.14), borderColor: hexA(TASK_ESTADOS.curso.color, 0.28) }}>{summary.curso} en curso</span>
+          )}
+          {summary.pendiente > 0 && (
+            <span className="tag" style={{ color: 'var(--text-dim)', background: 'var(--bg-elevated)' }}>{summary.pendiente} pendiente{summary.pendiente === 1 ? '' : 's'}</span>
+          )}
+          {summary.bloqueada > 0 && (
+            <span className="tag" style={{ color: 'var(--red)', background: 'var(--red-soft)', borderColor: hexA(TASK_ESTADOS.bloqueada.color, 0.4) }}><I.lock width={11} height={11} /> {summary.bloqueada} bloqueada{summary.bloqueada === 1 ? '' : 's'}</span>
+          )}
+          {summary.riesgoAlto > 0 && (
+            <span className="tag" style={{ color: 'var(--yellow)', background: 'var(--yellow-soft)' }}><I.alert width={11} height={11} /> {summary.riesgoAlto} riesgo alto</span>
+          )}
+          {summary.nextFecha && (
+            <span className="tag" style={{ color: 'var(--text-dim)', background: 'var(--bg-elevated)' }}><I.calendar width={11} height={11} /> Próx. fecha: {fmtDate(summary.nextFecha)}</span>
+          )}
         </div>
       </div>
 
@@ -4758,9 +5100,16 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
         )}
         {weeks.map((w) => (
           <PlanWeekRow key={w.n} plan={linkedPlan} week={w} sprint={sprintForWeek(project.sprints, w.n)} onToggleTask={onToggleTask}
+            onOpenDetail={openTaskDetail} acceptedIds={acceptedIds}
             notes={notesByWeek[w.n] || []} onReadNote={markRead} onDeleteNote={removeNote} />
         ))}
       </div>
+
+      <PlanTaskDetailModal open={!!detailTask} onClose={() => setDetail(null)} task={detailTask} weekN={detail?.weekN} team={team}
+        accepted={detailTask ? acceptedIds.has(detailTask.id) : false}
+        acceptedInfo={detailTask ? acceptedBy.get(detailTask.id) : null}
+        onRevoke={() => { if (detailTask) revokeAcceptance(detailTask.id) }}
+        onEdit={(mutate) => { if (detailTask) editTask(detail.weekN, detailTask.id, mutate) }} />
 
       {generalNotes.length > 0 && (
         <div style={{ marginTop: 16 }}>
