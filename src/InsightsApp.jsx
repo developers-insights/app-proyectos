@@ -3309,7 +3309,72 @@ const ACCOUNT_PRESETS = [
   { label: 'App Store', color: '#0a84ff' },
   { label: 'Play Store', color: '#00c853' },
   { label: 'Twilio', color: '#f22f46' },
+  { label: 'Meta / WhatsApp Business', color: '#25D366' },
+  { label: 'Stripe (gateway de pago)', color: '#635BFF' },
+  { label: 'Dominio propio', color: '#2DD4BF' },
 ]
+
+/* PDF prolijo del checklist de cuentas — mismo estilo visual que el resto de la
+   app (banda oscura + acento). jsPDF se carga on-demand (import dinámico), igual
+   que el export del planificador. Refleja el estado ACTUAL de `project.accounts`,
+   así que re-exportar después de tildar cosas siempre da un PDF al día. */
+function makeAccountsPdfDoc(project, accounts, JsPDF) {
+  var doc = new JsPDF({ unit: 'pt', format: 'a4', compress: true })
+  var PW = doc.internal.pageSize.getWidth()
+  var PH = doc.internal.pageSize.getHeight()
+  var M = 56
+  var FOOT_Y = PH - 40
+
+  function clean(s) {
+    var t = String(s === null || s === undefined ? '' : s)
+    t = t.replace(/[✓✔]/g, 'OK').replace(/[—–]/g, '-').replace(/·/g, '-').replace(/…/g, '...')
+    t = t.replace(/[""]/g, '"').replace(/['']/g, "'").replace(/[\uD800-\uDFFF]/g, '')
+    t = t.replace(/[^\t\n\r\x20-\xFF]/g, '').replace(/[ \t]+/g, ' ')
+    return t.trim()
+  }
+  var INK = [24, 24, 27], DIM = [110, 110, 116], FAINT = [150, 150, 156]
+  var STRUCT = [31, 41, 55], GREEN = [15, 157, 107], LINE = [228, 228, 231]
+  function font(style, size, rgb) { doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(rgb[0], rgb[1], rgb[2]) }
+
+  // Header
+  doc.setFillColor(STRUCT[0], STRUCT[1], STRUCT[2]); doc.rect(0, 0, PW, 58, 'F')
+  doc.setFillColor(GREEN[0], GREEN[1], GREEN[2]); doc.rect(0, 58, PW, 3, 'F')
+  font('bold', 15, [255, 255, 255]); doc.text('Cuentas y accesos del proyecto', M, 27)
+  font('normal', 10.5, [199, 205, 214]); doc.text(clean(project.name || ''), M, 44)
+
+  var y = 96
+  var total = accounts.length
+  var doneCount = accounts.filter(function (a) { return a.done }).length
+  font('bold', 11, INK); doc.text(clean(doneCount + ' de ' + total + ' cuentas listas'), M, y)
+  y += 26
+
+  font('bold', 8.5, FAINT); doc.text('CUENTA', M, y); doc.text('ESTADO', PW - M - 70, y, { align: 'left' })
+  y += 8; doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.line(M, y, PW - M, y); y += 18
+
+  accounts.forEach(function (a) {
+    if (y > PH - 90) { doc.addPage(); y = 56 }
+    font('normal', 10.5, INK); doc.text(clean(a.label || ''), M, y)
+    var st = a.done
+    font('bold', 9.5, st ? GREEN : DIM)
+    doc.text(st ? 'CREADA' : 'FALTA', PW - M - 70, y, { align: 'left' })
+    y += 8; doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.line(M, y, PW - M, y); y += 16
+  })
+
+  if (total === 0) { font('normal', 10.5, FAINT); doc.text('Todavia no se cargaron cuentas para este proyecto.', M, y) }
+
+  var dd = new Date()
+  var MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+  font('normal', 8.5, FAINT)
+  doc.text('Generado el ' + dd.getDate() + ' de ' + MES[dd.getMonth()] + ' de ' + dd.getFullYear() + '.', M, FOOT_Y)
+  doc.text('Insights Software', PW - M, FOOT_Y, { align: 'right' })
+  return doc
+}
+async function exportAccountsPdf(project, accounts) {
+  var mod = await import('jspdf')
+  var JsPDF = mod.jsPDF || mod.default
+  var slug = (project.name || 'proyecto').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+  makeAccountsPdfDoc(project, accounts, JsPDF).save('cuentas-' + slug + '.pdf')
+}
 function AccountsModal({ open, project, onClose, patch }) {
   const [draft, setDraft] = useState('')
   if (!project) return <Modal open={open} onClose={onClose} title="Cuentas" />
@@ -3366,9 +3431,14 @@ function AccountsModal({ open, project, onClose, patch }) {
           <button className="btn btn-accent" onClick={addCustom} disabled={!draft.trim()}><I.plus width={15} height={15} /> Agregar</button>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{accounts.length ? `${doneCount}/${accounts.length} creadas` : ''}</span>
-          <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-sm" onClick={() => exportAccountsPdf(project, accounts)} disabled={!accounts.length} title="Descarga un PDF prolijo con el estado actual, para compartir con el cliente">
+              <I.pdf width={14} height={14} /> Exportar PDF
+            </button>
+            <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button>
+          </div>
         </div>
       </div>
     </Modal>
@@ -6083,24 +6153,44 @@ function AppShell({ session, onLogout }) {
   useEffect(() => { if (myId) localStorage.setItem('my_team_id', myId) }, [myId])
   useEffect(() => {
     if (!session?.user?.email) return
-    const email = session.user.email
+    // BLINDAJE #1 (causa raíz del duplicado sin foto): NUNCA actuar con el equipo
+    // a medio cargar. Si la lista todavía no llegó desde Supabase (ready=false),
+    // `items` está vacío y el paso 3 daría de alta un miembro NUEVO — un clon con
+    // tu email pero sin foto — al no "ver" tu registro real. Esperamos a ready.
+    // (En modo local ready es true desde el arranque, así que no bloquea nada.)
+    if (!teamStore.ready) return
+    const email = session.user.email.toLowerCase()
     const team = teamStore.items
-    // 1) ya hay un miembro con ese email → vincular
-    const byEmail = team.find((u) => u.email && u.email.toLowerCase() === email.toLowerCase())
-    if (byEmail) { if (myId !== byEmail.id) setMyId(byEmail.id); return }
+    // 1) ya hay miembro(s) con ese email → vincular al MEJOR, no al primero. Si
+    //    alguna vez quedó un duplicado, preferimos el que tiene foto y, a igualdad,
+    //    el de id más "canónico" (seed 'u3' < uid()/'auto-…'). Así un clon viejo
+    //    nunca vuelve a ganarte el perfil aunque siga existiendo en la tabla.
+    const matches = team.filter((u) => u.email && u.email.toLowerCase() === email)
+    if (matches.length) {
+      const best = matches.slice().sort((a, b) =>
+        (b.photo ? 1 : 0) - (a.photo ? 1 : 0) ||               // con foto primero
+        String(a.id).length - String(b.id).length ||           // id corto (seed) antes que uid largo
+        String(a.id).localeCompare(String(b.id))
+      )[0]
+      if (myId !== best.id) setMyId(best.id)
+      return
+    }
     // 2) ya elegiste tu nombre ("Sos:") pero ese miembro no tiene email → completárselo (evita duplicar)
     if (myId) {
       const mine = team.find((u) => u.id === myId)
-      if (mine && !mine.email) teamStore.patch(myId, (u) => ({ ...u, email }))
+      if (mine && !mine.email) teamStore.patch(myId, (u) => ({ ...u, email: session.user.email }))
       return
     }
-    // 3) nadie coincide → dar de alta al usuario en el equipo desde su sesión de Supabase
+    // 3) nadie coincide → dar de alta al usuario en el equipo desde su sesión de Supabase.
+    //    BLINDAJE #2: id DETERMINÍSTICO derivado del email (no uid() aleatorio). Si
+    //    dos pestañas/dispositivos dan de alta "al mismo" usuario nuevo a la vez,
+    //    upsertean la MISMA fila en lugar de crear dos. `upsert` crea si no existe.
     const meta = session.user.user_metadata || {}
-    const name = meta.name || meta.full_name || email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-    const nid = uid()
-    teamStore.create({ id: nid, name, email, initials: autoInitials(name), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length] })
+    const name = meta.name || meta.full_name || session.user.email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    const nid = 'auto-' + email.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    teamStore.upsert({ id: nid, name, email: session.user.email, initials: autoInitials(name), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length] })
     setMyId(nid)
-  }, [session, teamStore.items, myId])
+  }, [session, teamStore.items, teamStore.ready, myId])
 
   const openProject = (id) => setRoute({ view: 'project', projectId: id })
   const logActivity = (entry) => {
