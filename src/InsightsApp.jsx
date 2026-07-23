@@ -3011,8 +3011,7 @@ function Projects({ onOpenProject }) {
                   </div>
                 )}
                 <Progress value={pct} height={6} showLabel color={cardPctColor(pct)} />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  {mini('Último mensaje', I.phone, 'comm', 'Sin primer mensaje')}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }}>
                   {mini('Último avance', I.folder, 'avance', 'Sin primer avance')}
                 </div>
                 <ProjectTags tags={p.tags} onChange={(tags) => updateProject(p.id, { tags })} />
@@ -6221,7 +6220,6 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'calls', label: 'Calls', icon: I.phone },
     { key: 'sops', label: 'SOP', icon: I.doc },
     { key: 'planner', label: 'Planificador', icon: I.calendar },
-    { key: 'assistant', label: 'IA Assistant', icon: I.spark },
     { key: 'bot', label: 'Bot', icon: I.whatsapp },
     { key: 'editor', label: 'Editor', icon: I.film },
   ]
