@@ -2309,6 +2309,50 @@ function ProjectTags({ tags, onChange, size = 'sm' }) {
   )
 }
 
+/* correo del cliente en la tarjeta: se ve a simple vista y se puede cargar/editar
+   a mano con un click (sin abrir el proyecto). Guarda en client.email. */
+function ClientEmailField({ email, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(email || '')
+  useEffect(() => { setVal(email || '') }, [email])
+
+  const commit = () => {
+    setEditing(false)
+    const next = val.trim()
+    if (next !== (email || '')) onSave(next)
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        className="input mono"
+        type="email"
+        value={val}
+        placeholder="correo@cliente.com"
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          if (e.key === 'Escape') { setVal(email || ''); setEditing(false) }
+        }}
+        style={{ padding: '5px 8px', fontSize: 12.5, height: 28 }}
+      />
+    )
+  }
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); setEditing(true) }}
+      title="Editar correo del cliente"
+      className="btn btn-sm btn-ghost"
+      style={{ justifyContent: 'flex-start', gap: 6, padding: '2px 0', height: 'auto', fontSize: 12.5, color: email ? 'var(--text-dim)' : 'var(--text-faint)', maxWidth: '100%' }}>
+      <I.mail width={13} height={13} style={{ flexShrink: 0 }} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email || 'Agregar correo del cliente'}</span>
+    </button>
+  )
+}
+
 /* ============================================================================
    9c · SPRINTS — status dropdown · detail modal · table/kanban board
 ============================================================================ */
@@ -2784,7 +2828,7 @@ function SprintGantt({ projects, clientOf, onOpen }) {
    12 · PROJECTS LIST
 ============================================================================ */
 function Projects({ onOpenProject }) {
-  const { data, logActivity, projectStore, botComms } = useApp()
+  const { data, logActivity, projectStore, clientStore, botComms } = useApp()
   const [newOpen, setNewOpen] = useState(false)
   const qp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
   const [tab, setTab] = useState(qp.get('tab') || 'active')
@@ -2803,6 +2847,7 @@ function Projects({ onOpenProject }) {
   const userOf = (id) => data.team.find((u) => u.id === id)
   const updateProject = (id, fields) => projectStore.patch(id, (p) => ({ ...p, ...fields }))
   const patchProject = (id, fn) => projectStore.patch(id, fn)
+  const updateClient = (id, fields) => clientStore.patch(id, (c) => ({ ...c, ...fields }))
   const setStatus = (id, status) => { updateProject(id, { status }); if (status === 'pending') setPendingFor(id) }
   const createProject = ({ name, clientId, whatsappUrl, testingUrl }) => {
     const id = uid()
@@ -2972,6 +3017,7 @@ function Projects({ onOpenProject }) {
                 </div>
                 <ProjectTags tags={p.tags} onChange={(tags) => updateProject(p.id, { tags })} />
                 <div style={{ height: 1, background: 'var(--border)' }} />
+                {cl && <ClientEmailField email={cl.email} onSave={(email) => updateClient(cl.id, { email })} />}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                   <TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} />
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
