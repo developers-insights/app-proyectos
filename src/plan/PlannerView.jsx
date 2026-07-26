@@ -20,6 +20,7 @@ import {
   COLOR_RE, uid, taskText, normalizeTasks,
 } from './planModel.js'
 import { buildPlanHTML, makePlanPdfDoc } from './planTemplate.js'
+import AgentStudio from './AgentStudio.jsx'
 
 /* Sitio público de planes (Next.js en Vercel). Cada plan vive en /{slug} y lee
    su contenido de la tabla published_plans en Supabase, en tiempo real. */
@@ -269,7 +270,7 @@ async function downloadPlanPDF(plan) {
 /* ============================================================================
    EDITOR — dos paneles
 ============================================================================ */
-function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, publishSync, retryPublish }) {
+function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, publishSync, retryPublish, onAgent }) {
   const frameRef = useRef(null)
   const set = (fn) => patchPlan(plan.id, fn)
 
@@ -387,6 +388,7 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, publi
           {plan.published && plan.publishedUrl && (
             <a href={plan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-sm" title={plan.publishedUrl} style={{ color: 'var(--accent)' }}><I.ext width={14} height={14} /> Abrir página</a>
           )}
+          <button className="btn btn-sm" onClick={onAgent} title="Rehacer o completar este plan con el agente" style={{ color: 'var(--accent)' }}><I.spark width={14} height={14} /> Agente</button>
           <button className="btn btn-sm" onClick={() => downloadPlanPDF(plan)}><I.pdf width={14} height={14} /> Descargar PDF</button>
           <button className="btn btn-sm" onClick={onExit}><I.chevR width={14} height={14} style={{ transform: 'scaleX(-1)' }} /> Volver a la lista</button>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-dim)' }}>
@@ -416,14 +418,15 @@ function PlanEditor({ plan, plans, projects, patchPlan, onExit, onPublish, publi
 /* ============================================================================
    LISTA
 ============================================================================ */
-function PlanList({ plans, projects, onEdit, onNew, onPublish, onDelete }) {
+function PlanList({ plans, projects, onEdit, onNew, onPublish, onDelete, onAgent }) {
   const projName = (id) => (projects.find((p) => p.id === id)?.name) || null
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Entregables de cliente</div><h1 style={{ fontSize: 32 }}>Planificador</h1></div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button className="btn btn-accent" onClick={onNew}><I.plus width={15} height={15} /> Nuevo plan</button>
+          <button className="btn btn-accent" onClick={onAgent} title="Contale el proyecto al agente y te arma el plan"><I.spark width={15} height={15} /> Crear con el agente</button>
+          <button className="btn" onClick={onNew}><I.plus width={15} height={15} /> Nuevo plan</button>
         </div>
       </div>
 
@@ -432,9 +435,11 @@ function PlanList({ plans, projects, onEdit, onNew, onPublish, onDelete }) {
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Todavía no hay planes</div>
           <div style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.6, maxWidth: 460, margin: '0 auto 18px' }}>
             Armá un plan de ejecución para mostrarle a un cliente: etapas, semanas y entregables, en una página lista para compartir.
+            Contale el proyecto al agente con tus palabras y te lo arma solo.
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button className="btn btn-accent" onClick={onNew}><I.plus width={15} height={15} /> Crear el primero</button>
+            <button className="btn btn-accent" onClick={onAgent}><I.spark width={15} height={15} /> Crear con el agente</button>
+            <button className="btn" onClick={onNew}><I.plus width={15} height={15} /> Empezar en blanco</button>
           </div>
         </div>
       )}
@@ -488,6 +493,8 @@ export default function PlannerView() {
   const [editingId, setEditingId] = useState(null)
   const [newOpen, setNewOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
+  // Agente: null = cerrado · 'new' = crear uno nuevo · <id> = rehacer ese plan.
+  const [agentFor, setAgentFor] = useState(null)
 
   const projects = data.projects || []
 
@@ -535,22 +542,62 @@ export default function PlannerView() {
 
   const editing = editingId ? plans.find((p) => p.id === editingId) : null
 
+  // ── Agente ────────────────────────────────────────────────────────────────
+  // El estudio devuelve un plan YA completo (planFromDraft). Acá solo decidimos
+  // si nace como plan nuevo (le falta la dirección pública) o si pisa uno que ya
+  // existe — planFromDraft ya preservó id/slug/published del plan base.
+  const agentBase = agentFor && agentFor !== 'new' ? plans.find((p) => p.id === agentFor) || null : null
+
+  const agentCreate = (plan) => {
+    const p = { ...plan, slug: makeUniqueSlug(plan.title, plans), updatedAt: new Date().toISOString() }
+    addPlan(p)
+    if (logActivity) logActivity({ type: 'plan-add', text: `creó con el agente el plan "${p.title}"` })
+    setAgentFor(null)
+    setEditingId(p.id)
+  }
+
+  const agentApply = (plan) => {
+    if (!agentBase) return
+    patchPlan(agentBase.id, () => ({ ...plan, updatedAt: new Date().toISOString() }))
+    if (logActivity) logActivity({ type: 'plan-edit', text: `rehizo con el agente el plan "${plan.title}"` })
+    setAgentFor(null)
+    setEditingId(agentBase.id)
+  }
+
+  const studio = (
+    <AgentStudio
+      open={!!agentFor}
+      onClose={() => setAgentFor(null)}
+      projects={projects}
+      clients={data.clients || []}
+      calls={data.calls || []}
+      team={data.team || []}
+      basePlan={agentBase}
+      onCreate={agentCreate}
+      onApply={agentApply}
+    />
+  )
+
   if (!plansReady && plans.length === 0) {
     return <div style={{ padding: 40, color: 'var(--text-dim)', fontSize: 14 }}>Cargando planes…</div>
   }
 
   if (editing) {
     return (
-      <PlanEditor
-        plan={editing}
-        plans={plans}
-        projects={projects}
-        patchPlan={patchPlan}
-        onExit={() => setEditingId(null)}
-        onPublish={publishPlan}
-        publishSync={publishSync}
-        retryPublish={retryPublish}
-      />
+      <>
+        <PlanEditor
+          plan={editing}
+          plans={plans}
+          projects={projects}
+          patchPlan={patchPlan}
+          onExit={() => setEditingId(null)}
+          onPublish={publishPlan}
+          publishSync={publishSync}
+          retryPublish={retryPublish}
+          onAgent={() => setAgentFor(editing.id)}
+        />
+        {studio}
+      </>
     )
   }
 
@@ -563,6 +610,7 @@ export default function PlannerView() {
         onNew={() => { setNewTitle(''); setNewOpen(true) }}
         onPublish={publishPlan}
         onDelete={deletePlan}
+        onAgent={() => setAgentFor('new')}
       />
       <Modal open={newOpen} onClose={() => setNewOpen(false)} title="Nuevo plan" sub="Ponele un título — el resto lo editás después" width={440}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -578,6 +626,7 @@ export default function PlannerView() {
           </div>
         </div>
       </Modal>
+      {studio}
     </div>
   )
 }
