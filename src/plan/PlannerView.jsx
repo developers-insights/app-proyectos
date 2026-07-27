@@ -572,6 +572,7 @@ export default function PlannerView() {
       clients={data.clients || []}
       calls={data.calls || []}
       team={data.team || []}
+      plans={plans}
       basePlan={agentBase}
       onCreate={agentCreate}
       onApply={agentApply}

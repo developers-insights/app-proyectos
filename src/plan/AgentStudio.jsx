@@ -20,6 +20,19 @@ import {
   runBrief, runPlan, runRefine, planFromDraft, draftSummary,
 } from './planAgent.js'
 import { buildPlanHTML } from './planTemplate.js'
+import { slugify, isSlugAllowed } from './planModel.js'
+
+/** Mismo criterio que makeUniqueSlug (PlannerView.jsx): sanea y le agrega -2, -3…
+ *  hasta que entra. Solo para el preview en vivo — la creación real vuelve a
+ *  correr esto (con los planes más frescos) al confirmar. */
+function previewSlug(title, plans) {
+  const base = slugify(title)
+  if (!base) return ''
+  let s = base
+  let i = 1
+  while (!isSlugAllowed(s, plans, null) && i < 9999) { i += 1; s = `${base}-${i}` }
+  return s
+}
 
 /* ============================================================================
    CSS propio — SOLO lo que inline no puede: hover, press y keyframes.
@@ -455,11 +468,14 @@ function SecTitle({ children, right }) {
 /* ============================================================================
    AGENT STUDIO
 ============================================================================ */
-export default function AgentStudio({ open, onClose, projects, clients, calls, team, basePlan, onCreate, onApply }) {
+export default function AgentStudio({ open, onClose, projects, clients, calls, team, plans, basePlan, onCreate, onApply }) {
   useStudioCss()
   const reduce = useReducedMotion()
 
   /* ---- contexto ---- */
+  // Solo importa para un plan NUEVO: uno existente ya tiene título y dirección
+  // (se editan desde "Lo básico"/la portada, no acá).
+  const [planTitle, setPlanTitle] = useState('')
   const [freeText, setFreeText] = useState('')
   const [pickedId, setPickedId] = useState(null)
   const [groups, setGroups] = useState([])
@@ -528,7 +544,8 @@ export default function AgentStudio({ open, onClose, projects, clients, calls, t
   }, [open, keyTick])
 
   const enoughCtx = contextText.trim().length >= MIN_CTX
-  const canRun = keyOk && enoughCtx && !busy
+  const titleOk = !!basePlan || planTitle.trim().length > 0
+  const canRun = keyOk && enoughCtx && titleOk && !busy
 
   /* ------------------------------------------------------------- proyectos */
   const projList = useMemo(() => {
@@ -741,6 +758,10 @@ export default function AgentStudio({ open, onClose, projects, clients, calls, t
       setErr(`No pude convertir el borrador en un plan. ${(e && e.message) || ''}`)
       return
     }
+    // El título del plan (y por lo tanto su dirección pública) lo decidió el
+    // usuario ANTES de correr el agente — manda sobre lo que el agente haya
+    // escrito en el borrador, así la ruta siempre es la que se le mostró.
+    if (!basePlan && planTitle.trim()) plan = { ...plan, title: planTitle.trim() }
     if (basePlan) {
       const n = (draft.weeks || []).length
       const ok = window.confirm(
@@ -752,6 +773,7 @@ export default function AgentStudio({ open, onClose, projects, clients, calls, t
       if (typeof onApply === 'function') onApply(plan)
     } else if (typeof onCreate === 'function') {
       onCreate(plan)
+      setPlanTitle('')   // el próximo "Crear con el agente" arranca con el campo vacío
     }
     resetRun()
   }
@@ -900,6 +922,23 @@ export default function AgentStudio({ open, onClose, projects, clients, calls, t
                         <div style={{ fontSize: 12.5, color: 'var(--text-dim)', marginTop: 1 }}>Contame el proyecto y armo el plan</div>
                       </div>
                     </div>
+
+                    {/* ---- título del plan (define la dirección pública) ---- */}
+                    {!basePlan && (
+                      <div style={{ marginTop: 18 }}>
+                        <span className="label">Título del plan</span>
+                        <input className="input" autoFocus value={planTitle}
+                          onChange={(e) => setPlanTitle(e.target.value)}
+                          placeholder="Real Deal Exchange AI"
+                          style={{ marginTop: 6, fontSize: 15.5, fontWeight: 600, padding: '11px 13px' }} />
+                        <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.5 }}>
+                          Va a quedar publicado en{' '}
+                          <span className="mono" style={{ color: planTitle.trim() ? 'var(--text-dim)' : 'var(--text-faint)' }}>
+                            /{planTitle.trim() ? previewSlug(planTitle, plans) : '…'}
+                          </span>. Podés cambiar la dirección después, en la portada.
+                        </div>
+                      </div>
+                    )}
 
                     {/* ---- texto libre ---- */}
                     <div style={{ marginTop: 16 }}>
@@ -1064,13 +1103,15 @@ export default function AgentStudio({ open, onClose, projects, clients, calls, t
                     ) : (
                       <>
                         <button type="button" className="btn btn-accent as-big" onClick={start} disabled={!canRun}
-                          title={!enoughCtx ? 'Todavía no hay contexto suficiente' : busy ? 'El agente ya está trabajando' : 'Generar el plan (Cmd/Ctrl + Enter)'}>
+                          title={!titleOk ? 'Ponele un título al plan primero' : !enoughCtx ? 'Todavía no hay contexto suficiente' : busy ? 'El agente ya está trabajando' : 'Generar el plan (Cmd/Ctrl + Enter)'}>
                           <I.spark width={16} height={16} /> {busy ? 'El agente está trabajando…' : 'Generar plan'}
                         </button>
                         <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8, textAlign: 'center', lineHeight: 1.5 }}>
-                          {enoughCtx
-                            ? <>Atajo: <span className="kbd">Cmd/Ctrl</span> <span className="kbd">Enter</span></>
-                            : 'Contame algo del proyecto o cargá uno para poder generar.'}
+                          {!titleOk
+                            ? 'Ponele un título al plan para poder generar.'
+                            : enoughCtx
+                              ? <>Atajo: <span className="kbd">Cmd/Ctrl</span> <span className="kbd">Enter</span></>
+                              : 'Contame algo del proyecto o cargá uno para poder generar.'}
                         </div>
                       </>
                     )}

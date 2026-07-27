@@ -4553,50 +4553,6 @@ function useClientNotes(slug) {
   return { notes, markRead, remove }
 }
 
-/* ── Aceptaciones de RDEX por tarea ───────────────────────────────────────────
-   Cada fila de plan_acceptances = una tarea que el cliente aceptó formalmente
-   desde su link público. Lectura pública; revocar exige login (RPC revoke_plan_task
-   con RLS). Realtime: la aceptación aparece sola cuando el cliente la marca.
-   Degradación elegante: si la tabla / RPC todavía no existen (SQL sin correr),
-   devolvemos Sets vacíos y NUNCA rompemos la página del proyecto. */
-function usePlanAcceptances(slug) {
-  const [rows, setRows] = useState([])
-  useEffect(() => {
-    if (!supabase || !slug) { setRows([]); return }
-    let alive = true
-    const load = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('plan_acceptances')
-          .select('task_id,accepted_by,created_at')
-          .eq('slug', slug).is('revoked_at', null)
-        if (alive && !error) setRows(data || [])
-      } catch { /* tabla inexistente / red: degradar a vacío, sin romper */ }
-    }
-    load()
-    let ch = null
-    try {
-      ch = supabase
-        .channel('pa-app-' + slug)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'plan_acceptances', filter: 'slug=eq.' + slug }, load)
-        .subscribe()
-    } catch { /* sin realtime: la lectura inicial ya alcanza */ }
-    return () => { alive = false; if (ch) supabase.removeChannel(ch) }
-  }, [slug])
-
-  const acceptedIds = useMemo(() => new Set(rows.map((r) => r.task_id)), [rows])
-  const acceptedBy = useMemo(() => {
-    const m = new Map()
-    for (const r of rows) m.set(r.task_id, { by: r.accepted_by, at: r.created_at })
-    return m
-  }, [rows])
-  const revoke = async (taskId) => {
-    setRows((rs) => rs.filter((r) => r.task_id !== taskId))   // optimista
-    if (supabase) { try { await supabase.rpc('revoke_plan_task', { p_slug: slug, p_task_id: taskId }) } catch { /* sin RPC: quedó revocado local */ } }
-  }
-  return { acceptedIds, acceptedBy, revoke }
-}
-
 /* Una nota del cliente: autor, fecha, cuerpo, y acciones (leída / borrar). */
 function NoteCard({ note, onRead, onDelete }) {
   const date = note.created_at
@@ -4648,11 +4604,11 @@ function PlanTaskCheck({ done }) {
    candado si está bloqueada y cantidad de evidencias. Sólo muestra lo informativo
    — "pendiente" y "terminada" ya se leen por el check y el tachado — para no
    ensuciar la fila. */
-function TaskChips({ task, accepted, clientName }) {
-  const est = taskEstado(task, accepted)
+function TaskChips({ task, clientName }) {
+  const est = taskEstado(task)
   const em = TASK_ESTADOS[est]
-  const showEstado = est === 'curso' || est === 'bloqueada' || est === 'aceptada'
-  const riskHigh = task && task.riesgo === 'alto' && est !== 'terminada' && est !== 'aceptada'
+  const showEstado = est === 'curso' || est === 'bloqueada'
+  const riskHigh = task && task.riesgo === 'alto' && est !== 'terminada'
   const evCount = (task && Array.isArray(task.evidencia) && task.evidencia.length) || 0
   // Responsable: sólo se muestra cuando la tarea NO es de Insights, para que salte a
   // la vista qué depende del cliente. El nombre real lo pone la UI (multi-tenant).
@@ -4686,9 +4642,8 @@ function TaskChips({ task, accepted, clientName }) {
 }
 
 /* Una semana del acordeón: cabecera colapsable + lista de tareas al expandir. */
-function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, acceptedIds, notes = [], onReadNote, onDeleteNote }) {
+function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, notes = [], onReadNote, onDeleteNote }) {
   const [open, setOpen] = useState(false)
-  const hasAccepted = (id) => !!(id && acceptedIds && acceptedIds.has(id))
   const prog = weekProgress(week)
   const complete = prog.total > 0 && prog.pct === 100
   const hito = hitoForWeek(plan, week.n)
@@ -4775,7 +4730,7 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, acceptedI
                         </span>
                       </span>
                     </button>
-                    <TaskChips task={t} accepted={hasAccepted(tid)} clientName={plan.clientName} />
+                    <TaskChips task={t} clientName={plan.clientName} />
                     <button className="btn btn-sm btn-ghost" onClick={() => onOpenDetail && onOpenDetail(week.n, i, t)}
                       title="Seguimiento operativo de la tarea" style={{ padding: '4px 7px', color: 'var(--text-faint)', flexShrink: 0 }}>
                       <I.gear width={14} height={14} />
@@ -4813,7 +4768,7 @@ const ESTADO_SEG = { pendiente: 'Pendiente', curso: 'En curso', bloqueada: 'Bloq
    vía onEdit → patchPlan (misma fila del plan, sync al link público). La aceptación
    formal de RDEX es de sólo lectura acá: se revoca, no se fija (la fija el cliente
    desde el link público). */
-function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], accepted, acceptedInfo, clientName, onRevoke, onEdit }) {
+function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], clientName, onEdit }) {
   // La evidencia se edita en estado local para que una fila recién agregada (vacía)
   // sobreviva en pantalla: normalizeTask descarta las evidencias vacías del plan
   // guardado, pero acá la seguimos mostrando hasta que el usuario la complete.
@@ -4833,13 +4788,12 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], accepted, 
   const setEv = (i, f) => writeEv(evRows.map((e, j) => (j === i ? { ...e, ...f } : e)))
   const delEv = (i) => writeEv(evRows.filter((_, j) => j !== i))
 
-  const teamEstado = task ? taskEstado(task, false) : 'pendiente'   // estado que fijó el equipo (sin la capa RDEX)
+  const teamEstado = task ? taskEstado(task) : 'pendiente'
   const resp = task ? taskResponsable(task) : 'insights'   // quién ejecuta (default Insights)
   const cliente = (clientName && String(clientName).trim()) || 'Cliente'
   const RESP_LABELS = { insights: RESPONSABLES.insights.label, cliente, ambos: RESPONSABLES.ambos.label }
   const bl = (task && task.bloqueo) || {}
   const listId = tid ? `team-names-${tid}` : 'team-names-none'
-  const GOLD = TASK_ESTADOS.aceptada.color
   const dateVal = (v) => (v ? String(v).slice(0, 10) : '')
 
   return (
@@ -4848,25 +4802,6 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], accepted, 
       {task && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <datalist id={listId}>{team.map((u) => <option key={u.id} value={u.name} />)}</datalist>
-
-          {/* Aceptación formal de RDEX — sólo lectura + revocar */}
-          {accepted && (
-            <div className="surface" style={{ padding: '11px 13px', display: 'flex', alignItems: 'center', gap: 11, background: hexA(GOLD, 0.1), borderColor: hexA(GOLD, 0.32) }}>
-              <span style={{ width: 26, height: 26, borderRadius: 8, background: hexA(GOLD, 0.18), display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                <I.check width={15} height={15} style={{ color: GOLD }} />
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: GOLD }}>Aceptada por RDEX</div>
-                {acceptedInfo && (acceptedInfo.by || acceptedInfo.at) && (
-                  <div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>
-                    {acceptedInfo.by || 'RDEX'}{acceptedInfo.at ? ` · ${fmtDate(acceptedInfo.at)}` : ''}
-                  </div>
-                )}
-              </div>
-              <button className="btn btn-sm" onClick={() => { if (window.confirm('¿Revocar la aceptación de RDEX de esta tarea? El cliente la va a volver a ver como pendiente de aceptar.')) onRevoke() }}
-                style={{ color: 'var(--red)' }}>Revocar aceptación</button>
-            </div>
-          )}
 
           {/* Estado (segmentado) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -5001,8 +4936,6 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
   const team = (data && data.team) || []
   // Notas del cliente dejadas desde el link público (se agrupan por semana abajo).
   const { notes: clientNotes, markRead, remove: removeNote } = useClientNotes(linkedPlan?.slug)
-  // Aceptaciones formales de RDEX por tarea (plan_acceptances; degradación elegante).
-  const { acceptedIds, acceptedBy, revoke: revokeAcceptance } = usePlanAcceptances(linkedPlan?.slug)
   const [detail, setDetail] = useState(null)   // { weekN, taskId } del detalle operativo abierto
 
   if (!linkedPlan) {
@@ -5023,15 +4956,14 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
   }
 
   const weeks = [...(linkedPlan.weeks || [])].sort((a, b) => (a.n || 0) - (b.n || 0))
-  const summary = planBoardSummary(linkedPlan, acceptedIds)
+  const summary = planBoardSummary(linkedPlan)
   const allDone = summary.total > 0 && summary.pctInsights === 100
-  const GOLD = TASK_ESTADOS.aceptada.color
   const clientLabel = (linkedPlan.clientName && String(linkedPlan.clientName).trim()) || 'el cliente'
   // Lo que todavía depende del cliente (responsable cliente/ambos, sin terminar).
   const CLIENTE_COLOR = RESPONSABLES.cliente.color
-  const pendingCliente = planPendingCliente(linkedPlan, acceptedIds).filter((p) => !p.done)
+  const pendingCliente = planPendingCliente(linkedPlan).filter((p) => !p.done)
   // Tarea con el detalle operativo abierto (se relee del plan en vivo, así el modal
-  // refleja lo que se va guardando y la aceptación de RDEX que llega por realtime).
+  // refleja lo que se va guardando).
   const detailWeek = detail ? weeks.find((w) => w.n === detail.weekN) : null
   const detailTask = detailWeek ? (detailWeek.tasks || []).find((t) => t && t.id === detail.taskId) : null
 
@@ -5137,31 +5069,20 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
         )}
       </div>
 
-      {/* TABLERO DE AVANCE — barra dual (Terminado por Insights vs Aceptado por RDEX)
-          + chips de control. La porción dorada (RDEX) va anidada sobre la naranja
-          (Insights): siempre pctAceptado ≤ pctInsights, así se lee "de lo terminado,
-          esto ya lo aceptó el cliente". */}
+      {/* TABLERO DE AVANCE — % terminado + chips de control. Una tarea está
+          terminada o no: sin paso de aceptación del cliente de por medio. */}
       <div className="surface" style={{ padding: '16px 18px', marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 13 }}>
           <span style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 600 }}>Tablero de avance</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.1 }}>
-              <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: allDone ? 'var(--green)' : 'var(--accent)', letterSpacing: '-0.02em' }}>{summary.pctInsights}%</span>
-              <span style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700, marginTop: 3 }}>Terminado · Insights</span>
-            </div>
-            <div style={{ width: 1, height: 32, background: 'var(--border)' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.1 }}>
-              <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: GOLD, letterSpacing: '-0.02em' }}>{summary.pctAceptado}%</span>
-              <span style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700, marginTop: 3 }}>Aceptado · RDEX</span>
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.1 }}>
+            <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: allDone ? 'var(--green)' : 'var(--accent)', letterSpacing: '-0.02em' }}>{summary.pctInsights}%</span>
+            <span style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700, marginTop: 3 }}>Terminado</span>
           </div>
         </div>
         <div style={{ position: 'relative', height: 12, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}
-          title={`${summary.done}/${summary.total} terminadas · ${summary.aceptada} aceptadas por RDEX`}>
+          title={`${summary.done}/${summary.total} terminadas`}>
           <motion.div initial={false} animate={{ width: `${summary.pctInsights}%` }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: allDone ? 'var(--green)' : 'linear-gradient(90deg, var(--accent), #FB923C)', borderRadius: 999 }} />
-          <motion.div initial={false} animate={{ width: `${summary.pctAceptado}%` }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: GOLD, borderRadius: 999 }} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
           <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{summary.done}/{summary.total} tareas</span>
@@ -5215,16 +5136,13 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
         )}
         {weeks.map((w) => (
           <PlanWeekRow key={w.n} plan={linkedPlan} week={w} sprint={sprintForWeek(project.sprints, w.n)} onToggleTask={onToggleTask}
-            onOpenDetail={openTaskDetail} acceptedIds={acceptedIds}
+            onOpenDetail={openTaskDetail}
             notes={notesByWeek[w.n] || []} onReadNote={markRead} onDeleteNote={removeNote} />
         ))}
       </div>
 
       <PlanTaskDetailModal open={!!detailTask} onClose={() => setDetail(null)} task={detailTask} weekN={detail?.weekN} team={team}
         clientName={linkedPlan.clientName}
-        accepted={detailTask ? acceptedIds.has(detailTask.id) : false}
-        acceptedInfo={detailTask ? acceptedBy.get(detailTask.id) : null}
-        onRevoke={() => { if (detailTask) revokeAcceptance(detailTask.id) }}
         onEdit={(mutate) => { if (detailTask) editTask(detail.weekN, detailTask.id, mutate) }} />
 
       {generalNotes.length > 0 && (
