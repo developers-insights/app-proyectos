@@ -6140,6 +6140,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'planner', label: 'Planificador', icon: I.calendar },
     { key: 'bot', label: 'Bot', icon: I.whatsapp },
     { key: 'editor', label: 'Editor', icon: I.film },
+    { key: 'carousel', label: 'Carrusel', icon: I.layers, external: true, href: 'https://carrusel-generator-production.up.railway.app' },
   ]
   const mini = !mobile && collapsed          // solo colapsa en desktop
   const go = (key) => { setRoute({ view: key }); if (mobile && onClose) onClose() }
@@ -6154,9 +6155,19 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
       <nav style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 3, flex: 1 }}>
         {items.map((it) => {
           const active = route.view === it.key || (route.view === 'project' && it.key === 'projects')
+          const rowStyle = { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-soft)' : 'transparent', fontWeight: 600, fontSize: 14, position: 'relative' }
+          if (it.external) {
+            return (
+              <a key={it.key} href={it.href} target="_blank" rel="noopener noreferrer" title={mini ? it.label : ''}
+                className="row-hover" style={{ ...rowStyle, textDecoration: 'none' }}>
+                <it.icon width={18} height={18} style={{ flexShrink: 0 }} />
+                {!mini && <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>{it.label}<I.ext width={12} height={12} style={{ opacity: .5, flexShrink: 0 }} /></span>}
+              </a>
+            )
+          }
           return (
             <button key={it.key} onClick={() => go(it.key)} title={mini ? it.label : ''}
-              className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-soft)' : 'transparent', fontWeight: 600, fontSize: 14, position: 'relative' }}>
+              className="row-hover" style={rowStyle}>
               {active && <span style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 9, background: 'var(--accent)' }} />}
               <it.icon width={18} height={18} style={{ flexShrink: 0 }} />
               {!mini && it.label}
