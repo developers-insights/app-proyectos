@@ -696,6 +696,7 @@ function migrate(state) {
     const { devUrl, ...rest } = p   // devUrl eliminado del modelo
     return {
       ...rest,
+      kind: rest.kind || 'cliente',   // clasificación: cliente (default) | interno (de Insights)
       assignments: stripRemoved(rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null }),
       tags: rest.tags || [],
       priority: rest.priority || 'normal',
@@ -1650,6 +1651,8 @@ function trackInfo(project, kind, botCommAt) {
   const manual = (kind === 'avance' ? project.avances : project.comms)?.[0]?.date || null
   const auto = kind === 'avance' ? (project.lastProgressAt || null) : (botCommAt || null)
   const latest = latestISO(manual, auto)
+  // proyecto entregado: ya no se hace seguimiento — nunca marca en rojo (no más avisos de avance)
+  if (project.status === 'delivered') return { first: !latest, days: latest ? businessDaysSince(latest) : null, overdue: false, delivered: true }
   if (latest) {
     const days = businessDaysSince(latest)
     const threshold = kind === 'avance' ? 5 : 3
@@ -2017,7 +2020,7 @@ function AddTaskInput({ onAdd }) {
 }
 
 /* full project editor (meta · URLs · financials · sprints) */
-function EditProjectModal({ open, project, onClose, onSave, onDelete }) {
+function EditProjectModal({ open, project, clients = [], onClose, onSave, onDelete }) {
   const [d, setD] = useState(null)
   useEffect(() => { if (open && project) setD(JSON.parse(JSON.stringify(project))) }, [open, project && project.id])
   const set = (k, v) => setD((s) => ({ ...s, [k]: v }))
@@ -2040,6 +2043,20 @@ function EditProjectModal({ open, project, onClose, onSave, onDelete }) {
               <select className="input" value={d.priority || 'normal'} onChange={(e) => set('priority', e.target.value)}>
                 {PROJECT_PRIORITY.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
               </select>
+            </Field>
+            <Field label="Tipo de proyecto">
+              <select className="input" value={d.kind || 'cliente'} onChange={(e) => { const k = e.target.value; setD((s) => ({ ...s, kind: k, ...(k === 'interno' ? { clientId: '' } : {}) })) }}>
+                <option value="cliente">De un cliente</option>
+                <option value="interno">Interno (Insights)</option>
+              </select>
+            </Field>
+            <Field label="Cliente">
+              {(d.kind || 'cliente') === 'interno'
+                ? <input className="input" value="Interno · Insights" disabled style={{ opacity: 0.7 }} />
+                : <select className="input" value={d.clientId || ''} onChange={(e) => set('clientId', e.target.value)}>
+                    <option value="">— Sin cliente —</option>
+                    {clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
+                  </select>}
             </Field>
             <Field label="GitHub repo (org/repo)"><input className="input mono" value={d.githubRepo || ''} onChange={(e) => set('githubRepo', e.target.value)} /></Field>
             <Field label="URL Producción"><input className="input" value={d.productionUrl || ''} onChange={(e) => set('productionUrl', e.target.value)} /></Field>
@@ -2746,26 +2763,41 @@ function CommitChip({ repo, compact }) {
 /* alta de un proyecto nuevo: cliente + WhatsApp + testing (opcional). Los sprints se cargan luego dentro de la tarjeta. */
 function NewProjectModal({ open, clients, onClose, onCreate }) {
   const [name, setName] = useState('')
+  const [kind, setKind] = useState('cliente')
   const [clientId, setClientId] = useState('')
   const [wa, setWa] = useState('')
   const [testing, setTesting] = useState('')
-  useEffect(() => { if (open) { setName(''); setClientId((clients[0] && clients[0].id) || ''); setWa(''); setTesting('') } }, [open])
-  const create = () => { const n = name.trim(); if (!n || !clientId) return; onCreate({ name: n, clientId, whatsappUrl: wa.trim(), testingUrl: testing.trim() }) }
+  useEffect(() => { if (open) { setName(''); setKind('cliente'); setClientId((clients[0] && clients[0].id) || ''); setWa(''); setTesting('') } }, [open])
+  const canCreate = name.trim() && (kind === 'interno' || clientId)
+  const create = () => { if (!canCreate) return; onCreate({ name: name.trim(), kind, clientId, whatsappUrl: wa.trim(), testingUrl: testing.trim() }) }
+  const kindBtn = (k, label, Icon) => (
+    <button type="button" onClick={() => setKind(k)} className="btn btn-sm" style={{ flex: 1, justifyContent: 'center', background: kind === k ? 'var(--accent-soft)' : 'transparent', color: kind === k ? 'var(--accent)' : 'var(--text-dim)', borderColor: kind === k ? 'var(--accent-line)' : 'var(--border)' }}>{Icon}{label}</button>
+  )
   return (
     <Modal open={open} onClose={onClose} title="Nuevo proyecto" sub="Creá la tarjeta; después cargás los sprints adentro" width={460}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Field label="Nombre del proyecto"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Chamber OS" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); create() } }} /></Field>
-        <Field label="Cliente">
-          <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-            {clients.length === 0 && <option value="">— No hay clientes cargados —</option>}
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
-          </select>
+        <Field label="Tipo de proyecto">
+          <div style={{ display: 'flex', gap: 8 }}>
+            {kindBtn('cliente', 'De un cliente', <I.users width={14} height={14} />)}
+            {kindBtn('interno', 'Interno (Insights)', <span style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 12, marginRight: 2 }}>I</span>)}
+          </div>
         </Field>
+        {kind === 'cliente' ? (
+          <Field label="Cliente">
+            <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+              {clients.length === 0 && <option value="">— No hay clientes cargados —</option>}
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
+            </select>
+          </Field>
+        ) : (
+          <div style={{ fontSize: 12.5, color: 'var(--text-dim)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', lineHeight: 1.5 }}>Proyecto <strong>interno de Insights</strong> (sin cliente). Ej: “20 carruseles de Instagram para la cuenta de Fede”.</div>
+        )}
         <Field label="Grupo de WhatsApp"><input className="input" value={wa} onChange={(e) => setWa(e.target.value)} placeholder="https://chat.whatsapp.com/…" /></Field>
         <Field label="Testing / Deploy URL (opcional)"><input className="input" value={testing} onChange={(e) => setTesting(e.target.value)} placeholder="https://mi-app.onrender.com" /></Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={create} disabled={!name.trim() || !clientId}><I.plus width={15} height={15} /> Crear proyecto</button>
+          <button className="btn btn-accent" onClick={create} disabled={!canCreate}><I.plus width={15} height={15} /> Crear proyecto</button>
         </div>
       </div>
     </Modal>
@@ -2838,6 +2870,7 @@ function Projects({ onOpenProject }) {
   const [devFilter, setDevFilter] = useState(qp.get('dev') || 'all')
   const [tagFilter, setTagFilter] = useState(qp.get('tag') || 'all')
   const [prioFilter, setPrioFilter] = useState(qp.get('prio') || 'all')   // all | sort | alta | normal | baja
+  const [kindFilter, setKindFilter] = useState(qp.get('kind') || 'all')   // all | cliente | interno
   const [search, setSearch] = useState('')             // búsqueda en vivo (client-side): nombre, cliente, PM/Dev
   const [pendingFor, setPendingFor] = useState(null)   // id del proyecto al que se le pide fecha de ingreso
   const [logModal, setLogModal] = useState(null)       // { projectId, kind } | null
@@ -2849,10 +2882,10 @@ function Projects({ onOpenProject }) {
   const patchProject = (id, fn) => projectStore.patch(id, fn)
   const updateClient = (id, fields) => clientStore.patch(id, (c) => ({ ...c, ...fields }))
   const setStatus = (id, status) => { updateProject(id, { status }); if (status === 'pending') setPendingFor(id) }
-  const createProject = ({ name, clientId, whatsappUrl, testingUrl }) => {
+  const createProject = ({ name, clientId, kind, whatsappUrl, testingUrl }) => {
     const id = uid()
     const proj = {
-      id, name, clientId, status: 'active', priority: 'normal',
+      id, name, clientId: kind === 'interno' ? '' : clientId, kind: kind || 'cliente', status: 'active', priority: 'normal',
       assignments: { pm: null, dev: null }, tags: [], sprints: [],
       avances: [], comms: [], scopeFiles: [], salesLinks: [], scopeNotes: [],
       risks: [], pendingAgency: [], pendingClient: [], chats: [],
@@ -2876,14 +2909,16 @@ function Projects({ onOpenProject }) {
     if (devFilter !== 'all') p.set('dev', devFilter)
     if (tagFilter !== 'all') p.set('tag', tagFilter)
     if (prioFilter !== 'all') p.set('prio', prioFilter)
+    if (kindFilter !== 'all') p.set('kind', kindFilter)
     const qs = p.toString()
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
-  }, [tab, clientFilter, pmFilter, devFilter, tagFilter, prioFilter])
+  }, [tab, clientFilter, pmFilter, devFilter, tagFilter, prioFilter, kindFilter])
 
   const allTags = [...new Set(data.projects.flatMap((p) => (p.tags || []).map((t) => t.text)))]
-  const filtersActive = clientFilter !== 'all' || pmFilter !== 'all' || devFilter !== 'all' || tagFilter !== 'all' || prioFilter !== 'all'
-  const clearFilters = () => { setClientFilter('all'); setPmFilter('all'); setDevFilter('all'); setTagFilter('all'); setPrioFilter('all') }
+  const filtersActive = clientFilter !== 'all' || pmFilter !== 'all' || devFilter !== 'all' || tagFilter !== 'all' || prioFilter !== 'all' || kindFilter !== 'all'
+  const clearFilters = () => { setClientFilter('all'); setPmFilter('all'); setDevFilter('all'); setTagFilter('all'); setPrioFilter('all'); setKindFilter('all') }
   const matchesFilters = (p) =>
+    (kindFilter === 'all' || (p.kind || 'cliente') === kindFilter) &&
     (clientFilter === 'all' || p.clientId === clientFilter) &&
     (pmFilter === 'all' || p.assignments?.pm?.userId === pmFilter) &&
     (devFilter === 'all' || p.assignments?.dev?.userId === devFilter) &&
@@ -2927,6 +2962,11 @@ function Projects({ onOpenProject }) {
 
       {/* filtros */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
+        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
+          <option value="all">Tipo: todos</option>
+          <option value="cliente">De clientes</option>
+          <option value="interno">Internos (Insights)</option>
+        </select>
         <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
           <option value="all">Todos los clientes</option>
           {data.clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
@@ -2978,7 +3018,7 @@ function Projects({ onOpenProject }) {
             const mini = (label, Icon, kind, firstLabel) => {
               const t = trackInfo(p, kind, kind === 'comm' ? (botComms || {})[p.id] : undefined)
               const bad = t.overdue
-              const val = t.first ? firstLabel : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)
+              const val = t.first ? (t.delivered ? '—' : firstLabel) : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)
               return (
                 <button onClick={(e) => { e.stopPropagation(); setLogModal({ projectId: p.id, kind }) }}
                   style={{ display: 'flex', flexDirection: 'column', gap: 5, textAlign: 'left', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', minWidth: 0 }}>
@@ -2996,7 +3036,7 @@ function Projects({ onOpenProject }) {
                       <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
                       <span style={{ flex: 'none', display: 'inline-flex' }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} size={14} /></span>
                     </div>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{cl?.company}</div>
+                    <div style={{ fontSize: 12.5, color: p.kind === 'interno' ? 'var(--accent)' : 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{p.kind === 'interno' ? '◆ Interno · Insights' : cl?.company}</div>
                   </div>
                   <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
                     <StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />
@@ -3059,7 +3099,7 @@ function Projects({ onOpenProject }) {
                 return (
                   <tr key={p.id} className="row-hover click" onClick={() => onOpenProject(p.id)} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '13px 16px', fontWeight: 600 }}>{p.name}</td>
-                    <td style={{ padding: '13px 16px', color: 'var(--text-dim)' }}>{cl?.company}</td>
+                    <td style={{ padding: '13px 16px', color: p.kind === 'interno' ? 'var(--accent)' : 'var(--text-dim)' }}>{p.kind === 'interno' ? 'Interno · Insights' : cl?.company}</td>
                     <td style={{ padding: '13px 16px' }}><TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} size={26} ring="var(--card)" /></td>
                     <td style={{ padding: '13px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} /><StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />{p.status === 'pending' && p.expectedStartDate && <PendingDateChip date={p.expectedStartDate} />}</div></td>
                     <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={calcProgress(p)} showLabel /></td>
@@ -5340,7 +5380,7 @@ function ProjectDetail({ projectId, onBack }) {
         )}
       </Modal>
 
-      <EditProjectModal open={editOpen} project={project} onClose={() => setEditOpen(false)} onSave={saveProject} onDelete={(id) => { projectStore.remove(id); onBack() }} />
+      <EditProjectModal open={editOpen} project={project} clients={data.clients} onClose={() => setEditOpen(false)} onSave={saveProject} onDelete={(id) => { projectStore.remove(id); onBack() }} />
       <SprintDetailModal open={!!openSprint} sprint={openSprint} team={data.team} defaultId={project.assignments?.dev?.userId || null} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprintSynced(openSprintId, fields)} />
       <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
@@ -6375,13 +6415,22 @@ function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, on
   )
 }
 
-function Settings({ open, onClose }) {
+function Settings({ open, onClose, onManageTeam }) {
   const [keys, setKeys] = useState({ anthropic_key: '', gh_token: '', fathom_token: '' })
   useEffect(() => { if (open) setKeys({ anthropic_key: localStorage.getItem('anthropic_key') || '', gh_token: localStorage.getItem('gh_token') || '', fathom_token: localStorage.getItem('fathom_token') || '' }) }, [open])
   const save = () => { Object.entries(keys).forEach(([k, v]) => v ? localStorage.setItem(k, v) : localStorage.removeItem(k)); onClose() }
   return (
     <Modal open={open} onClose={onClose} title="Ajustes & integraciones" sub="Las claves se guardan solo en tu navegador (localStorage)" width={560}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <div className="label" style={{ marginBottom: 8 }}>Sistema · usuarios de la plataforma</div>
+          <div className="surface" style={{ padding: 14, background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', flexShrink: 0 }}><I.users width={19} height={19} /></div>
+            <div style={{ flex: 1, minWidth: 160 }}><div style={{ fontWeight: 700, fontSize: 14 }}>Equipo y accesos</div><div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.45 }}>Agregá o quitá personas que aparecen en asignaciones, comentarios y @menciones.</div></div>
+            <button className="btn btn-accent" onClick={() => onManageTeam && onManageTeam()}><I.plus width={15} height={15} /> Gestionar usuarios</button>
+          </div>
+        </div>
+        <hr className="divider" />
         <Field label="Anthropic API key (chat IA · claude-sonnet-4)"><input className="input mono" type="password" placeholder="sk-ant-…" value={keys.anthropic_key} onChange={(e) => setKeys((s) => ({ ...s, anthropic_key: e.target.value }))} /></Field>
         <Field label="GitHub token (opcional · sube el rate limit)"><input className="input mono" type="password" placeholder="ghp_… / github_pat_…" value={keys.gh_token} onChange={(e) => setKeys((s) => ({ ...s, gh_token: e.target.value }))} /></Field>
         <Field label="Fathom token (sync de calls)"><input className="input mono" type="password" placeholder="fathom_…" value={keys.fathom_token} onChange={(e) => setKeys((s) => ({ ...s, fathom_token: e.target.value }))} /></Field>
@@ -6530,6 +6579,7 @@ function AppShell({ session, onLogout }) {
   const [route, setRoute] = useState({ view: 'projects' })
   const [collapsed, setCollapsed] = useState(false)
   const [settings, setSettings] = useState(false)
+  const [teamOpen, setTeamOpen] = useState(false)
   const [myId, setMyId] = useState(() => localStorage.getItem('my_team_id') || '')
   const isMobile = useIsMobile()
   const [navOpen, setNavOpen] = useState(false)
@@ -6631,7 +6681,8 @@ function AppShell({ session, onLogout }) {
             )}
           </main>
         </div>
-        <Settings open={settings} onClose={() => setSettings(false)} />
+        <Settings open={settings} onClose={() => setSettings(false)} onManageTeam={() => { setSettings(false); setTeamOpen(true) }} />
+        <TeamManager open={teamOpen} onClose={() => setTeamOpen(false)} />
         <UserProfile session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} hidden={route.view === 'project'} />
         <PmStartupAlert open={!pmAlertSeen && pmProjects.length > 0} projects={pmProjects} clients={clientStore.items} onClose={() => setPmAlertSeen(true)} onOpenProject={openProject} />
       </div>
