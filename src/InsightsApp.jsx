@@ -4588,7 +4588,9 @@ function useClientNotes(slug) {
   }
   const remove = async (id) => {
     setNotes((ns) => ns.filter((n) => n.id !== id))
-    if (supabase) await supabase.from('plan_notes').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    // RPC (SECURITY DEFINER) en vez de update directo: no depende de una policy
+    // RLS de UPDATE en plan_notes, así el borrado no falla en silencio.
+    if (supabase) await supabase.rpc('delete_plan_note', { p_id: id })
   }
   return { notes, markRead, remove }
 }
@@ -4644,24 +4646,26 @@ function PlanTaskCheck({ done }) {
    candado si está bloqueada y cantidad de evidencias. Sólo muestra lo informativo
    — "pendiente" y "terminada" ya se leen por el check y el tachado — para no
    ensuciar la fila. */
+// Reddish suave para tareas 100% Insights (no chillón — versión apagada del rojo de la UI).
+const INSIGHTS_ONLY_COLOR = '#e0897c'
+
 function TaskChips({ task, clientName }) {
   const est = taskEstado(task)
   const em = TASK_ESTADOS[est]
   const showEstado = est === 'curso' || est === 'bloqueada'
   const riskHigh = task && task.riesgo === 'alto' && est !== 'terminada'
   const evCount = (task && Array.isArray(task.evidencia) && task.evidencia.length) || 0
-  // Responsable: sólo se muestra cuando la tarea NO es de Insights, para que salte a
-  // la vista qué depende del cliente. El nombre real lo pone la UI (multi-tenant).
+  // Responsable: siempre se muestra, así se distingue de un vistazo qué hace cada
+  // parte. El nombre real del cliente lo pone la UI (multi-tenant).
   const resp = taskResponsable(task)
-  const showResp = resp === 'cliente' || resp === 'ambos'
-  const rm = RESPONSABLES[resp]
   const cliente = (clientName && String(clientName).trim()) || 'Cliente'
-  const respLabel = resp === 'ambos' ? `Insights + ${cliente}` : cliente
-  if (!showEstado && !riskHigh && !evCount && !showResp) return null
+  const respLabel = resp === 'ambos' ? `Insights + ${cliente}` : resp === 'cliente' ? cliente : 'Insights'
+  const respColor = resp === 'insights' ? INSIGHTS_ONLY_COLOR : (RESPONSABLES[resp] && RESPONSABLES[resp].color)
+  if (!showEstado && !riskHigh && !evCount && !respColor) return null
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-      {showResp && rm && (
-        <span className="tag" title={`Lo hace: ${respLabel}`} style={{ color: rm.color, background: hexA(rm.color, 0.14), borderColor: hexA(rm.color, 0.34), display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {respColor && (
+        <span className="tag" title={`Lo hace: ${respLabel}`} style={{ color: respColor, background: hexA(respColor, 0.14), borderColor: hexA(respColor, 0.34), display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           <I.user width={10} height={10} /> {respLabel}
         </span>
       )}
@@ -6177,13 +6181,32 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'clients', label: 'Clients', icon: I.users },
     { key: 'calls', label: 'Calls', icon: I.phone },
     { key: 'sops', label: 'SOP', icon: I.doc },
+  ]
+  const tools = [
     { key: 'planner', label: 'Planificador', icon: I.calendar },
     { key: 'bot', label: 'Bot', icon: I.whatsapp },
     { key: 'editor', label: 'Editor', icon: I.film },
     { key: 'carousel', label: 'Carrusel', icon: I.layers, external: true, href: 'https://carrusel-generator-production.up.railway.app/dashboard/carousels?cg_token=bik8zveoSvtBR2CgPA5I_p9YFoPmyZyn' },
   ]
+  const toolsActive = tools.some((t) => route.view === t.key)
   const mini = !mobile && collapsed          // solo colapsa en desktop
   const go = (key) => { setRoute({ view: key }); if (mobile && onClose) onClose() }
+
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const toolsCloseTimer = useRef(null)
+  useEffect(() => () => clearTimeout(toolsCloseTimer.current), [])
+  const openTools = () => { clearTimeout(toolsCloseTimer.current); setToolsOpen(true) }
+  const scheduleCloseTools = () => {
+    clearTimeout(toolsCloseTimer.current)
+    toolsCloseTimer.current = setTimeout(() => setToolsOpen(false), 220)
+  }
+  const toggleTools = () => setToolsOpen((v) => !v)
+  const goTool = (t) => {
+    setToolsOpen(false)
+    if (t.external) { window.open(t.href, '_blank', 'noopener,noreferrer'); return }
+    go(t.key)
+  }
+
   const inner = (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '18px 16px', height: 64 }}>
@@ -6214,6 +6237,69 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
             </button>
           )
         })}
+
+        {/* Tools — grupo que se desliza hacia abajo (hover en desktop, tap en mobile) */}
+        <div
+          onMouseEnter={!mobile ? openTools : undefined}
+          onMouseLeave={!mobile ? scheduleCloseTools : undefined}
+        >
+          <button
+            onClick={toggleTools}
+            title={mini ? 'Tools' : ''}
+            className="row-hover"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, width: '100%',
+              color: toolsActive || toolsOpen ? 'var(--accent)' : 'var(--text-dim)',
+              background: toolsActive ? 'var(--accent-soft)' : (toolsOpen ? 'var(--bg-elevated)' : 'transparent'),
+              fontWeight: 600, fontSize: 14, position: 'relative',
+            }}
+          >
+            {toolsActive && <span style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 9, background: 'var(--accent)' }} />}
+            <I.grid width={18} height={18} style={{ flexShrink: 0 }} />
+            {!mini && <span style={{ flex: 1, textAlign: 'left' }}>Tools</span>}
+            {!mini && (
+              <I.chevR width={14} height={14} style={{
+                flexShrink: 0, opacity: .55,
+                transform: toolsOpen ? 'rotate(90deg)' : 'none',
+                transition: 'transform .22s cubic-bezier(.16,1,.3,1)',
+              }} />
+            )}
+          </button>
+
+          <AnimatePresence initial={false}>
+            {toolsOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: .26, ease: [.16, 1, .3, 1] }}
+                style={{ overflow: 'hidden' }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 3, paddingLeft: mini ? 0 : 14 }}>
+                  {tools.map((t, idx) => {
+                    const active = route.view === t.key
+                    return (
+                      <motion.button
+                        key={t.key}
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.03, duration: .18, ease: [.16, 1, .3, 1] }}
+                        onClick={() => goTool(t)}
+                        title={mini ? t.label : ''}
+                        className="row-hover"
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderRadius: 10, color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-soft)' : 'transparent', fontWeight: 600, fontSize: 13.5 }}
+                      >
+                        <t.icon width={16} height={16} style={{ flexShrink: 0 }} />
+                        {!mini && <span style={{ flex: 1, textAlign: 'left' }}>{t.label}</span>}
+                        {!mini && t.external && <I.ext width={11} height={11} style={{ opacity: .5, flexShrink: 0 }} />}
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </nav>
       {!mobile && (
         <>
