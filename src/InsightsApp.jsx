@@ -6180,7 +6180,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'planner', label: 'Planificador', icon: I.calendar },
     { key: 'bot', label: 'Bot', icon: I.whatsapp },
     { key: 'editor', label: 'Editor', icon: I.film },
-    { key: 'carousel', label: 'Carrusel', icon: I.layers, external: true, href: 'https://carrusel-generator-production.up.railway.app' },
+    { key: 'carousel', label: 'Carrusel', icon: I.layers, external: true, href: 'https://insights:-mrjaqniYVFdbFuHvFspP0Ke@carrusel-generator-production.up.railway.app' },
   ]
   const mini = !mobile && collapsed          // solo colapsa en desktop
   const go = (key) => { setRoute({ view: key }); if (mobile && onClose) onClose() }
