@@ -34,7 +34,7 @@
  *   {
  *     title, subtitle, clientName, lead, metaLine,
  *     stages: [{ title, description, weekTo }],
- *     weeks:  [{ n, title, type, tasks: [{ text, responsable?, criterio? }],
+ *     weeks:  [{ n, title, type, tasks: [{ text, detalle, responsable?, criterio? }],
  *                deliver: { kind, text } }]
  *   }
  *
@@ -471,6 +471,13 @@ SEMANAS (weeks)
     "kind" tiene que ser coherente con "type": info va con live, doc con doc, gate con gate, formal con formal.
     "text": una frase concreta de qué recibe. Ej: "Entorno de staging navegable con el alta de miembros funcionando". Nunca "avances varios" ni "lo trabajado en la semana".
 
+DETALLE (tasks[].detalle)
+· Obligatorio en TODAS las tareas, sin excepción.
+· Es la explicación de la tarea en criollo, para alguien que no sabe nada de software ni del rubro: qué se hace puntualmente y para qué sirve. Es lo que el cliente lee al abrir el desplegable de esa tarea.
+· 1 a 3 frases. Cero jerga técnica sin explicar, cero siglas sueltas. Si mencionás algo técnico (staging, base de datos, wireframe), explicalo en la misma frase con una analogía simple.
+· No repitas el texto de la tarea con otras palabras: agregá contexto real. Ej. tarea "Deploy del entorno de staging" → detalle "Staging es una copia privada de la app, con su propio link, donde vas viendo el avance sin que nadie más pueda entrar."
+· Si la tarea es del cliente ("responsable": "cliente" o "ambos"), el detalle explica qué tiene que hacer concretamente y por qué se lo pedimos, no solo qué es.
+
 RESPONSABLE (tasks[].responsable)
 · Por defecto la tarea es nuestra. En ese caso NO pongas el campo.
 · Poné "responsable": "cliente" en todo lo que realmente depende de él: accesos y credenciales, contenidos y textos, fotos y assets, altas de cuentas (dominio, Stripe, tienda, casilla), decisiones de negocio, aprobaciones y firmas.
@@ -501,9 +508,9 @@ Devolvés EXCLUSIVAMENTE un objeto JSON válido. Sin texto antes ni después, si
       "title": "…",
       "type": "info",
       "tasks": [
-        { "text": "…" },
-        { "text": "…", "responsable": "cliente" },
-        { "text": "…", "criterio": "…" }
+        { "text": "…", "detalle": "…" },
+        { "text": "…", "detalle": "…", "responsable": "cliente" },
+        { "text": "…", "detalle": "…", "criterio": "…" }
       ],
       "deliver": { "kind": "live", "text": "…" }
     }

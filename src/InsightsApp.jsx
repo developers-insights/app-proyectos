@@ -6197,7 +6197,8 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'carousel', label: 'Carrusel', icon: I.layers, external: true, href: 'https://carrusel-generator-production.up.railway.app/dashboard/carousels?cg_token=bik8zveoSvtBR2CgPA5I_p9YFoPmyZyn' },
   ]
   const toolsActive = tools.some((t) => route.view === t.key)
-  const mini = !mobile && collapsed          // solo colapsa en desktop
+  const [hovered, setHovered] = useState(false)
+  const mini = !mobile && collapsed && !hovered   // icon-only por defecto; el hover lo expande temporalmente
   const go = (key) => { setRoute({ view: key }); if (mobile && onClose) onClose() }
 
   const [toolsOpen, setToolsOpen] = useState(false)
@@ -6312,8 +6313,8 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
       {!mobile && (
         <>
           <hr className="divider" />
-          <button onClick={() => setCollapsed((v) => !v)} className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', color: 'var(--text-faint)', fontSize: 13 }}>
-            <I.panelLeft width={17} height={17} style={{ transform: collapsed ? 'scaleX(-1)' : 'none' }} />{!collapsed && 'Colapsar'}
+          <button onClick={() => setCollapsed(!mini)} title={mini ? 'Fijar abierto' : 'Colapsar'} className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', color: 'var(--text-faint)', fontSize: 13 }}>
+            <I.panelLeft width={17} height={17} style={{ transform: mini ? 'scaleX(-1)' : 'none' }} />{!mini && 'Colapsar'}
           </button>
         </>
       )}
@@ -6332,10 +6333,19 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     )
   }
   return (
-    <motion.aside animate={{ width: collapsed ? 64 : 232 }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-      style={{ flexShrink: 0, borderRight: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {inner}
-    </motion.aside>
+    // display:contents = el wrapper no genera caja propia (el aside sigue siendo
+    // hijo flex directo de .app-shell); agrupa aside + zona-anticipo bajo un solo
+    // onMouseLeave para que pasar de una a otra no dispare un cierre a mitad de camino.
+    <div style={{ display: 'contents' }} onMouseLeave={() => setHovered(false)}>
+      {collapsed && !hovered && (
+        <div onMouseEnter={() => setHovered(true)}
+          style={{ position: 'fixed', top: 0, bottom: 0, left: 64, width: 16, zIndex: 55 }} />
+      )}
+      <motion.aside onMouseEnter={() => setHovered(true)} animate={{ width: mini ? 64 : 232 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+        style={{ flexShrink: 0, borderRight: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {inner}
+      </motion.aside>
+    </div>
   )
 }
 
@@ -6671,7 +6681,7 @@ function AppShell({ session, onLogout }) {
   const sync = !cloudEnabled ? 'local' : anyLoading ? 'loading' : anySaving ? 'saving' : 'saved'
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [route, setRoute] = useState({ view: 'projects' })
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const [settings, setSettings] = useState(false)
   const [teamOpen, setTeamOpen] = useState(false)
   const [myId, setMyId] = useState(() => localStorage.getItem('my_team_id') || '')

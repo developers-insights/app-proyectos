@@ -19,3 +19,6 @@ npm-debug.log*
 !.env.example
 
 .vercel
+
+# supabase cli cache
+supabase/.temp/
