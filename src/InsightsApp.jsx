@@ -5998,14 +5998,14 @@ function TasksView() {
               {tableTasks.map((t) => {
                 const inProc = t.status === 'en proceso'
                 return (
-                <tr key={t.id} className="row-hover click" onClick={() => setOpenId(t.id)} style={{ borderBottom: '1px solid var(--border)', borderLeft: inProc ? '3px solid var(--accent)' : '3px solid transparent', background: inProc ? 'var(--accent-soft)' : 'transparent', opacity: t.status === 'terminado' ? 0.6 : 1 }}>
+                <tr key={t.id} className="row-hover click" onClick={() => setOpenId(t.id)} style={{ borderBottom: '1px solid var(--border)', opacity: t.status === 'terminado' ? 0.6 : 1 }}>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Assignee id={t.assigneeId} /></td>
                   <td style={{ padding: '12px 16px', fontWeight: 600, textDecoration: t.status === 'terminado' ? 'line-through' : 'none' }}>{t.name}{(t.comments || []).length > 0 && <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{t.comments.length}</span>}</td>
                   <td style={{ padding: '12px 16px' }}><ScopeTag t={t} /></td>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><PrioFlag p={t.priority} withLabel /></td>
                   <td style={{ padding: '8px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}><DueDate value={t.dueDate} onChange={(v) => updateTask(t.id, { dueDate: v })} /></td>
                   <td style={{ padding: '8px 16px' }} onClick={(e) => e.stopPropagation()}>
-                    <select className="input" value={t.status} onChange={(e) => updateTask(t.id, { status: e.target.value })} style={{ width: 'auto', padding: '6px 8px', fontSize: 13 }}>
+                    <select className="input" value={t.status} onChange={(e) => updateTask(t.id, { status: e.target.value })} style={{ width: 'auto', padding: '6px 8px', fontSize: 13, background: inProc ? 'var(--accent-soft)' : 'var(--bg-elevated)', borderColor: inProc ? 'var(--accent-line)' : 'var(--border)', color: inProc ? 'var(--accent)' : 'inherit', fontWeight: inProc ? 700 : 500 }}>
                       {TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                     </select>
                   </td>
