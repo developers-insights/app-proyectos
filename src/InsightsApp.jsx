@@ -172,17 +172,19 @@ const pctColor = (p) => (p < 40 ? 'var(--red)' : p <= 70 ? 'var(--accent)' : 'va
 /* color de la barra de avance en las cards: verde ≥70, ámbar ≥40, naranja >0, gris en 0 */
 const cardPctColor = (p) => (p >= 70 ? 'var(--green)' : p >= 40 ? 'var(--yellow)' : p > 0 ? 'var(--accent)' : 'var(--text-faint)')
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
-/* detecta viewport de celular (para menú hamburguesa, grid 1 por fila, etc.) */
+/* detecta viewport de celular (para menú hamburguesa, grid 1 por fila, etc.).
+   Usa outerWidth (tamaño físico de la ventana) en vez de innerWidth/matchMedia:
+   el zoom del navegador reduce el ancho CSS sin achicar la ventana, y no
+   queremos que hacer zoom colapse el sidebar a modo mobile. */
 function useIsMobile(bp = 760) {
-  const q = `(max-width:${bp}px)`
-  const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches)
+  const physicalWidth = () =>
+    typeof window === 'undefined' ? 0 : window.outerWidth || window.innerWidth
+  const [m, setM] = useState(() => typeof window !== 'undefined' && physicalWidth() <= bp)
   useEffect(() => {
-    const mq = window.matchMedia(q)
-    const on = () => setM(mq.matches)
+    const on = () => setM(physicalWidth() <= bp)
     on()
-    mq.addEventListener ? mq.addEventListener('change', on) : mq.addListener(on)
     window.addEventListener('resize', on)
-    return () => { mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on); window.removeEventListener('resize', on) }
+    return () => window.removeEventListener('resize', on)
   }, [bp])
   return m
 }
