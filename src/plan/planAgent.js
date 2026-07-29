@@ -365,6 +365,7 @@ function coerceWeek(w, i) {
     if (!t || typeof t !== 'object') return null
     const out = { text: str(t.text) }
     if (t.responsable === 'cliente' || t.responsable === 'ambos') out.responsable = t.responsable
+    if (str(t.detalle)) out.detalle = str(t.detalle)
     if (str(t.criterio)) out.criterio = str(t.criterio)
     if (str(t.modulo)) out.modulo = str(t.modulo)
     if (t.riesgo === 'bajo' || t.riesgo === 'medio' || t.riesgo === 'alto') out.riesgo = t.riesgo

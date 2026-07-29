@@ -252,6 +252,7 @@ export function normalizeTask(t) {
   if (t.estado === 'curso' || t.estado === 'bloqueada' || t.estado === 'pendiente') out.estado = t.estado
   if (t.responsable === 'cliente' || t.responsable === 'ambos') out.responsable = t.responsable
   if (t.modulo) out.modulo = String(t.modulo)
+  if (t.detalle) out.detalle = String(t.detalle)
   if (t.criterio) out.criterio = String(t.criterio)
   if (Number.isFinite(t.avance)) out.avance = Math.max(0, Math.min(100, Math.round(t.avance)))
   if (t.prev) out.prev = String(t.prev)

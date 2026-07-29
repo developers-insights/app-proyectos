@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "C:\\MisProyectos\\INSIGHTS\\editor", "run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "planes-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:\\MisProyectos\\INSIGHTS\\planes-web", "run", "dev", "--", "-p", "3100"],
+      "port": 3100
     }
   ]
 }

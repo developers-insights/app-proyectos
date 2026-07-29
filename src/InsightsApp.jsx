@@ -4890,6 +4890,10 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], clientName
             </Field>
           </div>
 
+          {/* Lo único de este panel que ve el cliente en su link: la explicación
+              en criollo de qué se hace en esta tarea. El resto es interno. */}
+          <Field label="En qué consiste (lo ve el cliente)"><textarea className="input" rows={3} value={task.detalle || ''} onChange={(e) => edit({ detalle: e.target.value })} placeholder="Explicado simple, sin tecnicismos: qué se hace acá y para qué sirve." style={{ resize: 'vertical' }} /></Field>
+
           <Field label="Criterio de aceptación"><textarea className="input" rows={2} value={task.criterio || ''} onChange={(e) => edit({ criterio: e.target.value })} placeholder="Qué tiene que cumplir para darse por aceptada." style={{ resize: 'vertical' }} /></Field>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -5991,8 +5995,10 @@ function TasksView() {
               {['Asignado', 'Tarea', 'Origen', 'Prioridad', 'Entrega', 'Estado', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
             </tr></thead>
             <tbody>
-              {tableTasks.map((t) => (
-                <tr key={t.id} className="row-hover click" onClick={() => setOpenId(t.id)} style={{ borderBottom: '1px solid var(--border)', opacity: t.status === 'terminado' ? 0.6 : 1 }}>
+              {tableTasks.map((t) => {
+                const inProc = t.status === 'en proceso'
+                return (
+                <tr key={t.id} className="row-hover click" onClick={() => setOpenId(t.id)} style={{ borderBottom: '1px solid var(--border)', borderLeft: inProc ? '3px solid var(--accent)' : '3px solid transparent', background: inProc ? 'var(--accent-soft)' : 'transparent', opacity: t.status === 'terminado' ? 0.6 : 1 }}>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Assignee id={t.assigneeId} /></td>
                   <td style={{ padding: '12px 16px', fontWeight: 600, textDecoration: t.status === 'terminado' ? 'line-through' : 'none' }}>{t.name}{(t.comments || []).length > 0 && <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{t.comments.length}</span>}</td>
                   <td style={{ padding: '12px 16px' }}><ScopeTag t={t} /></td>
@@ -6005,7 +6011,7 @@ function TasksView() {
                   </td>
                   <td style={{ padding: '12px 16px 12px 0', width: 44 }}><button className="btn btn-sm btn-ghost" title="Eliminar" onClick={(e) => { e.stopPropagation(); if (window.confirm('¿Eliminar esta tarea?')) delTask(t.id) }} style={{ padding: 6, color: 'var(--text-faint)' }}><I.x width={15} height={15} /></button></td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
