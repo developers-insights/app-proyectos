@@ -74,8 +74,8 @@ function Wizard({ supabase, cloudEnabled }) {
           <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
         </motion.div>
         <motion.h1 initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, ease }} className="onb-serif" style={{ fontSize: 'clamp(30px,6vw,44px)', lineHeight: 1.08 }}>¡Listo, {f.name.split(' ')[0] || 'bienvenido'}!</motion.h1>
-        <motion.p initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25, ease }} style={{ fontSize: 17, color: C.dim, maxWidth: 460, lineHeight: 1.6 }}>Creamos tu proyecto <strong style={{ color: C.ink }}>«{f.projectName}»</strong>. Nuestro equipo ya lo tiene cargado. Ahora mirá el video y agendá tu llamada de arranque.</motion.p>
-        <motion.button initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35, ease }} className="onb-btn" onClick={() => goTo('presentacion')}>Continuar →</motion.button>
+        <motion.p initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25, ease }} style={{ fontSize: 17, color: C.dim, maxWidth: 460, lineHeight: 1.6 }}>Creamos tu proyecto <strong style={{ color: C.ink }}>«{f.projectName}»</strong>. Nuestro equipo ya lo tiene cargado. Ahora agendá tu llamada de onboarding para arrancar.</motion.p>
+        <motion.button initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35, ease }} className="onb-btn" onClick={() => goTo('presentacion')}>Agendar mi llamada →</motion.button>
       </div>
     )
   }
@@ -103,8 +103,8 @@ function Wizard({ supabase, cloudEnabled }) {
               <h2 className="onb-serif" style={{ fontSize: 'clamp(26px,5vw,36px)', marginBottom: 8 }}>Empecemos por vos</h2>
               <p style={{ color: C.dim, marginBottom: 26, fontSize: 16 }}>Tus datos de contacto.</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div><label className="onb-label">Nombre completo</label><input className="onb-input" value={f.name} onChange={set('name')} placeholder="Ej: Mariano Sabbadin" autoFocus /></div>
-                <div><label className="onb-label">Empresa</label><input className="onb-input" value={f.company} onChange={set('company')} placeholder="Ej: Real Deal Exchange" /></div>
+                <div><label className="onb-label">Nombre completo</label><input className="onb-input" value={f.name} onChange={set('name')} placeholder="(Tu nombre acá)" autoFocus /></div>
+                <div><label className="onb-label">Nombre de tu empresa</label><input className="onb-input" value={f.company} onChange={set('company')} placeholder="(Tu empresa acá)" /></div>
               </div>
               <Nav onBack={() => go(0)} onNext={() => go(2)} nextDisabled={!f.name.trim() || !f.company.trim()} />
             </motion.div>
@@ -147,19 +147,13 @@ function Nav({ onBack, onNext, nextDisabled }) {
   )
 }
 
-/* ---------- LANDING 2: presentación (video + calendario que se desbloquea a los 4 min) ---------- */
-const LOCK_SECS = 240 // 4 minutos
+/* ---------- LANDING 2: agendar la llamada de onboarding (directo al calendario) ---------- */
 function Presentacion() {
-  const [left, setLeft] = useState(LOCK_SECS)
   const calRef = useRef(null)
-  useEffect(() => { if (left <= 0) return; const iv = setInterval(() => setLeft((s) => Math.max(0, s - 1)), 1000); return () => clearInterval(iv) }, [left <= 0])
-  const unlocked = left <= 0
-  // El calendario recién se monta cuando termina el timer, así que cargamos el resizer de
-  // LeadConnector en ese momento (si se carga antes, no registra el iframe) y además
-  // escuchamos su postMessage para ajustar el alto al contenido. Así el botón de agendar
-  // nunca queda cortado, sobre todo en mobile (iOS no permite scroll dentro de un iframe).
+  // Cargamos el resizer de LeadConnector y escuchamos su postMessage para ajustar el alto
+  // del iframe al contenido. Así el botón de agendar nunca queda cortado (en mobile iOS no
+  // permite scroll dentro de un iframe).
   useEffect(() => {
-    if (!unlocked) return
     const old = document.getElementById('lc-form-embed'); if (old) old.remove()
     const s = document.createElement('script'); s.id = 'lc-form-embed'; s.src = 'https://link.msgsndr.com/js/form_embed.js'; s.async = true; document.body.appendChild(s)
     const onMsg = (e) => {
@@ -172,45 +166,19 @@ function Presentacion() {
     }
     window.addEventListener('message', onMsg)
     return () => { window.removeEventListener('message', onMsg); try { s.remove() } catch (_) {} }
-  }, [unlocked])
-  const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, '0')
+  }, [])
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 80 }}>
       <LogoBar />
       <div className="onb-wrap" style={{ maxWidth: 820, paddingTop: 6 }}>
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5 }} style={{ marginTop: 34, textAlign: 'center' }}>
-          <span style={{ display: 'inline-block', background: C.red, color: '#fff', fontWeight: 800, fontSize: 'clamp(15px,3.4vw,20px)', padding: '8px 16px', borderRadius: 10, letterSpacing: '.02em', boxShadow: `0 8px 24px ${C.red}55`, transform: 'rotate(-1.2deg)' }}>▶ MIRÁ ESTE VIDEO IMPORTANTE</span>
+          <div className="onb-kicker" style={{ marginBottom: 10 }}>Último paso</div>
+          <h2 className="onb-serif" style={{ fontSize: 'clamp(28px,5.5vw,44px)', marginBottom: 8 }}>Agendá tu llamada de onboarding</h2>
+          <p style={{ color: C.dim, fontSize: 'clamp(15px,3.4vw,16px)', maxWidth: 520, margin: '0 auto', lineHeight: 1.6 }}>Elegí un horario para hablar con Nacho, tu Project Manager. En esa llamada arrancamos con tu proyecto.</p>
         </motion.div>
-        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ ease, duration: 0.6, delay: 0.1 }} className="onb-card" style={{ marginTop: 22, padding: 'clamp(8px,2vw,12px)', overflow: 'hidden' }}>
-          <div style={{ position: 'relative', paddingBottom: '64.7482%', height: 0, borderRadius: 12, overflow: 'hidden' }}>
-            <iframe src="https://www.loom.com/embed/20a4804d7a314053beb013ae101425b3" frameBorder="0" allowFullScreen style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} title="Presentación Insights" />
-          </div>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.6, delay: 0.1 }} className="onb-card" style={{ padding: 4, marginTop: 24 }}>
+          <iframe ref={calRef} src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" id="vsD3uHw8TYyGAH2CMcL2_onb" allow="payment" scrolling="no" style={{ width: '100%', border: 'none', minHeight: 700, display: 'block', borderRadius: 14 }} title="Agendar llamada" />
         </motion.div>
-
-        {/* alerta timer — distinta a la roja (naranja/branding) */}
-        {!unlocked && (
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.4, delay: 0.2 }}
-            style={{ marginTop: 30, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'center', textAlign: 'center', background: `linear-gradient(90deg, ${C.accent}, ${C.accentHi})`, color: '#fff', padding: '14px 20px', borderRadius: 14, boxShadow: `0 10px 30px ${C.accent}44` }}>
-            <span style={{ fontSize: 20 }}>⏳</span>
-            <span style={{ fontWeight: 700, fontSize: 'clamp(14px,3.4vw,16px)' }}>El siguiente paso se desbloquea en</span>
-            <span className="onb-mono" style={{ fontSize: 22, fontWeight: 700, background: 'rgba(255,255,255,.22)', padding: '2px 12px', borderRadius: 8, letterSpacing: '.04em' }}>{mm}:{ss}</span>
-            <span style={{ fontSize: 13.5, opacity: .92, width: '100%' }}>Mirá el video completo — al terminar los 4 minutos vas a poder agendar tu llamada.</span>
-          </motion.div>
-        )}
-
-        {unlocked && (
-          <motion.div key="cal" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.6 }}>
-            <div style={{ marginTop: 44, textAlign: 'center' }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.ok + '18', color: C.ok, fontWeight: 700, fontSize: 13.5, padding: '6px 14px', borderRadius: 99, marginBottom: 14 }}>✓ Desbloqueado</div>
-              <div className="onb-kicker" style={{ marginBottom: 10 }}>Siguiente paso</div>
-              <h2 className="onb-serif" style={{ fontSize: 'clamp(26px,5.5vw,40px)', marginBottom: 8 }}>Agendá tu llamada de arranque</h2>
-              <p style={{ color: C.dim, fontSize: 'clamp(15px,3.4vw,16px)', maxWidth: 520, margin: '0 auto 24px', lineHeight: 1.6 }}>Elegí un horario para hablar con Nacho, tu Project Manager. En esa llamada definimos el plan de trabajo.</p>
-            </div>
-            <div className="onb-card" style={{ padding: 4 }}>
-              <iframe ref={calRef} src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" id="vsD3uHw8TYyGAH2CMcL2_onb" allow="payment" scrolling="no" style={{ width: '100%', border: 'none', minHeight: 700, display: 'block', borderRadius: 14 }} title="Agendar llamada" />
-            </div>
-          </motion.div>
-        )}
       </div>
     </div>
   )
