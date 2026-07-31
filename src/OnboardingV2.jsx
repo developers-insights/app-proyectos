@@ -19,7 +19,9 @@ const ONBX_CSS = `
   font-family:'Inter',system-ui,-apple-system,sans-serif; color:var(--text); background:var(--bg);
   min-height:100vh; min-height:100dvh; position:relative; overflow-x:hidden;
 }
-.ob2-blob{position:fixed;border-radius:50%;filter:blur(100px);opacity:.5;pointer-events:none;z-index:0}
+.ob2-blob{position:fixed;border-radius:50%;filter:blur(100px);opacity:.5;pointer-events:none;z-index:0;will-change:transform}
+.ob2-grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.04;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.ob2-vignette{position:fixed;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse 90% 70% at 50% 42%, transparent 46%, rgba(0,0,0,.55) 100%)}
 .ob2-mono{font-family:'DM Mono',monospace}
 .ob2-eyebrow{font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--orange-2)}
 .ob2-h{font-weight:700;letter-spacing:-.035em;line-height:1.04;font-size:clamp(30px,6.6vw,52px);margin:0}
@@ -78,18 +80,22 @@ function useInjectCss() {
   }, [])
 }
 
-const Logo = () => (
-  <img src="/insights-logo-white.png" alt="Insights Apps" style={{ height: 26, width: 'auto', display: 'inline-block', opacity: .96 }}
+const Logo = ({ h = 32 }) => (
+  <img src="/insights-logo-white.png" alt="Insights Apps" style={{ height: h, width: 'auto', display: 'inline-block', opacity: 1 }}
     onError={(e) => { e.target.style.display = 'none' }} />
 )
 
-/* ---------- fondo: blobs naranjas suaves ---------- */
+/* ---------- fondo premium: blobs naranjas que respiran + grano + viñeta ---------- */
 function Blobs() {
+  const reduce = useReducedMotion()
+  const drift = (dur, xk, yk, sk) => reduce ? {} : { animate: { x: xk, y: yk, scale: sk }, transition: { duration: dur, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' } }
   return (
     <>
-      <div className="ob2-blob" style={{ width: 520, height: 520, top: -160, left: -120, background: 'radial-gradient(circle, rgba(229,115,0,.30), transparent 70%)' }} />
-      <div className="ob2-blob" style={{ width: 420, height: 420, bottom: -140, right: -100, background: 'radial-gradient(circle, rgba(240,140,31,.22), transparent 70%)' }} />
-      <div className="ob2-blob" style={{ width: 360, height: 360, top: '40%', left: '55%', background: 'radial-gradient(circle, rgba(245,208,128,.10), transparent 70%)' }} />
+      <motion.div className="ob2-blob" style={{ width: 560, height: 560, top: -180, left: -140, background: 'radial-gradient(circle, rgba(229,115,0,.32), transparent 70%)' }} {...drift(26, [0, 60, 0], [0, 40, 0], [1, 1.14, 1])} />
+      <motion.div className="ob2-blob" style={{ width: 440, height: 440, bottom: -150, right: -110, background: 'radial-gradient(circle, rgba(240,140,31,.24), transparent 70%)' }} {...drift(32, [0, -50, 0], [0, -30, 0], [1, 1.18, 1])} />
+      <motion.div className="ob2-blob" style={{ width: 380, height: 380, top: '42%', left: '54%', background: 'radial-gradient(circle, rgba(245,208,128,.12), transparent 70%)' }} {...drift(38, [0, 40, 0], [0, -50, 0], [1.08, 1, 1.08])} />
+      <div className="ob2-grain" />
+      <div className="ob2-vignette" />
     </>
   )
 }
@@ -224,14 +230,13 @@ export default function OnboardingV2({ supabase, cloudEnabled }) {
       {showProgress && <DesktopRail current={step} onGo={go} />}
       {showProgress && <MobileProgress current={step} />}
 
-      <main className="ob2-main" style={{ position: 'relative', zIndex: 2, minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '96px 22px 120px' }}>
+      <main className={showProgress ? 'ob2-main' : undefined} style={{ position: 'relative', zIndex: 2, minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '96px 22px 120px' }}>
         <div className="ob2-main-inner" style={{ width: '100%', maxWidth: 540 }}>
           <motion.div key={step} initial={anim.initial} animate={anim.animate} transition={anim.transition}>
 
             {step === 0 && (
               <div style={{ textAlign: 'center' }}>
-                <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08, ease }} className="ob2-eyebrow" style={{ marginBottom: 18 }}>Onboarding · Insights Apps</motion.div>
-                <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16, ease }} className="ob2-h" style={{ fontSize: 'clamp(38px,9vw,64px)', marginBottom: 18 }}>Bienvenido a<br /><span style={{ color: 'var(--orange)' }}>Insights</span></motion.h1>
+                <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12, ease }} className="ob2-h" style={{ fontSize: 'clamp(40px,9vw,66px)', marginBottom: 18 }}>Bienvenido a<br /><span style={{ color: 'var(--orange)' }}>Insights</span></motion.h1>
                 <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.26, ease }} className="ob2-sub" style={{ maxWidth: 460, margin: '0 auto 34px' }}>Comenzá acá el proceso para hacer realidad tu aplicación.</motion.p>
                 <motion.button initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36, ease }} className="ob2-btn" onClick={() => go(1)} style={{ padding: '16px 40px', fontSize: 17 }}>Comenzar →</motion.button>
               </div>
