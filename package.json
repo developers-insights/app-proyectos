@@ -12,8 +12,10 @@
     "@supabase/supabase-js": "^2.108.2",
     "framer-motion": "^11.3.0",
     "jspdf": "^4.2.1",
+    "libphonenumber-js": "^1.13.10",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-phone-number-input": "^3.4.17"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

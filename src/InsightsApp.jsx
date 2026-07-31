@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@supabase/supabase-js'
 import OnboardingLanding from './Onboarding'
+import OnboardingV2 from './OnboardingV2'
 import { uid, I, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
 import {
   taskText, taskDone, weekProgress,
@@ -6917,6 +6918,7 @@ export default function InsightsApp() {
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
   const shareId = params.get('share')
   const onbStep = params.get('onb')
+  const onbxStep = params.get('onbx')
 
   // inject global css once
   useEffect(() => {
@@ -6943,6 +6945,7 @@ export default function InsightsApp() {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  if (onbxStep) return <OnboardingV2 supabase={supabase} cloudEnabled={cloudEnabled} />
   if (onbStep) return <OnboardingLanding step={onbStep} supabase={supabase} cloudEnabled={cloudEnabled} />
   if (shareId) return <ClientView shareId={shareId} />
   if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
