@@ -151,9 +151,28 @@ function Nav({ onBack, onNext, nextDisabled }) {
 const LOCK_SECS = 240 // 4 minutos
 function Presentacion() {
   const [left, setLeft] = useState(LOCK_SECS)
-  useEffect(() => { const s = document.createElement('script'); s.src = 'https://link.msgsndr.com/js/form_embed.js'; s.async = true; document.body.appendChild(s); return () => { try { document.body.removeChild(s) } catch (e) {} } }, [])
+  const calRef = useRef(null)
   useEffect(() => { if (left <= 0) return; const iv = setInterval(() => setLeft((s) => Math.max(0, s - 1)), 1000); return () => clearInterval(iv) }, [left <= 0])
   const unlocked = left <= 0
+  // El calendario recién se monta cuando termina el timer, así que cargamos el resizer de
+  // LeadConnector en ese momento (si se carga antes, no registra el iframe) y además
+  // escuchamos su postMessage para ajustar el alto al contenido. Así el botón de agendar
+  // nunca queda cortado, sobre todo en mobile (iOS no permite scroll dentro de un iframe).
+  useEffect(() => {
+    if (!unlocked) return
+    const old = document.getElementById('lc-form-embed'); if (old) old.remove()
+    const s = document.createElement('script'); s.id = 'lc-form-embed'; s.src = 'https://link.msgsndr.com/js/form_embed.js'; s.async = true; document.body.appendChild(s)
+    const onMsg = (e) => {
+      if (!/leadconnectorhq\.com|msgsndr\.com/.test(e.origin || '')) return
+      let h = null; const d = e.data
+      if (typeof d === 'number') h = d
+      else if (d && typeof d === 'object' && typeof d.height === 'number') h = d.height
+      else if (typeof d === 'string') { try { const o = JSON.parse(d); if (o && typeof o.height === 'number') h = o.height } catch (_) {} }
+      if (h && h > 300 && calRef.current) calRef.current.style.height = h + 'px'
+    }
+    window.addEventListener('message', onMsg)
+    return () => { window.removeEventListener('message', onMsg); try { s.remove() } catch (_) {} }
+  }, [unlocked])
   const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, '0')
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 80 }}>
@@ -188,7 +207,7 @@ function Presentacion() {
               <p style={{ color: C.dim, fontSize: 'clamp(15px,3.4vw,16px)', maxWidth: 520, margin: '0 auto 24px', lineHeight: 1.6 }}>Elegí un horario para hablar con Nacho, tu Project Manager. En esa llamada definimos el plan de trabajo.</p>
             </div>
             <div className="onb-card" style={{ padding: 4 }}>
-              <iframe src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" id="vsD3uHw8TYyGAH2CMcL2_onb" style={{ width: '100%', border: 'none', minHeight: 920, display: 'block', borderRadius: 14 }} scrolling="yes" title="Agendar llamada" />
+              <iframe ref={calRef} src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" id="vsD3uHw8TYyGAH2CMcL2_onb" allow="payment" scrolling="no" style={{ width: '100%', border: 'none', minHeight: 700, display: 'block', borderRadius: 14 }} title="Agendar llamada" />
             </div>
           </motion.div>
         )}
