@@ -188,7 +188,7 @@ function Presentacion() {
               <p style={{ color: C.dim, fontSize: 'clamp(15px,3.4vw,16px)', maxWidth: 520, margin: '0 auto 24px', lineHeight: 1.6 }}>Elegí un horario para hablar con Nacho, tu Project Manager. En esa llamada definimos el plan de trabajo.</p>
             </div>
             <div className="onb-card" style={{ padding: 4 }}>
-              <iframe src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" id="vsD3uHw8TYyGAH2CMcL2_onb" style={{ width: '100%', border: 'none', overflow: 'hidden', minHeight: 920, display: 'block', borderRadius: 14 }} scrolling="no" title="Agendar llamada" />
+              <iframe src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" id="vsD3uHw8TYyGAH2CMcL2_onb" style={{ width: '100%', border: 'none', minHeight: 920, display: 'block', borderRadius: 14 }} scrolling="yes" title="Agendar llamada" />
             </div>
           </motion.div>
         )}
