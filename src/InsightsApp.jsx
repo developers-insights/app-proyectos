@@ -201,6 +201,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   transition:box-shadow .26s var(--e),color .26s var(--e),background .26s var(--e)}
 .pj-sel:hover{color:var(--text);box-shadow:inset 0 0 0 1px var(--border-strong)}
 .pj-sel[data-on="1"]{color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.pj-sel option{background:var(--bg-elevated);color:var(--text)}
 
 .pj-cta{display:inline-flex;align-items:center;gap:10px;height:40px;padding:0 5px 0 16px;border-radius:999px;
   background:var(--accent);color:#fff;font-size:13.5px;font-weight:700;letter-spacing:-.012em;
