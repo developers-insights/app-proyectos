@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input'
 import flags from 'react-phone-number-input/flags'
 import 'react-phone-number-input/style.css'
+import { PROJECT_MANAGER, assignDeveloper } from './onboardingTeam'
 
 /* ============================================================================
    ONBOARDING · REDISEÑO (v2) — estilo SaaS premium (Typeform / Linear / Vercel)
@@ -61,6 +62,7 @@ const STEPS = [
   { key: 'project', label: 'Tu proyecto' },
 ]
 const STORE_KEY = 'onbx_state_v1'
+const BUILD_MSGS = ['Creando tu espacio de proyecto…', 'Asignando tu equipo…', 'Preparando tu tablero…']
 const ease = [0.16, 1, 0.3, 1]
 const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v || '').trim())
 
@@ -172,6 +174,66 @@ function NavRow({ onBack, onNext, nextLabel = 'Continuar', nextDisabled, nextIco
   )
 }
 
+/* ---------- S5: animación de "IA armando el proyecto" ---------- */
+function BuildingScene({ reduce }) {
+  const nodes = [{ x: 100, y: 30 }, { x: 164, y: 66 }, { x: 164, y: 134 }, { x: 100, y: 170 }, { x: 36, y: 134 }, { x: 36, y: 66 }]
+  const svgAnim = { transformBox: 'fill-box', transformOrigin: 'center' }
+  const loop = (delay) => reduce ? {} : { transition: { duration: 1.5, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut', delay } }
+  return (
+    <div style={{ position: 'relative', width: 200, height: 200, margin: '0 auto' }}>
+      <svg viewBox="0 0 200 200" width="200" height="200" style={{ position: 'absolute', inset: 0 }}>
+        <defs><radialGradient id="ob2orb" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#f5b25a" /><stop offset="60%" stopColor="#f08c1f" /><stop offset="100%" stopColor="#e57300" /></radialGradient></defs>
+        {nodes.map((n, i) => (
+          <motion.line key={'l' + i} x1="100" y1="100" x2={n.x} y2={n.y} stroke="#e57300" strokeWidth="1.4" strokeLinecap="round"
+            initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: reduce ? 1 : [0, 1, 0], opacity: reduce ? 0.45 : [0, 0.6, 0] }} {...loop(i * 0.18)} />
+        ))}
+        {nodes.map((n, i) => (
+          <motion.rect key={'r' + i} x={n.x - 6} y={n.y - 6} width="12" height="12" rx="3.5" fill="#e57300" style={svgAnim}
+            initial={{ scale: 0, opacity: 0 }} animate={{ scale: reduce ? 1 : [0, 1, 0.4], opacity: reduce ? 0.9 : [0, 1, 0.5] }} {...loop(i * 0.18 + 0.3)} />
+        ))}
+        <motion.circle cx="100" cy="100" r="24" fill="url(#ob2orb)" style={{ ...svgAnim, filter: 'drop-shadow(0 0 20px rgba(229,115,0,.7))' }}
+          animate={reduce ? {} : { scale: [1, 1.14, 1] }} transition={reduce ? {} : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }} />
+      </svg>
+      <motion.div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#fff' }}
+        animate={reduce ? {} : { scale: [1, 1.12, 1] }} transition={reduce ? {} : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}>
+        <Sparkles size={26} />
+      </motion.div>
+    </div>
+  )
+}
+
+/* ---------- check de éxito con burst sutil ---------- */
+function SuccessCheck({ reduce }) {
+  return (
+    <div style={{ position: 'relative', width: 74, height: 74, margin: '0 auto' }}>
+      {!reduce && Array.from({ length: 10 }).map((_, i) => {
+        const a = (i / 10) * Math.PI * 2, dist = 44 + (i % 3) * 12
+        return <motion.span key={i} initial={{ x: 0, y: 0, opacity: 1, scale: 1 }} animate={{ x: Math.cos(a) * dist, y: Math.sin(a) * dist, opacity: 0, scale: 0.3 }} transition={{ duration: 0.75, delay: 0.12, ease: 'easeOut' }}
+          style={{ position: 'absolute', top: 34, left: 34, width: 7, height: 7, borderRadius: 2, background: i % 2 ? 'var(--gold)' : 'var(--orange-2)' }} />
+      })}
+      <motion.div initial={reduce ? {} : { scale: 0, rotate: -25 }} animate={{ scale: 1, rotate: 0 }} transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 220, damping: 15 }}
+        style={{ width: 74, height: 74, borderRadius: 999, display: 'grid', placeItems: 'center', background: 'linear-gradient(180deg,var(--orange-2),var(--orange))', boxShadow: '0 14px 40px rgba(229,115,0,.5)' }}>
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+      </motion.div>
+    </div>
+  )
+}
+
+/* ---------- tarjeta de miembro del equipo (reveal escalonado) ---------- */
+function TeamCard({ i, name, role, reduce }) {
+  const initials = (name || '').split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase()
+  return (
+    <motion.div initial={reduce ? { opacity: 0 } : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.16, ease, duration: 0.5 }}
+      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--border)', textAlign: 'left' }}>
+      <div style={{ width: 46, height: 46, borderRadius: 12, flexShrink: 0, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 16, color: '#fff', background: 'linear-gradient(135deg,var(--orange-2),var(--orange))' }}>{initials}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: 16 }}>{name}</div>
+        <div className="ob2-mono" style={{ fontSize: 12.5, color: 'var(--orange-2)', marginTop: 2 }}>{role}</div>
+      </div>
+    </motion.div>
+  )
+}
+
 export default function OnboardingV2({ supabase, cloudEnabled }) {
   useInjectCss()
   const reduce = useReducedMotion()
@@ -215,6 +277,54 @@ export default function OnboardingV2({ supabase, cloudEnabled }) {
 
   const onEnter = useCallback((e) => { if (e.key === 'Enter') { e.preventDefault(); next() } }, [next])
 
+  // --- creación del proyecto (S5) + equipo (S6) ---
+  const assignedDev = useMemo(() => assignDeveloper(), [])
+  const [msgIdx, setMsgIdx] = useState(0)
+  const [buildErr, setBuildErr] = useState('')
+  const [buildKey, setBuildKey] = useState(0)   // reintento
+  const calRef = useRef(null)
+
+  const doCreateProject = useCallback(async () => {
+    // en dev/preview (sin Supabase) simulamos el alta para poder ver todo el flujo
+    if (!cloudEnabled || !supabase) return { ok: true, simulated: true }
+    const body = { name: f.name.trim(), company: f.company.trim(), email: f.email.trim(), phone: f.phone || '', projectName: f.projectName.trim() }
+    const { data, error } = await supabase.functions.invoke('onboarding-signup', { body })
+    if (error) throw new Error(error.message || 'No se pudo crear el proyecto')
+    if (data && data.error) throw new Error(data.error)
+    return data || { ok: true }
+  }, [cloudEnabled, supabase, f])
+
+  // S5: crea el proyecto (PM = Nacho, dev automático) mientras corre la animación, luego pasa a S6
+  useEffect(() => {
+    if (step !== 5) return
+    setBuildErr(''); setMsgIdx(0)
+    const iv = setInterval(() => setMsgIdx((i) => (i + 1) % BUILD_MSGS.length), 1300)
+    let cancelled = false
+    const minDelay = new Promise((r) => setTimeout(r, 3600))
+    Promise.all([doCreateProject(), minDelay])
+      .then(() => { if (!cancelled) { try { localStorage.removeItem(STORE_KEY) } catch (e) { /* ignore */ } setStep(6) } })
+      .catch((e) => { if (!cancelled) setBuildErr(e.message || 'Ocurrió un error al crear el proyecto.') })
+    return () => { cancelled = true; clearInterval(iv) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, buildKey])
+
+  // S7: resizer del calendario de GoHighLevel (auto-alto, sin recortes)
+  useEffect(() => {
+    if (step !== 7) return
+    const old = document.getElementById('lc-form-embed-v2'); if (old) old.remove()
+    const s = document.createElement('script'); s.id = 'lc-form-embed-v2'; s.src = 'https://link.msgsndr.com/js/form_embed.js'; s.async = true; document.body.appendChild(s)
+    const onMsg = (e) => {
+      if (!/leadconnectorhq\.com|msgsndr\.com/.test(e.origin || '')) return
+      let h = null; const d = e.data
+      if (typeof d === 'number') h = d
+      else if (d && typeof d === 'object' && typeof d.height === 'number') h = d.height
+      else if (typeof d === 'string') { try { const o = JSON.parse(d); if (o && typeof o.height === 'number') h = o.height } catch (_) {} }
+      if (h && h > 300 && calRef.current) calRef.current.style.height = h + 'px'
+    }
+    window.addEventListener('message', onMsg)
+    return () => { window.removeEventListener('message', onMsg); try { s.remove() } catch (_) {} }
+  }, [step])
+
   const anim = reduce
     ? { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.2 } }
     : { initial: { opacity: 0, x: dir * 44 }, animate: { opacity: 1, x: 0 }, transition: { ease, duration: 0.45 } }
@@ -231,7 +341,7 @@ export default function OnboardingV2({ supabase, cloudEnabled }) {
       {showProgress && <MobileProgress current={step} />}
 
       <main className={showProgress ? 'ob2-main' : undefined} style={{ position: 'relative', zIndex: 2, minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '96px 22px 120px' }}>
-        <div className="ob2-main-inner" style={{ width: '100%', maxWidth: 540 }}>
+        <div className="ob2-main-inner" style={{ width: '100%', maxWidth: step === 7 ? 760 : 540 }}>
           <motion.div key={step} initial={anim.initial} animate={anim.animate} transition={anim.transition}>
 
             {step === 0 && (
@@ -297,12 +407,59 @@ export default function OnboardingV2({ supabase, cloudEnabled }) {
               </div>
             )}
 
+            {/* S5 · construyendo (crea el proyecto) */}
             {step === 5 && (
               <div style={{ textAlign: 'center' }}>
-                <div style={{ display: 'inline-flex', color: 'var(--orange)', marginBottom: 18 }}><Sparkles size={34} /></div>
-                <h1 className="ob2-h" style={{ fontSize: 'clamp(24px,5vw,34px)', marginBottom: 14 }}>Vista previa lista ✦</h1>
-                <p className="ob2-sub" style={{ maxWidth: 440, margin: '0 auto 26px' }}>Terminaste los 4 pasos de datos. Las próximas pantallas (construcción del proyecto, tu equipo, agenda y gracias) llegan en la siguiente etapa del rediseño.</p>
-                <button className="ob2-btn ob2-btn-ghost" onClick={() => go(1)} type="button">← Volver a revisar</button>
+                <BuildingScene reduce={reduce} />
+                <div style={{ minHeight: 26, marginTop: 30 }}>
+                  {!buildErr && <motion.div key={msgIdx} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease }} className="ob2-mono" style={{ fontSize: 15, color: 'var(--text-2)' }}>{BUILD_MSGS[msgIdx]}</motion.div>}
+                </div>
+                {buildErr && (
+                  <div style={{ marginTop: 14 }}>
+                    <div className="ob2-err" style={{ marginBottom: 14 }}>{buildErr}</div>
+                    <button className="ob2-btn ob2-btn-ghost" onClick={() => setBuildKey((k) => k + 1)} type="button">Reintentar</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* S6 · éxito + equipo */}
+            {step === 6 && (
+              <div style={{ textAlign: 'center' }}>
+                <SuccessCheck reduce={reduce} />
+                <h1 className="ob2-h" style={{ fontSize: 'clamp(25px,5.2vw,38px)', marginTop: 22, marginBottom: 14 }}>Listo, el proyecto <span style={{ color: 'var(--orange)' }}>«{f.projectName || 'tu proyecto'}»</span> fue creado con éxito.</h1>
+                <p className="ob2-sub" style={{ maxWidth: 500, margin: '0 auto 6px' }}>Esto significa que el equipo de desarrollo y su líder ya están pendientes de este nuevo proyecto.</p>
+                <p className="ob2-sub" style={{ maxWidth: 500, margin: '0 auto 26px', fontSize: 15 }}>Estas son las personas que te acompañarán en el proceso:</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 420, margin: '0 auto 30px' }}>
+                  <TeamCard i={0} reduce={reduce} name={PROJECT_MANAGER.name} role={PROJECT_MANAGER.role} />
+                  <TeamCard i={1} reduce={reduce} name={assignedDev.name} role={assignedDev.role} />
+                </div>
+                <motion.button initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6, ease }} className="ob2-btn" onClick={() => go(7)} type="button" style={{ padding: '15px 32px' }}>Agendar el inicio de tu aplicación →</motion.button>
+              </div>
+            )}
+
+            {/* S7 · agendar kickoff (último paso) */}
+            {step === 7 && (
+              <div style={{ textAlign: 'center', width: '100%' }}>
+                <div className="ob2-eyebrow" style={{ marginBottom: 12 }}>Último paso</div>
+                <h1 className="ob2-h" style={{ fontSize: 'clamp(28px,5.6vw,44px)', marginBottom: 12 }}>Empezá tu app en una llamada con el equipo</h1>
+                <p className="ob2-sub" style={{ maxWidth: 480, margin: '0 auto 26px' }}>Elegí el horario que mejor te quede. Ahí arrancamos tu proyecto con Nacho y el equipo.</p>
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: 6, overflow: 'hidden' }}>
+                  <iframe ref={calRef} src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" id="vsD3uHw8TYyGAH2CMcL2_v2" allow="payment" scrolling="no" style={{ width: '100%', border: 'none', minHeight: 700, display: 'block', borderRadius: 14 }} title="Agendar llamada" />
+                </div>
+                <div style={{ marginTop: 20 }}>
+                  <button className="ob2-btn ob2-btn-ghost" onClick={() => go(8)} type="button">Ya agendé mi llamada →</button>
+                </div>
+              </div>
+            )}
+
+            {/* S8 · gracias */}
+            {step === 8 && (
+              <div style={{ textAlign: 'center' }}>
+                <SuccessCheck reduce={reduce} />
+                <h1 className="ob2-h" style={{ fontSize: 'clamp(30px,6vw,48px)', marginTop: 22, marginBottom: 16 }}>¡Gracias! Ya estamos en marcha.</h1>
+                <p className="ob2-sub" style={{ maxWidth: 500, margin: '0 auto 36px' }}>De acá en adelante seguimos por el grupo de WhatsApp: ahí coordinamos las conversaciones, los videos grabados y las reuniones para ver los avances del proyecto.</p>
+                <div style={{ display: 'flex', justifyContent: 'center' }}><Logo h={30} /></div>
               </div>
             )}
 
