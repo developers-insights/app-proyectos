@@ -3058,7 +3058,6 @@ function FilterPanel({ count, onClear, children }) {
         aria-label={count > 0 ? `Filtros · ${count} filtro${count > 1 ? 's' : ''} aplicado${count > 1 ? 's' : ''}` : 'Filtros · ninguno aplicado'}>
         <I2.filter width={15} height={15} />
         <span aria-hidden="true">Filtros</span>
-        {count > 0 && <span className="n" aria-hidden="true">{count}</span>}
         <I2.chevD className="cd" width={13} height={13} style={{ opacity: .55 }} />
       </button>
       <AnimatePresence>
