@@ -5,8 +5,12 @@
 // Devuelve, dado {shareId, password}, SOLO la data pública de ese proyecto (lectura).
 // La contraseña se valida server-side; nunca se expone el resto de los proyectos.
 //
-// Lee desde las tablas por-fila (projects / team_members / clients / calls / tasks),
+// Lee desde las tablas por-fila (projects / plans / team_members / clients / calls / tasks),
 // no del documento monolítico app_state (retirado). service_role → sin bloqueo de RLS.
+//
+// 2026-08-01 · El avance ya NO sale de project.sprints (sistema eliminado): sale del
+// PLAN asociado (project.planId → tabla plans). Los KPIs cuentan todas las tareas del
+// plan, las del equipo y las del cliente, igual que el % que ve el equipo adentro.
 // ============================================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -20,6 +24,18 @@ const json = (body: unknown, status = 200) =>
 
 const norm = (s: string) => (s === 'completado' ? 'terminado' : s === 'en progreso' ? 'en proceso' : (s || 'pendiente'))
 const rows = (r: any) => (r.data || []).map((x: any) => x.data).filter(Boolean)
+
+// --- Estado de una tarea del plan. Espejo de taskEstado() en src/plan/planModel.js:
+// si acá y allá difieren, el cliente ve un número distinto al del equipo.
+const taskEstado = (t: any): string => {
+  if (!t || typeof t !== 'object') return 'pendiente'
+  if (t.done) return 'terminada'
+  if (t.estado === 'curso' || t.estado === 'bloqueada') return t.estado
+  if (t.bloqueo && (t.bloqueo.detalle || t.bloqueo.limite)) return 'bloqueada'
+  return 'pendiente'
+}
+const taskResponsable = (t: any): string =>
+  (t && (t.responsable === 'cliente' || t.responsable === 'ambos')) ? t.responsable : 'insights'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -35,27 +51,47 @@ Deno.serve(async (req) => {
     if (!project || !project.shareEnabled) return json({ error: 'Este link no está activo.' }, 404)
     if (!project.sharePassword || String(password || '') !== String(project.sharePassword)) return json({ error: 'Contraseña incorrecta.' }, 401)
 
-    // Equipo, clientes y llamadas para enriquecer la vista.
-    const [teamRes, clientsRes, callsRes, tasksRes] = await Promise.all([
+    // Equipo, clientes, llamadas, tareas y el plan asociado.
+    const [teamRes, clientsRes, callsRes, tasksRes, plansRes] = await Promise.all([
       supa.from('team_members').select('data').is('deleted_at', null),
       supa.from('clients').select('data').is('deleted_at', null),
       supa.from('calls').select('data').is('deleted_at', null),
       supa.from('tasks').select('data').is('deleted_at', null),
+      project.planId ? supa.from('plans').select('data').eq('id', project.planId).is('deleted_at', null) : Promise.resolve({ data: [] }),
     ])
     const team: any[] = rows(teamRes)
     const nameOf = (id: string) => (team.find((u) => u.id === id)?.name) || ''
     const clientName = rows(clientsRes).find((c: any) => c.id === project.clientId)?.company || ''
 
-    const sprints: any[] = project.sprints || []
-    const total = sprints.length
-    const done = sprints.filter((s) => norm(s.status) === 'terminado').length
-    const inProc = sprints.filter((s) => norm(s.status) === 'en proceso').length
-    const progress = total ? Math.round(((done + inProc * 0.5) / total) * 100) : (project.progress || 0)
-    const devId = project.assignments?.dev?.userId || null
-    const outSprints = sprints.map((s) => ({
-      id: s.id, name: s.name, week: s.week, status: norm(s.status), date: s.estimatedDate,
-      assignees: ((s.assigneeIds && s.assigneeIds.length) ? s.assigneeIds : (devId ? [devId] : [])).map(nameOf).filter(Boolean),
-    }))
+    // ---- Avance desde el plan ------------------------------------------------
+    // Del plan sale SOLO lo que el cliente tiene que ver: número de semana, título
+    // y el texto de cada tarea. El `detalle` operativo, los bloqueos y las notas
+    // internas del equipo se quedan del lado de adentro a propósito.
+    const plan: any = rows(plansRes)[0] || null
+    const planWeeks = Array.isArray(plan?.weeks) ? plan.weeks : []
+    let total = 0, done = 0, inProc = 0
+    const outWeeks = planWeeks.map((w: any) => {
+      const ts = Array.isArray(w?.tasks) ? w.tasks : []
+      for (const t of ts) {
+        total++
+        const est = taskEstado(t)
+        if (est === 'terminada') done++
+        else if (est === 'curso') inProc++
+      }
+      return {
+        n: w?.n,
+        title: w?.title || '',
+        tasks: ts.map((t: any, i: number) => ({
+          id: t?.id || `t${i}`,
+          text: typeof t === 'string' ? t : (t?.text || ''),
+          done: taskEstado(t) === 'terminada',
+          responsable: taskResponsable(t),
+        })),
+      }
+    })
+    // Sin plan asociado cae al progreso legacy del proyecto para no mostrar 0%
+    // en un proyecto viejo que venía avanzado.
+    const progress = total ? Math.round((done / total) * 100) : (project.progress || 0)
 
     // registro: notas públicas + looms + llamadas (manuales asignadas al proyecto)
     const manual = (project.activity || [])
@@ -73,7 +109,8 @@ Deno.serve(async (req) => {
     return json({
       name: project.name, client: clientName, stack: project.stack || '',
       kpis: { total, done, inProc, progress },
-      sprints: outSprints, activity, teamTasks, clientTasks,
+      plan: plan ? { title: plan.title || '', weeks: outWeeks } : null,
+      activity, teamTasks, clientTasks,
     })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)

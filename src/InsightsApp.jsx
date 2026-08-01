@@ -18,14 +18,22 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@supabase/supabase-js'
 import OnboardingLanding from './Onboarding'
 import OnboardingV2 from './OnboardingV2'
-import { uid, I, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
+import { uid, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
+import { I2 } from './ui/icons2.jsx'
+import {
+  PHASES, phaseInfo, phaseMeta, normalizeLifecycle, advancePhase,
+  suggestedTransition, billingNotice, markNoticeSent,
+} from './lib/lifecycle.js'
+import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
+import { isDev, canSeeAllToggle, visibleProjects } from './lib/visibility.js'
 import {
   taskText, taskDone, weekProgress,
-  toggleTaskDone, setWeekAllDone, sprintForWeek, hitoForWeek,
+  toggleTaskDone, hitoForWeek,
   taskEstado, setTaskEstado, normalizeTask as normalizePlanTask, normalizeTasks, planBoardSummary,
   taskResponsable, planPendingCliente,
   TASK_ESTADOS, TASK_ESTADO_CHOICES, RIESGOS, EVIDENCIA_TIPOS, RESPONSABLES,
 } from './plan/planModel.js'
+import { projectProgress, progressBreakdown, progressColorVar } from './lib/progress.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
 
@@ -67,6 +75,8 @@ const THEMES = {
     '--blue': '#60A5FA',
     '--blue-soft': 'rgba(96,165,250,0.14)',
     '--shadow': '0 1px 0 rgba(255,255,255,0.03), 0 18px 40px -20px rgba(0,0,0,0.8)',
+    '--shadow-lift': '0 1px 0 rgba(255,255,255,0.05), 0 30px 56px -26px rgba(0,0,0,0.95)',
+    '--track': 'rgba(255,255,255,0.055)',
     '--grid': 'rgba(255,255,255,0.025)',
   },
   light: {
@@ -91,6 +101,8 @@ const THEMES = {
     '--blue': '#2563EB',
     '--blue-soft': 'rgba(37,99,235,0.10)',
     '--shadow': '0 1px 2px rgba(16,15,12,0.04), 0 12px 30px -18px rgba(16,15,12,0.18)',
+    '--shadow-lift': '0 2px 4px rgba(16,15,12,0.05), 0 24px 46px -20px rgba(16,15,12,0.28)',
+    '--track': 'rgba(10,10,10,0.075)',
     '--grid': 'rgba(10,10,10,0.022)',
   },
 }
@@ -148,6 +160,134 @@ table{border-collapse:collapse;width:100%}
 .skel{background:linear-gradient(90deg,var(--card) 25%,var(--card-hover) 50%,var(--card) 75%);
   background-size:800px 100%;animation:shimmer 1.4s infinite linear;border-radius:8px}
 
+/* ============================================================================
+   PANEL PROYECTOS — rediseño 2026-08
+   Una sola curva de movimiento (--e) para toda la vista: si todo se mueve con
+   el mismo ritmo, la interfaz se lee como una pieza y no como diez componentes.
+   Solo se animan transform / opacity / color: nada que dispare layout.
+============================================================================ */
+:root{ --e:cubic-bezier(.32,.72,0,1) }
+
+/* foco visible en TODO lo interactivo — antes no existía y no se podía navegar con teclado */
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,
+textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visible,[tabindex]:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px;border-radius:10px}
+
+/* --- header: buscador, segmentados, selects, CTA --- */
+.pj-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.pj-search{display:flex;align-items:center;gap:9px;width:290px;max-width:52vw;height:38px;padding:0 13px;
+  border-radius:999px;background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border);
+  transition:box-shadow .3s var(--e),background .3s var(--e)}
+.pj-search:focus-within{box-shadow:inset 0 0 0 1px var(--accent-line),0 0 0 3px var(--accent-soft)}
+.pj-search input{flex:1;min-width:0;border:none;background:transparent;font-size:13.5px;color:var(--text);outline:none}
+.pj-search input::placeholder{color:var(--text-faint)}
+
+.pj-seg{display:inline-flex;gap:2px;padding:3px;border-radius:12px;background:var(--bg-elevated);
+  box-shadow:inset 0 0 0 1px var(--border)}
+.pj-seg > button{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px;border-radius:9px;
+  font-size:13px;font-weight:600;color:var(--text-faint);white-space:nowrap;
+  transition:color .26s var(--e),background .26s var(--e),box-shadow .26s var(--e)}
+.pj-seg > button:hover{color:var(--text-dim)}
+.pj-seg > button[aria-selected="true"],.pj-seg > button[aria-pressed="true"]{
+  color:var(--text);background:var(--card);box-shadow:inset 0 0 0 1px var(--border),0 1px 2px rgba(0,0,0,.10)}
+.pj-seg .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-faint)}
+.pj-seg > button[aria-selected="true"] .n{color:var(--accent)}
+
+.pj-selw{position:relative;display:inline-flex}
+.pj-selw > svg{position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--text-faint)}
+.pj-sel{appearance:none;-webkit-appearance:none;height:32px;padding:0 27px 0 11px;border-radius:9px;border:none;
+  background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border);max-width:210px;
+  font-size:12.5px;font-weight:600;color:var(--text-dim);cursor:pointer;outline:none;
+  transition:box-shadow .26s var(--e),color .26s var(--e),background .26s var(--e)}
+.pj-sel:hover{color:var(--text);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.pj-sel[data-on="1"]{color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
+
+.pj-cta{display:inline-flex;align-items:center;gap:10px;height:40px;padding:0 5px 0 16px;border-radius:999px;
+  background:var(--accent);color:#fff;font-size:13.5px;font-weight:700;letter-spacing:-.012em;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14);transition:transform .3s var(--e),box-shadow .3s var(--e),filter .3s var(--e)}
+.pj-cta:hover{transform:translateY(-1px);filter:brightness(1.035);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 8px 18px -12px rgba(0,0,0,.4)}
+.pj-cta:active{transform:translateY(0) scale(.98)}
+.pj-cta i{display:grid;place-items:center;width:30px;height:30px;border-radius:999px;background:rgba(255,255,255,.18);
+  transition:background .3s var(--e)}
+.pj-cta:hover i{background:rgba(255,255,255,.26)}
+
+.pj-switch{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;font-weight:600;color:var(--text-dim);
+  padding:4px 10px 4px 4px;border-radius:999px;transition:color .26s var(--e),background .26s var(--e)}
+.pj-switch:hover{color:var(--text);background:var(--card-hover)}
+.pj-switch .tr{position:relative;width:34px;height:20px;border-radius:999px;flex:none;background:var(--bg-elevated);
+  box-shadow:inset 0 0 0 1px var(--border);transition:background .32s var(--e),box-shadow .32s var(--e)}
+.pj-switch .tr::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;
+  background:var(--text-faint);transition:transform .36s var(--e),background .36s var(--e)}
+.pj-switch[aria-checked="true"]{color:var(--text)}
+.pj-switch[aria-checked="true"] .tr{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.pj-switch[aria-checked="true"] .tr::after{transform:translateX(14px);background:var(--accent)}
+
+/* --- la card --- */
+.pj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,268px),1fr));gap:16px}
+.pj-card{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;width:100%;
+  padding:11px 14px 12px;border-radius:18px;background:var(--card);cursor:pointer;
+  box-shadow:inset 0 0 0 1px var(--border),var(--shadow);
+  transition:transform .38s var(--e),background .38s var(--e),box-shadow .38s var(--e)}
+.pj-card:hover{background:var(--card-hover);transform:translateY(-3px);
+  box-shadow:inset 0 0 0 1px var(--border-strong),var(--shadow-lift)}
+.pj-card:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.pj-card .nm{font-size:15.5px;font-weight:650;letter-spacing:-.022em;line-height:1.22;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.pj-card .cl{margin-top:4px;font-size:12px;color:var(--text-dim);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+.pj-ring{position:relative;flex:none;line-height:0}
+.pj-ring .in{position:absolute;inset:0;display:grid;place-items:center}
+.pj-ring .pct{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;
+  font-size:27px;font-weight:600;letter-spacing:-.045em;line-height:1}
+@keyframes pjDraw{from{stroke-dashoffset:var(--ring-c)}}
+.pj-ringfill{animation:pjDraw 1.05s var(--e) both}
+
+.pj-status{display:inline-flex;align-items:center;gap:6px;padding:3px 7px 3px 6px;border-radius:999px;
+  font-size:11px;font-weight:600;color:var(--text-dim);letter-spacing:.005em;
+  transition:color .26s var(--e),background .26s var(--e)}
+.pj-status:hover{color:var(--text);background:var(--card-hover)}
+.pj-status .cv{opacity:0;transition:opacity .26s var(--e)}
+.pj-status:hover .cv,.pj-status:focus-visible .cv{opacity:1}
+.pj-dot{position:relative;width:6px;height:6px;border-radius:50%;flex:none}
+.pj-dot::after{content:"";position:absolute;inset:-5px;border-radius:50%;background:inherit;opacity:.26}
+.pj-dot.live::after{animation:pjBreathe 3s var(--e) infinite}
+/* latido: más amplitud que antes (.5→1 / .30 op) para que se note que está vivo,
+   pero sigue siendo una onda que se desvanece, no un parpadeo. */
+@keyframes pjBreathe{0%,100%{transform:scale(.42);opacity:.55}55%{transform:scale(1.32);opacity:0}}
+
+.pj-line{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;
+  margin-top:11px;padding-top:9px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-dim)}
+.pj-line b{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;
+  font-size:13.5px;font-weight:600;letter-spacing:-.02em}
+.pj-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+  margin-top:10px;padding-top:9px;border-top:1px solid var(--border)}
+.pj-ib{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;color:var(--text-faint);
+  transition:color .24s var(--e),background .24s var(--e),transform .24s var(--e),box-shadow .24s var(--e)}
+.pj-ib:hover{color:var(--text);background:var(--card-hover);box-shadow:inset 0 0 0 1px var(--border)}
+.pj-ib:active{transform:scale(.93)}
+.pj-ib.scope{color:var(--accent)}
+.pj-ib.wa:hover{color:#25D366}
+.pj-ib.off{opacity:.4}
+
+.pj-empty{display:flex;flex-direction:column;align-items:center;gap:4px;padding:52px 24px;border-radius:18px;
+  background:var(--card);box-shadow:inset 0 0 0 1px var(--border)}
+.pj-empty .ic{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;margin-bottom:10px;
+  color:var(--text-faint);background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border)}
+.pj-skel{height:246px;border-radius:18px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border);
+  position:relative;overflow:hidden}
+.pj-skel::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,var(--card-hover),transparent);
+  background-size:600px 100%;animation:shimmer 1.5s infinite linear}
+
+@media (prefers-reduced-motion: reduce){
+  .pj-card,.pj-card:hover{transform:none}
+  .pj-ringfill{animation:none}
+  .pj-dot::after{animation:none;opacity:.18}
+  .pj-skel::after{animation:none}
+  .pj-cta:hover i{transform:none}
+}
+
 /* --- responsive / mobile --- */
 @media (max-width: 760px){
   .app-shell{ background-image:none }
@@ -155,23 +295,391 @@ table{border-collapse:collapse;width:100%}
   .tbl{ overflow-x:auto !important }
   .tbl > table{ min-width:600px }
   .hide-mobile{ display:none !important }
+  .pj-search{ width:100%; max-width:none; height:42px }
+  .pj-ib{ width:40px; height:40px }
+  .pj-seg > button{ height:38px }
+  .pj-sel{ height:38px; max-width:none }
+  .pj-cta{ height:44px }
+}
+
+/* ============================================================================
+   DETALLE DE PROYECTO — rediseño 2026-08
+   Dos decisiones mandan acá:
+   1) UNA sola superficie (.pd-panel). Antes convivían .surface, cajas con
+      borde y cajas con sombra: el marco competía con el dato.
+   2) Los nueve botones iguales se parten en dos grupos con peso distinto:
+      enlaces que SALEN de la app (.pd-lnk, con la flechita adentro de su
+      propio círculo) y paneles internos que abren un modal (.pd-btn, tipo
+      chip). Un enlace sin URL no se disfraza de enlace: se ve hueco y punteado
+      y lo que hace es invitar a cargarlo.
+   Mismo ritmo de movimiento que el listado (--e), solo transform/opacity.
+============================================================================ */
+.pd-shell{display:flex;height:100%;overflow:hidden}
+.pd-main{flex:1 1 auto;min-width:0;overflow-y:auto;padding:20px 30px 64px}
+.pd-back{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px 0 8px;border-radius:999px;
+  font-size:12.5px;font-weight:600;color:var(--text-dim);
+  transition:color .26s var(--e),background .26s var(--e),transform .26s var(--e)}
+.pd-back:hover{color:var(--text);background:var(--card-hover)}
+.pd-back:active{transform:translateX(-2px)}
+
+.pd-panel{background:var(--card);border-radius:16px;box-shadow:inset 0 0 0 1px var(--border)}
+.pd-panel.lift{box-shadow:inset 0 0 0 1px var(--border),var(--shadow)}
+.pd-sec{margin-bottom:22px}
+.pd-h{display:flex;align-items:baseline;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.pd-h h2{font-size:16.5px;letter-spacing:-.024em}
+.pd-h .sub{font-size:12.5px;color:var(--text-dim);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pd-eyebrow{font-size:10px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--text-dim);
+  white-space:nowrap}
+
+.pd-title{font-family:'Bricolage Grotesque',serif;font-weight:600;font-size:clamp(23px,2.5vw,30px);
+  line-height:1.08;letter-spacing:-.032em;min-width:0;overflow-wrap:anywhere}
+.pd-meta{font-size:13.5px;color:var(--text-dim);margin-top:7px}
+.pd-meta i{font-style:normal;color:var(--text-faint);padding:0 7px}
+
+/* --- consola de acciones --- */
+.pd-console{display:grid;grid-template-columns:66px 1fr;align-items:center;gap:11px 14px;padding:12px 14px}
+.pd-row{display:flex;gap:7px;flex-wrap:wrap;min-width:0}
+.pd-rule{grid-column:1/-1;height:1px;background:var(--border);margin:1px 0}
+
+.pd-lnk{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 5px 0 11px;border-radius:10px;
+  font-size:12.5px;font-weight:600;color:var(--text);background:var(--bg-elevated);
+  box-shadow:inset 0 0 0 1px var(--border);
+  transition:color .26s var(--e),background .26s var(--e),box-shadow .26s var(--e),transform .26s var(--e)}
+.pd-lnk .go{display:grid;place-items:center;width:21px;height:21px;border-radius:7px;flex:none;color:var(--text-faint);
+  background:var(--card-hover);transition:transform .32s var(--e),color .32s var(--e),background .32s var(--e)}
+.pd-lnk:hover{color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.pd-lnk:hover .go{color:var(--accent);background:transparent;transform:translate(1.5px,-1.5px)}
+.pd-lnk:active{transform:scale(.98)}
+.pd-lnk.empty{color:var(--text-faint);background:transparent;
+  box-shadow:inset 0 0 0 1px transparent;outline:1px dashed var(--border-strong);outline-offset:-1px;padding:0 11px}
+.pd-lnk.empty:hover{color:var(--accent);background:var(--accent-soft);outline-color:var(--accent-line)}
+
+.pd-btn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 11px;border-radius:10px;
+  font-size:12.5px;font-weight:600;color:var(--text-dim);background:transparent;
+  box-shadow:inset 0 0 0 1px var(--border);
+  transition:color .26s var(--e),background .26s var(--e),box-shadow .26s var(--e),transform .26s var(--e)}
+.pd-btn:hover{color:var(--text);background:var(--card-hover);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.pd-btn:active{transform:scale(.98)}
+.pd-btn .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:10.5px;font-weight:700;
+  padding:1.5px 6px;border-radius:999px;background:var(--bg-elevated);color:var(--text-faint);
+  box-shadow:inset 0 0 0 1px var(--border)}
+/* "Este panel tiene algo cargado" se dice con el relleno, no tiñendo el texto:
+   naranja sobre blanco a 12.5px no llega al contraste mínimo. */
+.pd-btn[data-tone="accent"]{color:var(--text);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.pd-btn[data-tone="accent"] .n{color:var(--accent);background:var(--card);box-shadow:none}
+.pd-btn[data-tone="accent"] svg{color:var(--accent)}
+.pd-dotmark{width:6px;height:6px;border-radius:50%;flex:none;margin-left:1px}
+
+.pd-cta{display:inline-flex;align-items:center;gap:9px;height:34px;padding:0 5px 0 14px;border-radius:999px;
+  background:var(--accent);color:#fff;font-size:13px;font-weight:700;letter-spacing:-.012em;flex:none;
+  box-shadow:0 9px 20px -12px var(--accent);transition:transform .3s var(--e),filter .3s var(--e)}
+.pd-cta:hover{filter:brightness(1.08)}
+.pd-cta:active{transform:scale(.98)}
+.pd-cta i{display:grid;place-items:center;width:26px;height:26px;border-radius:999px;flex:none;
+  background:rgba(255,255,255,.20);transition:transform .34s var(--e),background .34s var(--e)}
+.pd-cta:hover i{transform:translateX(2px) scale(1.05);background:rgba(255,255,255,.30)}
+.pd-cta.quiet{background:var(--bg-elevated);color:var(--text);box-shadow:inset 0 0 0 1px var(--border)}
+.pd-cta.quiet i{background:var(--card-hover);color:var(--text-faint)}
+.pd-cta.quiet:hover{filter:none;color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-line)}
+
+/* --- tira de stats: un solo bloque, celdas separadas por pelo --- */
+.pd-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(122px,1fr));gap:1px;padding:1px;
+  background:var(--border);border-radius:16px;overflow:hidden}
+.pd-stat{display:flex;flex-direction:column;gap:6px;padding:13px 14px 14px;text-align:left;background:var(--card);
+  transition:background .26s var(--e)}
+.pd-stat:hover{background:var(--card-hover)}
+.pd-stat .k{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pd-stat .v{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;
+  font-size:23px;font-weight:600;letter-spacing:-.045em;line-height:1}
+.pd-stat .s{font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* --- stepper del ciclo de vida --- */
+.pd-phases{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.pd-ph{display:flex;flex-direction:column;gap:4px;text-align:left;padding:0;background:none;border-radius:10px;
+  transition:opacity .26s var(--e)}
+.pd-ph .bar{position:relative;height:4px;border-radius:999px;background:var(--track);margin-bottom:10px;overflow:hidden}
+.pd-ph .bar > span{position:absolute;inset:0;border-radius:999px;transform-origin:left center;
+  transition:transform .7s var(--e)}
+.pd-ph .nm{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:650;letter-spacing:-.014em;
+  transition:color .24s var(--e)}
+.pd-ph .dt{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-dim)}
+.pd-ph .ct{font-size:11.5px;font-weight:600}
+.pd-ph:not(:disabled){cursor:pointer}
+.pd-ph:not(:disabled):hover .nm{color:var(--accent)}
+.pd-ph:disabled{cursor:default}
+
+.pd-note{display:flex;align-items:flex-start;gap:11px;padding:12px 13px;border-radius:13px;
+  font-size:12.5px;line-height:1.55;color:var(--text-dim)}
+.pd-note .ic{display:grid;place-items:center;width:26px;height:26px;border-radius:9px;flex:none}
+.pd-note b{color:var(--text);font-weight:650}
+
+.pd-mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:1px;padding:1px;
+  background:var(--border);border-radius:13px;overflow:hidden}
+.pd-mini > div,.pd-mini > button{display:flex;flex-direction:column;gap:4px;padding:10px 12px;text-align:left;
+  background:var(--bg-elevated)}
+.pd-mini .k{font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--text-dim)}
+.pd-mini .v{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:15px;font-weight:600;
+  letter-spacing:-.02em}
+.pd-mini button:hover .v{color:var(--accent)}
+
+/* --- listas del detalle (tareas equipo / cliente) --- */
+.pd-list{display:flex;flex-direction:column;gap:1px;padding:1px;background:var(--border);border-radius:14px;overflow:hidden}
+.pd-item{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--card);
+  transition:background .24s var(--e)}
+.pd-item:hover{background:var(--card-hover)}
+.pd-hollow{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:15px 16px;border-radius:14px;
+  outline:1px dashed var(--border-strong);outline-offset:-1px;font-size:12.5px;color:var(--text-faint);line-height:1.5}
+
+/* --- rail derecho: registro de actividad --- */
+.pd-rail{flex:0 0 34%;min-width:312px;max-width:440px;border-left:1px solid var(--border);
+  background:var(--bg-elevated);display:flex;flex-direction:column;height:100%;min-height:0}
+.pd-rail-list{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:9px}
+.pd-entry{position:relative;padding:11px 12px 11px 15px;border-radius:13px;background:var(--card);
+  box-shadow:inset 0 0 0 1px var(--border);transition:background .24s var(--e)}
+.pd-entry:hover{background:var(--card-hover)}
+.pd-entry::before{content:"";position:absolute;left:5px;top:12px;bottom:12px;width:2.5px;border-radius:999px;
+  background:var(--green)}
+.pd-entry.priv::before{background:var(--accent)}
+.pd-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:36px 22px}
+.pd-empty .ic{display:grid;place-items:center;width:46px;height:46px;border-radius:15px;margin-bottom:9px;
+  color:var(--text-faint);background:var(--card);box-shadow:inset 0 0 0 1px var(--border)}
+.pd-empty .t{font-size:13.5px;font-weight:650;color:var(--text-dim)}
+.pd-empty .d{font-size:12.5px;color:var(--text-dim);line-height:1.55;max-width:30ch}
+
+@media (prefers-reduced-motion: reduce){
+  .pd-lnk,.pd-btn,.pd-cta,.pd-back,.pd-ph .bar > span{transition:none}
+  .pd-lnk:hover .go,.pd-cta:hover i,.pd-lnk:active,.pd-btn:active,.pd-cta:active,.pd-back:active{transform:none}
+}
+
+@media (max-width:1080px){
+  .pd-shell{flex-direction:column;overflow-y:auto}
+  .pd-main{flex:0 0 auto;overflow:visible;padding:18px 20px 24px}
+  .pd-rail{flex:0 0 auto;width:100%;max-width:none;min-width:0;height:auto;
+    border-left:none;border-top:1px solid var(--border)}
+  .pd-rail-list{overflow:visible;min-height:0}
+}
+@media (max-width:640px){
+  .pd-main{padding:14px 13px 22px}
+  .pd-console{grid-template-columns:1fr;gap:7px}
+  .pd-console .pd-eyebrow{margin-top:2px}
+  .pd-phases{grid-template-columns:1fr;gap:14px}
+  .pd-lnk,.pd-btn{height:42px}
+  .pd-cta{height:44px}
+  .pd-cta i{width:32px;height:32px}
+}
+
+/* ============================================================================
+   SHELL (sidebar + barra superior) + BARRA DE FILTROS — rediseño 2026-08
+   Mismo dialecto que el listado y el detalle: superficies con anillo
+   (inset box-shadow) en vez de border, una sola curva (--e), y movimiento
+   restringido a transform/opacity. Nada de un tercer lenguaje visual.
+============================================================================ */
+
+/* --- barra de control del panel Proyectos: todo en una fila --- */
+.pj-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+/* el buscador es el elástico de la fila: absorbe el espacio libre y se achica
+   cuando aparecen chips, así el resto de los controles no salta de línea */
+.pj-bar .pj-search{flex:1 1 170px;width:auto;min-width:148px;max-width:300px}
+.pj-bar .pj-seg,.pj-bar .pj-switch,.pj-bar .pj-cta{flex:none}
+
+/* segmentado de estado con indicador deslizante (framer-motion layoutId) */
+.pj-tabs{position:relative;display:inline-flex;gap:2px;padding:3px;border-radius:12px;flex:none;
+  background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border)}
+.pj-tabs > button{position:relative;display:inline-flex;align-items:center;height:32px;padding:0 9px;
+  border-radius:9px;font-size:12.5px;font-weight:600;color:var(--text-faint);white-space:nowrap;
+  transition:color .26s var(--e)}
+.pj-tabs > button:hover{color:var(--text-dim)}
+.pj-tabs > button[aria-selected="true"]{color:var(--text)}
+.pj-tabs .glide{position:absolute;inset:0;border-radius:9px;background:var(--card);
+  box-shadow:inset 0 0 0 1px var(--border),0 1px 2px rgba(0,0,0,.10)}
+.pj-tabs .lb{position:relative;display:inline-flex;align-items:center;gap:7px}
+.pj-tabs .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;
+  color:var(--text-faint);transition:color .26s var(--e)}
+.pj-tabs > button[aria-selected="true"] .n{color:var(--accent)}
+
+/* disparador del panel de filtros + chips de lo que está aplicado */
+.pj-filt{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 13px;border-radius:999px;flex:none;
+  font-size:13px;font-weight:600;color:var(--text-dim);background:var(--bg-elevated);
+  box-shadow:inset 0 0 0 1px var(--border);
+  transition:color .26s var(--e),background .26s var(--e),box-shadow .26s var(--e)}
+.pj-filt:hover{color:var(--text);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.pj-filt[data-on="1"]{color:var(--text);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.pj-filt[data-on="1"] > svg:first-child{color:var(--accent)}
+.pj-filt .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:10.5px;font-weight:700;
+  min-width:17px;height:17px;padding:0 5px;border-radius:999px;display:grid;place-items:center;
+  background:var(--accent);color:#fff}
+.pj-filt .cd{transition:transform .3s var(--e)}
+.pj-filt[aria-expanded="true"] .cd{transform:rotate(180deg)}
+
+.pj-chips{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.pj-chip{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 4px 0 10px;border-radius:999px;
+  font-size:12px;font-weight:600;color:var(--text);background:var(--card);max-width:230px;
+  box-shadow:inset 0 0 0 1px var(--border)}
+.pj-chip .k{color:var(--text-dim);font-weight:600;flex:none}
+.pj-chip .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pj-chip > button{display:grid;place-items:center;width:21px;height:21px;border-radius:999px;flex:none;
+  color:var(--text-faint);transition:color .22s var(--e),background .22s var(--e),transform .22s var(--e)}
+.pj-chip > button:hover{color:var(--red);background:var(--red-soft)}
+.pj-chip > button:active{transform:scale(.9)}
+.pj-clear{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border-radius:999px;flex:none;
+  font-size:12px;font-weight:600;color:var(--text-faint);
+  transition:color .22s var(--e),background .22s var(--e)}
+.pj-clear:hover{color:var(--text);background:var(--card-hover)}
+
+/* panel de filtros */
+.pj-popwrap{position:relative;display:inline-flex;flex:none}
+.pj-pop{position:absolute;top:calc(100% + 9px);left:0;z-index:120;width:min(520px,calc(100vw - 28px));
+  padding:15px;border-radius:18px;background:var(--card);transform-origin:top left;
+  box-shadow:inset 0 0 0 1px var(--border),var(--shadow-lift)}
+.pj-pop .gr{display:grid;grid-template-columns:1fr 1fr;gap:11px 12px}
+.pj-pop .fld{display:flex;flex-direction:column;gap:5px;min-width:0}
+.pj-pop .fld > label{font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--text-dim)}
+.pj-pop .ft{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.pj-pop .ft .hint{font-size:11.5px;color:var(--text-dim)}
+.pj-sel.blk{width:100%;max-width:none;height:36px;font-size:13px;color:var(--text)}
+
+/* --- sidebar --- */
+.sb{flex:none;display:flex;flex-direction:column;overflow:hidden;
+  border-right:1px solid var(--border);background:var(--bg-elevated)}
+.sb-brand{display:flex;align-items:center;gap:11px;height:64px;padding:0 16px;flex:none}
+.sb-mark{width:32px;height:32px;border-radius:9px;flex:none;display:grid;place-items:center;
+  background:var(--accent);color:#fff;font-family:'Bricolage Grotesque',serif;font-weight:800;font-size:17px;
+  box-shadow:0 8px 18px -10px var(--accent)}
+.sb-wm{min-width:0;overflow:hidden}
+.sb-wm b{display:block;font-family:'Bricolage Grotesque',serif;font-weight:700;font-size:15px;line-height:1.05;
+  letter-spacing:-.02em}
+.sb-wm span{display:block;font-size:9.5px;font-weight:600;letter-spacing:.15em;color:var(--text-faint);margin-top:2px}
+.sb-pin{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;flex:none;margin-left:auto;
+  color:var(--text-faint);transition:color .24s var(--e),background .24s var(--e)}
+.sb-pin:hover{color:var(--text);background:var(--card-hover)}
+.sb-pin[data-on="1"]{color:var(--accent);background:var(--accent-soft)}
+
+.sb-nav{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:10px 9px;
+  display:flex;flex-direction:column;gap:2px}
+.sb-cap{padding:13px 12px 5px;font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--text-dim);white-space:nowrap}
+.sb-i{position:relative;display:flex;align-items:center;gap:12px;width:100%;height:38px;padding:0 11px;
+  border-radius:10px;font-size:13.5px;font-weight:600;color:var(--text-dim);white-space:nowrap;text-align:left;
+  transition:color .26s var(--e),background .26s var(--e),box-shadow .26s var(--e)}
+.sb-i > svg{flex:none}
+.sb-i:hover{color:var(--text);background:var(--card-hover)}
+.sb-i[data-on="1"]{color:var(--text);font-weight:700;background:var(--card);box-shadow:inset 0 0 0 1px var(--border)}
+.sb-i[data-on="1"] > svg:first-of-type{color:var(--accent)}
+.sb-i .rail{position:absolute;left:-9px;top:9px;bottom:9px;width:3px;border-radius:0 999px 999px 0;
+  background:var(--accent)}
+.sb-i.mini{justify-content:center;padding:0;gap:0}
+.sb-i.mini .rail{left:-9px}
+.sb-i .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.sb-i .cd{flex:none;opacity:.5;transition:transform .28s var(--e)}
+.sb-i[aria-expanded="true"] .cd{transform:rotate(90deg)}
+.sb-sub{display:flex;flex-direction:column;gap:2px;padding:3px 0 2px 11px;margin-left:20px;
+  border-left:1px solid var(--border)}
+.sb-sub.mini{margin-left:0;padding-left:0;border-left:none}
+.sb-i.sm{height:32px;font-size:13px}
+
+.sb-foot{flex:none;padding:9px;border-top:1px solid var(--border)}
+.sb-u{display:flex;align-items:center;gap:10px;width:100%;padding:6px;border-radius:13px;text-align:left;
+  transition:background .26s var(--e),box-shadow .26s var(--e)}
+.sb-u:hover{background:var(--card-hover);box-shadow:inset 0 0 0 1px var(--border)}
+.sb-u .tx{min-width:0;flex:1;overflow:hidden}
+.sb-u .nm{font-size:13px;font-weight:650;letter-spacing:-.012em;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-u .rl{font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.sb-u > svg:last-child{flex:none;color:var(--text-faint);opacity:.6}
+
+/* --- barra superior --- */
+.hd{height:64px;flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:0 20px;background:var(--bg-elevated);border-bottom:1px solid var(--border)}
+.hd-crumb{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px;color:var(--text-dim)}
+.hd-crumb .rt{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:-.01em;
+  transition:color .24s var(--e)}
+.hd-crumb .rt:hover{color:var(--text-dim)}
+.hd-crumb strong{color:var(--text);font-size:14px;font-weight:650;letter-spacing:-.016em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hd-right{display:flex;align-items:center;gap:8px;flex:none}
+/* dos grupos: lo que informa del SISTEMA (sync, versión) y lo que es del USUARIO */
+.hd-grp{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:999px;
+  background:var(--bg);box-shadow:inset 0 0 0 1px var(--border)}
+.hd-sys{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 11px;border-radius:999px;
+  font-size:12px;color:var(--text-dim);white-space:nowrap}
+.hd-sys .dot{width:6px;height:6px;border-radius:50%;flex:none}
+.hd-ver{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:999px;
+  font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;
+  color:var(--text-dim);transition:color .24s var(--e),background .24s var(--e)}
+.hd-ver:hover{color:var(--text);background:var(--card-hover)}
+.hd-ver[data-new="1"]{padding:0 12px;font-family:'DM Sans',sans-serif;font-size:12.5px;font-weight:700;
+  color:#fff;background:var(--accent);box-shadow:0 8px 18px -11px var(--accent)}
+.hd-ver[data-new="1"]:hover{filter:brightness(1.08);color:#fff;background:var(--accent)}
+.hd-ib{position:relative;display:grid;place-items:center;width:32px;height:32px;border-radius:999px;flex:none;
+  color:var(--text-dim);
+  transition:color .24s var(--e),background .24s var(--e),transform .24s var(--e)}
+.hd-ib:hover{color:var(--text);background:var(--card-hover)}
+.hd-ib:active{transform:scale(.92)}
+.hd-ib.danger:hover{color:var(--red);background:var(--red-soft)}
+/* el toggle de tema no puede saltar al cambiar de icono: la caja es fija y el
+   sol/luna rota dentro de ella */
+.hd-theme > span{display:grid;place-items:center;width:16px;height:16px}
+.hd-lbl{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px;border-radius:999px;
+  font-size:12.5px;font-weight:600;color:var(--text-dim);
+  transition:color .24s var(--e),background .24s var(--e)}
+.hd-lbl:hover{color:var(--text);background:var(--card-hover)}
+.hd-badge{position:absolute;top:1px;right:1px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;
+  display:grid;place-items:center;font-size:9.5px;font-weight:700;color:#fff;
+  box-shadow:0 0 0 2px var(--bg-elevated)}
+
+@media (prefers-reduced-motion: reduce){
+  .sb-i,.sb-u,.hd-ib,.hd-ver,.pj-filt,.pj-chip > button,.pj-tabs > button{transition:none}
+  .hd-ib:active,.pj-chip > button:active{transform:none}
+  .sb-i .cd,.pj-filt .cd{transition:none}
+}
+
+@media (max-width: 980px){
+  .pj-bar .sp{display:none}
+  .pj-search{width:200px}
+}
+@media (max-width: 760px){
+  .pj-bar{gap:8px}
+  /* los cuatro estados siguen siendo un segmentado, pero desplazable: en 375px
+     no entran los cuatro y partirlos en dos líneas rompe la metáfora */
+  .pj-tabs{width:100%;overflow-x:auto;scrollbar-width:none}
+  .pj-tabs::-webkit-scrollbar{display:none}
+  .pj-tabs > button{flex:1 0 auto;justify-content:center;height:38px}
+  .pj-popwrap{flex:1 1 140px}
+  .pj-filt{width:100%;height:42px;justify-content:center}
+  .pj-bar .pj-search{flex:1 1 100%;max-width:none;height:42px}
+  .pj-bar .pj-switch{flex:1 0 auto;min-height:42px}
+  .pj-bar .pj-cta{flex:1 0 auto;justify-content:center}
+  .pj-pop{left:auto;right:0;transform-origin:top right}
+  .pj-pop .gr{grid-template-columns:1fr}
+  .pj-sel.blk{height:42px}
+  .hd{padding:0 12px}
+  .hd-grp.sys{display:none}
+  .hd-lbl span{display:none}
+  .hd-lbl{padding:0;width:32px;justify-content:center}
 }
 `
 
 /* ============================================================================
    3 · UTILITIES
 ============================================================================ */
-const NOW = new Date()   // fecha real de hoy (antes estaba fija en el demo y rompía los cálculos)
+/* Ahora, evaluado en CADA llamada. Antes era `const NOW = new Date()` a nivel de
+   módulo: en una pestaña abierta toda la noche quedaba congelado en el momento de
+   la carga, "Último avance" nunca envejecía y el umbral de 7 días no disparaba. */
+const NOW = () => new Date()
 const daysAgo = (iso) => {
   if (!iso) return null
-  return Math.max(0, Math.round((NOW - new Date(iso)) / 86400000))
+  return Math.max(0, Math.round((NOW() - new Date(iso)) / 86400000))
 }
 const fmtDate = (iso) =>
   iso ? new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const money = (n) => '$' + (n ?? 0).toLocaleString('en-US')
-const pctColor = (p) => (p < 40 ? 'var(--red)' : p <= 70 ? 'var(--accent)' : 'var(--green)')
-/* color de la barra de avance en las cards: verde ≥70, ámbar ≥40, naranja >0, gris en 0 */
-const cardPctColor = (p) => (p >= 70 ? 'var(--green)' : p >= 40 ? 'var(--yellow)' : p > 0 ? 'var(--accent)' : 'var(--text-faint)')
+/* Moneda explícita: los clientes son de EE.UU. y de Argentina, y "$250" es
+   ambiguo. Mismo formato que el mail de aviso de cobro (maintenanceNotice.js). */
+const money = (n) => 'USD ' + Number(n ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })
+/* progressColorVar() devuelve el NOMBRE de la variable ('--green'), no el var(…).
+   Un solo helper de color de avance: antes convivía `pctColor` con los mismos cortes. */
+const progressColor = (p) => `var(${progressColorVar(p)})`
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
 /* detecta viewport de celular (para menú hamburguesa, grid 1 por fila, etc.).
    Usa outerWidth (tamaño físico de la ventana) en vez de innerWidth/matchMedia:
@@ -190,16 +698,7 @@ function useIsMobile(bp = 760) {
   return m
 }
 
-/* identidad visual del proyecto: iniciales (ignorando conectores) + color propio derivado del proyecto */
-const PROJECT_HUES = ['#6366F1', '#14B8A6', '#22C55E', '#F59E0B', '#0EA5E9', '#A855F7', '#EC4899', '#F43F5E', '#FB923C', '#84CC16', '#3B82F6', '#8B5CF6']
 const hexA = (hex, a) => { const h = (hex || '').replace('#', ''); const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16); return `rgba(${r},${g},${b},${a})` }
-const projectInitials = (name) => {
-  const stop = ['de', 'la', 'el', 'y', 'del', 'the', '&', 'los', 'las']
-  const words = (name || '').split(/[\s/·-]+/).filter((w) => w && !stop.includes(w.toLowerCase()))
-  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase()
-  return ((words[0] || name || '?').replace(/[^a-z0-9]/gi, '').slice(0, 2) || '?').toUpperCase()
-}
-const projectHue = (p) => { const s = (p && (p.id || p.name)) || ''; let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return PROJECT_HUES[h % PROJECT_HUES.length] }
 
 /* ============================================================================
    4 · SEED DATA — 5 proyectos reales de Insights Software
@@ -248,8 +747,6 @@ const DEMO_ASSIGN = {
 const TAG_NEW = () => ({ id: uid(), text: 'New', color: '#22C55E' })
 const TAG_NEXT = () => ({ id: uid(), text: 'Next', color: '#3B82F6' })
 
-const mods = (arr) => arr.map((m) => ({ id: uid(), ...m }))
-
 function seedProjects() {
   return [
     {
@@ -257,15 +754,8 @@ function seedProjects() {
       productionUrl: 'https://app.davischamber.com', devUrl: 'https://dev.chamberos.insights.dev',
       githubRepo: 'insights-software/chamber-os', stack: 'Next.js',
       kickoff: 'Chamber OS reemplaza el stack legacy de la Davis Chamber of Commerce (WordPress + GrowthZone) por una plataforma unificada de gestión de membresías, eventos, facturación y comunicaciones. Fase 1: directorio de miembros + portal de auto-gestión. Fase 2: eventos y ticketing. Fase 3: billing recurrente y reportes para el board.',
-      totalModules: 12, deliveredModules: 3, partialModules: 1, pendingModules: 8,
       paidAmount: 11400, totalAmount: 38000, progress: 28,
       lastDeployDate: '2026-06-03',
-      sprints: [
-        { id: uid(), name: 'Fundaciones & Auth', status: 'completado', estimatedDate: '2026-04-15', actualDate: '2026-04-18', modules: mods([{ name: 'Setup Next.js + CI', status: 'completado' }, { name: 'Auth + roles (admin/member)', status: 'completado' }, { name: 'Design system', status: 'completado' }]) },
-        { id: uid(), name: 'Directorio de Miembros', status: 'en progreso', estimatedDate: '2026-06-20', actualDate: null, modules: mods([{ name: 'CRUD miembros', status: 'completado' }, { name: 'Búsqueda + filtros', status: 'en progreso' }, { name: 'Perfil público', status: 'pendiente' }]) },
-        { id: uid(), name: 'Eventos & Ticketing', status: 'pendiente', estimatedDate: '2026-07-18', actualDate: null, modules: mods([{ name: 'Calendario de eventos', status: 'pendiente' }, { name: 'Venta de tickets (Stripe)', status: 'pendiente' }, { name: 'Check-in QR', status: 'pendiente' }]) },
-        { id: uid(), name: 'Billing & Board Reports', status: 'pendiente', estimatedDate: '2026-08-22', actualDate: null, modules: mods([{ name: 'Membresías recurrentes', status: 'pendiente' }, { name: 'Dashboard del board', status: 'pendiente' }, { name: 'Export contable', status: 'pendiente' }]) },
-      ],
       pendingAgency: [
         { id: uid(), title: 'Migrar 650 registros de GrowthZone', priority: 'alta', description: 'Script de import + dedupe de la base legacy.' },
         { id: uid(), title: 'Optimizar búsqueda del directorio', priority: 'media', description: 'Indexar con Postgres full-text search.' },
@@ -285,15 +775,8 @@ function seedProjects() {
       productionUrl: 'https://app.alianzassabias.com', devUrl: 'https://staging.alianzassabias.com',
       githubRepo: 'insights-software/alianzas-afiliados', stack: 'Remix + Stripe Connect',
       kickoff: 'Plataforma de afiliados multinivel para Alianzas Sabias (Vida Sabia). Tracking de referidos en árbol, cálculo de comisiones por nivel, payouts automáticos vía Stripe Connect y panel para cada afiliado con su downline, ventas y comisiones acumuladas.',
-      totalModules: 14, deliveredModules: 7, partialModules: 2, pendingModules: 5,
       paidAmount: 33800, totalAmount: 52000, progress: 65,
       lastDeployDate: '2026-06-09',
-      sprints: [
-        { id: uid(), name: 'Core Afiliados', status: 'completado', estimatedDate: '2026-03-10', actualDate: '2026-03-12', modules: mods([{ name: 'Registro + KYC', status: 'completado' }, { name: 'Árbol de referidos', status: 'completado' }, { name: 'Links de afiliado', status: 'completado' }]) },
-        { id: uid(), name: 'Comisiones', status: 'completado', estimatedDate: '2026-04-20', actualDate: '2026-04-25', modules: mods([{ name: 'Motor de comisiones multinivel', status: 'completado' }, { name: 'Dashboard de afiliado', status: 'completado' }, { name: 'Reportes de venta', status: 'completado' }, { name: 'Integración Shopify', status: 'completado' }]) },
-        { id: uid(), name: 'Payouts', status: 'en progreso', estimatedDate: '2026-06-28', actualDate: null, modules: mods([{ name: 'Stripe Connect onboarding', status: 'completado' }, { name: 'Payouts automáticos', status: 'en progreso' }, { name: 'Historial de retiros', status: 'en progreso' }]) },
-        { id: uid(), name: 'Gamificación & Rankings', status: 'pendiente', estimatedDate: '2026-07-30', actualDate: null, modules: mods([{ name: 'Leaderboard mensual', status: 'pendiente' }, { name: 'Badges & niveles', status: 'pendiente' }, { name: 'Notificaciones push', status: 'pendiente' }]) },
-      ],
       pendingAgency: [
         { id: uid(), title: 'Cerrar conciliación de payouts', priority: 'alta', description: 'Edge case con comisiones de devoluciones parciales.' },
       ],
@@ -312,14 +795,8 @@ function seedProjects() {
       productionUrl: 'https://neumayer-3d.vercel.app', devUrl: 'https://dev-neumayer-3d.vercel.app',
       githubRepo: 'insights-software/green-roofing-3d', stack: 'React + Three.js',
       kickoff: 'Configurador 3D para Green Roofing: el cliente final diseña su techo verde en el navegador (dimensiones, tipo de vegetación, drenaje, accesos) con render WebGL en tiempo real, y recibe un presupuesto automático + PDF técnico. Foco en performance mobile y fidelidad visual del render.',
-      totalModules: 10, deliveredModules: 4, partialModules: 1, pendingModules: 5,
       paidAmount: 17220, totalAmount: 41000, progress: 42,
       lastDeployDate: '2026-05-28',
-      sprints: [
-        { id: uid(), name: 'Engine 3D', status: 'completado', estimatedDate: '2026-04-05', actualDate: '2026-04-11', modules: mods([{ name: 'Escena Three.js base', status: 'completado' }, { name: 'Controles de cámara', status: 'completado' }, { name: 'Iluminación PBR', status: 'completado' }]) },
-        { id: uid(), name: 'Configurador', status: 'en progreso', estimatedDate: '2026-06-18', actualDate: null, modules: mods([{ name: 'Panel de dimensiones', status: 'completado' }, { name: 'Selector de vegetación', status: 'en progreso' }, { name: 'Sistema de drenaje', status: 'pendiente' }]) },
-        { id: uid(), name: 'Presupuesto & PDF', status: 'pendiente', estimatedDate: '2026-07-15', actualDate: null, modules: mods([{ name: 'Motor de pricing', status: 'pendiente' }, { name: 'Export PDF técnico', status: 'pendiente' }, { name: 'Lead capture + CRM', status: 'pendiente' }]) },
-      ],
       pendingAgency: [
         { id: uid(), title: 'Optimizar draw calls en mobile', priority: 'alta', description: 'Instancing de la vegetación para mantener 60fps.' },
         { id: uid(), title: 'LOD para texturas pesadas', priority: 'media', description: 'Cargar texturas progresivas según zoom.' },
@@ -338,15 +815,8 @@ function seedProjects() {
       productionUrl: 'https://hiddenware.onrender.com', devUrl: 'https://dev-hiddenware.onrender.com',
       githubRepo: 'insights-software/hiddenwire-portal', stack: 'Django + React',
       kickoff: 'Portal de clientes para HiddenWire Security Group: gestión de tickets de soporte, monitoreo de instalaciones de seguridad, reportes de SLA y auditoría. Roles granulares (cliente, técnico, admin, auditor) y trazabilidad completa para compliance.',
-      totalModules: 11, deliveredModules: 5, partialModules: 2, pendingModules: 4,
       paidAmount: 25850, totalAmount: 47000, progress: 55,
       lastDeployDate: '2026-05-30',
-      sprints: [
-        { id: uid(), name: 'Auth & Roles', status: 'completado', estimatedDate: '2026-03-22', actualDate: '2026-03-26', modules: mods([{ name: 'RBAC granular', status: 'completado' }, { name: 'Audit log', status: 'completado' }, { name: 'SSO empresarial', status: 'completado' }]) },
-        { id: uid(), name: 'Ticketing', status: 'completado', estimatedDate: '2026-05-02', actualDate: '2026-05-08', modules: mods([{ name: 'CRUD tickets', status: 'completado' }, { name: 'SLA timers', status: 'completado' }, { name: 'Notificaciones email', status: 'en progreso' }]) },
-        { id: uid(), name: 'Monitoreo de Instalaciones', status: 'en progreso', estimatedDate: '2026-06-25', actualDate: null, modules: mods([{ name: 'Mapa de sitios', status: 'en progreso' }, { name: 'Estado de dispositivos', status: 'pendiente' }, { name: 'Alertas en vivo', status: 'pendiente' }]) },
-        { id: uid(), name: 'Reportes SLA', status: 'pendiente', estimatedDate: '2026-07-28', actualDate: null, modules: mods([{ name: 'Dashboard SLA', status: 'pendiente' }, { name: 'Export PDF/CSV', status: 'pendiente' }]) },
-      ],
       pendingAgency: [
         { id: uid(), title: 'Cerrar notificaciones por email', priority: 'media', description: 'Templates + cola de envío con reintentos.' },
         { id: uid(), title: 'Integrar feed de dispositivos IoT', priority: 'alta', description: 'Webhook desde el sistema de monitoreo físico.' },
@@ -366,15 +836,8 @@ function seedProjects() {
       productionUrl: 'https://shockwave-tennis.onrender.com', devUrl: 'https://dev-shockwave.onrender.com',
       githubRepo: 'insights-software/shockwave-tennis', stack: 'React + Node + Postgres',
       kickoff: 'Plataforma integral para Shockwave Tennis Academy: reservas de canchas, gestión de alumnos y coaches, cobros (mensualidades y clases sueltas), y seguimiento de progreso deportivo. Incluye app para coaches y panel para padres con el avance de cada alumno.',
-      totalModules: 13, deliveredModules: 7, partialModules: 2, pendingModules: 4,
       paidAmount: 28600, totalAmount: 44000, progress: 65,
       lastDeployDate: '2026-06-10',
-      sprints: [
-        { id: uid(), name: 'Reservas & Canchas', status: 'completado', estimatedDate: '2026-03-15', actualDate: '2026-03-19', modules: mods([{ name: 'Calendario de canchas', status: 'completado' }, { name: 'Motor de reservas', status: 'completado' }, { name: 'Reglas de disponibilidad', status: 'completado' }]) },
-        { id: uid(), name: 'Alumnos & Coaches', status: 'completado', estimatedDate: '2026-04-26', actualDate: '2026-04-30', modules: mods([{ name: 'Perfiles de alumno', status: 'completado' }, { name: 'Asignación de coaches', status: 'completado' }, { name: 'Grupos & niveles', status: 'completado' }, { name: 'App de coach', status: 'completado' }]) },
-        { id: uid(), name: 'Pagos', status: 'en progreso', estimatedDate: '2026-06-22', actualDate: null, modules: mods([{ name: 'Mensualidades recurrentes', status: 'completado' }, { name: 'Clases sueltas', status: 'en progreso' }, { name: 'Recordatorios de cobro', status: 'en progreso' }]) },
-        { id: uid(), name: 'Progreso Deportivo', status: 'pendiente', estimatedDate: '2026-07-24', actualDate: null, modules: mods([{ name: 'Métricas de evaluación', status: 'pendiente' }, { name: 'Panel para padres', status: 'pendiente' }, { name: 'Reportes de progreso', status: 'pendiente' }]) },
-      ],
       pendingAgency: [
         { id: uid(), title: 'Terminar flujo de clases sueltas', priority: 'alta', description: 'Pago drop-in con confirmación instantánea.' },
         { id: uid(), title: 'Recordatorios automáticos de cobro', priority: 'media', description: 'Cron + WhatsApp/email para mensualidades vencidas.' },
@@ -394,17 +857,8 @@ function seedProjects() {
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
       githubRepo: 'insights-software/irowing', stack: 'React Native · Node.js · OAuth 2.0 Concept2',
       kickoff: 'App de análisis de rendimiento para atletas de remo indoor con máquinas Concept2. El cliente es Leonardo, ex remero de la selección argentina con 15+ años entrenando, que hoy gestiona todo en Google Sheets manualmente. La app descarga los datos de cada remada vía OAuth 2.0 a la API de Concept2, los analiza y los presenta con visualización tipo bolsa de valores (verde/rojo según mejora o baja). Foco motivacional para gente común que empieza a remar. Incluye app móvil para el atleta + dashboard web admin para Leonardo como coach. Soporte post-lanzamiento: 30 días.',
-      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
       paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: '2026-06-09',
       tags: [TAG_NEW()],
-      sprints: [
-        { id: uid(), name: 'S1 · Onboarding & OAuth Concept2', status: 'pendiente', estimatedDate: '2026-06-18', actualDate: null, modules: mods([{ name: 'Onboarding', status: 'pendiente' }, { name: 'Setup', status: 'pendiente' }, { name: 'OAuth 2.0 Concept2', status: 'pendiente' }]) },
-        { id: uid(), name: 'S2 · MVP Logbook + gráficos', status: 'pendiente', estimatedDate: '2026-06-25', actualDate: null, modules: mods([{ name: 'Logbook sincronizado', status: 'pendiente' }, { name: 'Primeros gráficos', status: 'pendiente' }, { name: 'Revisión formal', status: 'pendiente' }]) },
-        { id: uid(), name: 'S3 · Visualización stock market', status: 'pendiente', estimatedDate: '2026-07-02', actualDate: null, modules: mods([{ name: 'Visualización tipo bolsa', status: 'pendiente' }, { name: 'Comparativos semana a semana', status: 'pendiente' }]) },
-        { id: uid(), name: 'S4 · Notificaciones & insights', status: 'pendiente', estimatedDate: '2026-07-09', actualDate: null, modules: mods([{ name: 'Push notifications', status: 'pendiente' }, { name: 'Motor de insights automáticos', status: 'pendiente' }]) },
-        { id: uid(), name: 'S5 · Dashboard admin coach', status: 'pendiente', estimatedDate: '2026-07-16', actualDate: null, modules: mods([{ name: 'Gestión de atletas', status: 'pendiente' }, { name: 'Importación masiva Excel/CSV/Sheets', status: 'pendiente' }]) },
-        { id: uid(), name: 'S6 · Lanzamiento & entrega', status: 'pendiente', estimatedDate: '2026-07-23', actualDate: null, modules: mods([{ name: 'Rankings mundiales Concept2', status: 'pendiente' }, { name: 'QA', status: 'pendiente' }, { name: 'Publicación App Store + Google Play', status: 'pendiente' }, { name: 'Entrega código fuente', status: 'pendiente' }]) },
-      ],
       pendingAgency: [{ id: uid(), title: 'Registrar app developer en Concept2', priority: 'alta', description: 'Credenciales OAuth 2.0 para el entorno de producción.' }],
       pendingClient: [{ id: uid(), title: 'Definir precio total del proyecto', priority: 'alta', description: 'Cerrar alcance y presupuesto con Leonardo.' }, { id: uid(), title: 'Exportar histórico de Google Sheets', priority: 'media', description: 'Para migrar datos iniciales de atletas.' }],
       risks: [{ id: uid(), description: 'Rate limits / disponibilidad de la API Concept2', severity: 'media' }],
@@ -415,17 +869,8 @@ function seedProjects() {
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
       githubRepo: 'insights-software/mcs-cleaning', stack: 'React Native · Node.js · Stripe · Geolocalización',
       kickoff: 'App marketplace de servicios de limpieza del hogar para conectar clientes con trabajadores independientes ("asociados") en EE.UU. José lleva 15 años con esta idea y hoy opera de forma manual. La plataforma permite cotizar/contratar servicios online, los asociados gestionan trabajos en su zona y José controla comisiones y métricas. Incluye calculadora de precios dinámica por tipo de servicio y cobro automático con Stripe (split de comisión). Soporte post-lanzamiento: 30 días.',
-      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
       paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: '2026-06-08',
       tags: [TAG_NEW()],
-      sprints: [
-        { id: uid(), name: 'S1 · Setup · Auth · Roles', status: 'pendiente', estimatedDate: '2026-06-18', actualDate: null, modules: mods([{ name: 'Arquitectura', status: 'pendiente' }, { name: 'Auth', status: 'pendiente' }, { name: 'Roles', status: 'pendiente' }]) },
-        { id: uid(), name: 'S2 · Calculadora & catálogo', status: 'pendiente', estimatedDate: '2026-06-25', actualDate: null, modules: mods([{ name: 'Calculadora de precios dinámica', status: 'pendiente' }, { name: 'Catálogo de servicios', status: 'pendiente' }, { name: 'Revisión formal', status: 'pendiente' }]) },
-        { id: uid(), name: 'S3 · Solicitud & matching', status: 'pendiente', estimatedDate: '2026-07-02', actualDate: null, modules: mods([{ name: 'Flujo de solicitud', status: 'pendiente' }, { name: 'Geolocalización', status: 'pendiente' }, { name: 'Matching con asociados', status: 'pendiente' }]) },
-        { id: uid(), name: 'S4 · Stripe & chat', status: 'pendiente', estimatedDate: '2026-07-09', actualDate: null, modules: mods([{ name: 'Integración Stripe', status: 'pendiente' }, { name: 'Split de comisión', status: 'pendiente' }, { name: 'Chat cliente-asociado', status: 'pendiente' }]) },
-        { id: uid(), name: 'S5 · Dashboard admin', status: 'pendiente', estimatedDate: '2026-07-16', actualDate: null, modules: mods([{ name: 'Dashboard admin', status: 'pendiente' }, { name: 'Métricas', status: 'pendiente' }, { name: 'Reportes', status: 'pendiente' }, { name: 'Sistema de ratings', status: 'pendiente' }]) },
-        { id: uid(), name: 'S6 · IA & lanzamiento', status: 'pendiente', estimatedDate: '2026-07-23', actualDate: null, modules: mods([{ name: 'Asistente IA', status: 'pendiente' }, { name: 'Notificaciones push', status: 'pendiente' }, { name: 'QA', status: 'pendiente' }, { name: 'Publicación App Store + Google Play', status: 'pendiente' }]) },
-      ],
       pendingAgency: [{ id: uid(), title: 'Cuenta Stripe Connect', priority: 'alta', description: 'Para split de comisión entre plataforma y asociados.' }],
       pendingClient: [{ id: uid(), title: 'Definir precio total del proyecto', priority: 'alta', description: 'Cerrar alcance y presupuesto con José.' }, { id: uid(), title: 'Tabla de precios por servicio', priority: 'media', description: 'Insumo para la calculadora dinámica.' }],
       risks: [{ id: uid(), description: 'Compliance de pagos a contratistas en EE.UU.', severity: 'media' }],
@@ -436,15 +881,8 @@ function seedProjects() {
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
       githubRepo: 'insights-software/real-deal-exchange', stack: 'Next.js · TypeScript · Supabase/PostgreSQL · Twilio · Vercel',
       kickoff: 'Ecosistema PropTech para captura, procesamiento, scoring, CRM, comunicaciones y marketplace de oportunidades inmobiliarias en EE.UU. Contacto clave: Jossueth Irigoyen (creative finance, Subject-To, Seller Finance). Importa ~3.000–3.500 registros cada 10–15 días, los enriquece vía APIs, los puntúa con lógica de scoring propia, genera propuestas preliminares con agentes IA y un Human Review Gate. CRM interno con trazabilidad completa y arquitectura multi-tenant lista para escalar a Georgia, Texas y otros estados. Estructura de pago 40/30/30 sobre USD 15.000 + soporte USD 5.000 (3 meses). Plazo: 90 días.',
-      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
       paidAmount: 0, totalAmount: 15000, progress: 0, lastDeployDate: '2026-06-07',
       tags: [TAG_NEW()],
-      sprints: [
-        { id: uid(), name: 'S1 · Discovery & documentación', status: 'pendiente', estimatedDate: '2026-06-26', actualDate: null, modules: mods([{ name: 'Auditoría', status: 'pendiente' }, { name: 'Backlog', status: 'pendiente' }, { name: 'Documentación funcional', status: 'pendiente' }]) },
-        { id: uid(), name: 'S2 · Infraestructura base (Milestone 1)', status: 'pendiente', estimatedDate: '2026-07-11', actualDate: null, modules: mods([{ name: 'DB multi-tenant', status: 'pendiente' }, { name: 'RLS (Row Level Security)', status: 'pendiente' }, { name: 'Repositorio', status: 'pendiente' }]) },
-        { id: uid(), name: 'S3 · CRM & scoring (Milestone 2 · USD 4.500)', status: 'pendiente', estimatedDate: '2026-08-10', actualDate: null, modules: mods([{ name: 'CRM', status: 'pendiente' }, { name: 'Enriquecimiento', status: 'pendiente' }, { name: 'Scoring', status: 'pendiente' }, { name: 'Twilio/WhatsApp', status: 'pendiente' }]) },
-        { id: uid(), name: 'S4 · Marketplace & handover (Milestone 3 · USD 4.500)', status: 'pendiente', estimatedDate: '2026-09-09', actualDate: null, modules: mods([{ name: 'Marketplace pasivo', status: 'pendiente' }, { name: 'Panel admin', status: 'pendiente' }, { name: 'Documentación', status: 'pendiente' }, { name: 'Handover', status: 'pendiente' }]) },
-      ],
       pendingAgency: [{ id: uid(), title: 'Definir lógica de scoring', priority: 'alta', description: 'Reglas de puntuación de oportunidades con Jossueth.' }],
       pendingClient: [{ id: uid(), title: 'Accesos a APIs de enriquecimiento', priority: 'alta', description: 'Credenciales de las fuentes de data inmobiliaria.' }, { id: uid(), title: 'Cuenta Twilio', priority: 'media', description: 'Para SMS/WhatsApp de comunicaciones.' }],
       risks: [{ id: uid(), description: 'Volumen de importación (3k–3.5k cada 10–15 días) y costo de APIs', severity: 'alta' }, { id: uid(), description: 'Complejidad multi-tenant para escalar a otros estados', severity: 'media' }],
@@ -455,15 +893,8 @@ function seedProjects() {
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
       githubRepo: 'insights-software/kintsugi-roadside', stack: 'Next.js · Node.js · Supabase · GPS nativo · Zelle · Vercel',
       kickoff: 'Plataforma integral de emergencias automotrices para conectar clientes con técnicos en campo. Reemplaza una operación sin sistema centralizado. Los clientes solicitan emergencias desde la app, los técnicos reciben y gestionan órdenes como Uber, y Marco controla asignaciones, pagos y métricas. Incluye tracking GPS en tiempo real, asignación manual, cierre de orden con firma digital y fotos antes/después, landing web premium, apps iOS + Android para clientes y técnicos, panel admin, panel cliente B2B/flotas, panel técnico, integración Zelle e IA conversacional. Estructura de pago 50/25/25 sobre USD 8.000. Plazo: 4–5 semanas.',
-      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
       paidAmount: 0, totalAmount: 8000, progress: 0, lastDeployDate: '2026-06-09',
       tags: [TAG_NEW()],
-      sprints: [
-        { id: uid(), name: 'S1 · Onboarding & arquitectura', status: 'pendiente', estimatedDate: '2026-06-18', actualDate: null, modules: mods([{ name: 'Relevamiento', status: 'pendiente' }, { name: 'Arquitectura', status: 'pendiente' }]) },
-        { id: uid(), name: 'S2 · Landing · Auth · Panel admin', status: 'pendiente', estimatedDate: '2026-06-25', actualDate: null, modules: mods([{ name: 'Landing premium', status: 'pendiente' }, { name: 'Auth', status: 'pendiente' }, { name: 'Panel administrador', status: 'pendiente' }, { name: 'Gestión de órdenes', status: 'pendiente' }, { name: 'Revisión formal', status: 'pendiente' }]) },
-        { id: uid(), name: 'S3 · Apps · GPS · Zelle', status: 'pendiente', estimatedDate: '2026-07-06', actualDate: null, modules: mods([{ name: 'App iOS/Android', status: 'pendiente' }, { name: 'Panel cliente', status: 'pendiente' }, { name: 'Panel técnico', status: 'pendiente' }, { name: 'GPS en tiempo real', status: 'pendiente' }, { name: 'Integración Zelle', status: 'pendiente' }]) },
-        { id: uid(), name: 'S4 · IA · Reportes · Lanzamiento', status: 'pendiente', estimatedDate: '2026-07-13', actualDate: null, modules: mods([{ name: 'Chat IA', status: 'pendiente' }, { name: 'Dashboard operativo', status: 'pendiente' }, { name: 'Reportes', status: 'pendiente' }, { name: 'QA', status: 'pendiente' }, { name: 'Publicación', status: 'pendiente' }]) },
-      ],
       pendingAgency: [{ id: uid(), title: 'Definir flujo de asignación manual', priority: 'media', description: 'Reglas de despacho de técnicos por zona.' }],
       pendingClient: [{ id: uid(), title: 'Datos de cuenta Zelle', priority: 'alta', description: 'Para configurar el cobro a clientes.' }, { id: uid(), title: 'Listado de técnicos iniciales', priority: 'media', description: 'Para onboarding del panel técnico.' }],
       risks: [{ id: uid(), description: 'Precisión del GPS nativo en campo', severity: 'media' }],
@@ -474,15 +905,8 @@ function seedProjects() {
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
       githubRepo: 'insights-software/mmd-jewelry', stack: 'Next.js · GSAP · Shopify Storefront API · Tidio',
       kickoff: 'Sitio web e-commerce de joyería con frontend personalizado de diseño editorial conectado a Shopify como backend. Replica una estética tipo Concio Studio: apertura cinematográfica con video, navegación minimalista, about inline, galería con scroll horizontal, tienda con grid infinito y filtros por tipo de joya. La clienta tiene ~50 joyas para vender internacionalmente y hoy maneja todo en Excel. Paleta: blanco roto, dorado arena, rosa palo, vino suave, verde salvia. Plazo: 2–3 semanas.',
-      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
       paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: '2026-06-10',
       tags: [TAG_NEW()],
-      sprints: [
-        { id: uid(), name: 'S1 · Marca & setup Shopify', status: 'pendiente', estimatedDate: '2026-06-18', actualDate: null, modules: mods([{ name: 'Definición de marca', status: 'pendiente' }, { name: 'Setup Shopify', status: 'pendiente' }, { name: 'Arquitectura', status: 'pendiente' }]) },
-        { id: uid(), name: 'S2 · Frontend & GSAP', status: 'pendiente', estimatedDate: '2026-06-25', actualDate: null, modules: mods([{ name: 'Home', status: 'pendiente' }, { name: 'About inline', status: 'pendiente' }, { name: 'Galería scroll horizontal', status: 'pendiente' }, { name: 'Animaciones GSAP', status: 'pendiente' }]) },
-        { id: uid(), name: 'S3 · Tienda headless', status: 'pendiente', estimatedDate: '2026-07-02', actualDate: null, modules: mods([{ name: 'Integración Shopify API', status: 'pendiente' }, { name: 'Grid infinito + filtros', status: 'pendiente' }, { name: 'Página de producto', status: 'pendiente' }]) },
-        { id: uid(), name: 'S4 · Contacto · QA · Deploy', status: 'pendiente', estimatedDate: '2026-07-09', actualDate: null, modules: mods([{ name: 'Contacto', status: 'pendiente' }, { name: 'Chat widget', status: 'pendiente' }, { name: 'QA', status: 'pendiente' }, { name: 'Deploy & entrega', status: 'pendiente' }]) },
-      ],
       pendingAgency: [{ id: uid(), title: 'Definir grilla de galería y transiciones', priority: 'media', description: 'Choreography GSAP de la home y galería.' }],
       pendingClient: [{ id: uid(), title: 'Nombre oficial de marca, dominio y cuenta Shopify', priority: 'alta', description: 'Datos base para arrancar el setup.' }, { id: uid(), title: 'Fotos de productos y logo/firma', priority: 'alta', description: 'Assets de las ~50 joyas + branding.' }, { id: uid(), title: 'Plataforma de chat y moneda principal', priority: 'media', description: 'Confirmar Tidio/WhatsApp y moneda de venta.' }],
       risks: [{ id: uid(), description: 'Definiciones de marca pendientes pueden frenar el arranque', severity: 'media' }],
@@ -492,11 +916,9 @@ function seedProjects() {
       id: 'p11', clientId: 'c4', name: 'HiddenWare App', status: 'active',
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
       githubRepo: '', stack: 'Por definir',
-      kickoff: 'Proyecto planificado para el próximo mes — aún no iniciado. Tenerlo en cuenta para el arranque del siguiente sprint de cartera.',
-      totalModules: 0, deliveredModules: 0, partialModules: 0, pendingModules: 0,
+      kickoff: 'Proyecto planificado para el próximo mes — aún no iniciado. Tenerlo en cuenta para el arranque del próximo ciclo de cartera.',
       paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: null,
       tags: [TAG_NEXT()],
-      sprints: [],
       pendingAgency: [], pendingClient: [], risks: [], chats: [],
     },
   ].map((p) => ({ ...p, assignments: p.assignments || DEMO_ASSIGN[p.id] || { pm: null, dev: null }, tags: p.tags || [] }))
@@ -572,8 +994,8 @@ Cómo proceder:
 ### Paso 6 · Explicar cadencia de comunicación (2-3 min)
 Decirle exactamente cómo se va a comunicar el equipo:
 - **Avances viernes:** todos los viernes mandamos un resumen de qué hicimos esa semana. Según el día que entró al proyecto, el primer avance lo recibe el viernes de esa semana (si fue martes/miércoles/jueves) o el viernes siguiente (si fue lunes).
-- **Durante la semana:** puede haber screenshots, actualizaciones o dudas. Este tiempo lo usamos principalmente para desarrollar, no para meetings. Todo está documentado en el app de sprints.
-- **Sprints en app:** le compartimos un enlace por WhatsApp donde ve todos los sprints en tiempo real. Todo en un mismo lugar, visual y simple.
+- **Durante la semana:** puede haber screenshots, actualizaciones o dudas. Este tiempo lo usamos principalmente para desarrollar, no para meetings. Todo queda documentado en el plan del proyecto.
+- **Plan online:** le compartimos un enlace por WhatsApp donde ve el plan semana a semana y el avance en tiempo real. Todo en un mismo lugar, visual y simple.
 - **WhatsApp:** es nuestro canal rápido si hay algo urgente.
 
 ### Paso 7 · Próximos pasos & cierre (30 seg - 1 min)
@@ -601,10 +1023,10 @@ Ejemplo: Real Deal Exchange AI (necesita investigar qué API usar, cómo extraer
 [ ] Cliente confirma que el scope está OK
 [ ] Se anotaron todas las dudas
 [ ] Se identificaron solicitudes extras (y se aclaró que van por separado)
-[ ] Cliente entiende la cadencia de avances (viernes + sprints)
+[ ] Cliente entiende la cadencia de avances (viernes + plan online)
 [ ] Se capturó la respuesta de motivación (para marketing)
 [ ] Se compartió el enlace de WhatsApp
-[ ] El cliente tiene el enlace de sprints (si aplica)
+[ ] El cliente tiene el enlace del plan (si aplica)
 
 ---
 
@@ -688,7 +1110,7 @@ function migrate(state) {
   seedClients().forEach((c) => { if (!cIds.has(c.id)) state.clients.push(c) })
   const pIds = new Set(state.projects.map((p) => p.id))
   seedProjects().forEach((p) => { if (!pIds.has(p.id)) state.projects.push(p) })
-  // ensure assignments + tags exist, normalize sprint statuses, add description/comments, drop devUrl
+  // ensure assignments + tags exist, drop devUrl y los sprints legacy
   const stripRemoved = (as) => {
     const r = { pm: as?.pm || null, dev: as?.dev || null }
     if (r.pm && REMOVED_MEMBER_IDS.includes(r.pm.userId)) r.pm = null
@@ -696,7 +1118,8 @@ function migrate(state) {
     return r
   }
   state.projects = state.projects.map((p) => {
-    const { devUrl, ...rest } = p   // devUrl eliminado del modelo
+    // devUrl y sprints eliminados del modelo (el avance sale del plan asociado)
+    const { devUrl, sprints, _sprintsImportRDE1, ...rest } = p
     return {
       ...rest,
       kind: rest.kind || 'cliente',   // clasificación: cliente (default) | interno (de Insights)
@@ -717,35 +1140,8 @@ function migrate(state) {
       driveUrl: rest.driveUrl || '',
       clientTasks: rest.clientTasks || [],
       planId: rest.planId ?? null,
-      sprints: (rest.sprints || []).map((s) => ({
-        ...s,
-        status: normSprint(s.status),
-        description: s.description || '',
-        comments: s.comments || [],
-        assigneeIds: s.assigneeIds || [],
-      })),
     }
   })
-  // import de una sola vez: sprints de "Real Deal Exchange AI" (reemplaza los actuales)
-  const RDE = [
-    ['Investigación de extracción de datos', 1, 'en proceso', '2026-07-10'],
-    ['Modelo de datos y backlog', 2, 'pendiente', '2026-07-17'],
-    ['Validación de lógica y plan técnico', 3, 'pendiente', '2026-07-24'],
-    ['Infraestructura base (Hito 1)', 4, 'pendiente', '2026-07-31'],
-    ['Importación y enriquecimiento', 5, 'pendiente', '2026-08-07'],
-    ['SMS outbound y WhatsApp inbound', 6, 'pendiente', '2026-08-14'],
-    ['Revisión formal de Hito 1', 7, 'pendiente', '2026-08-21'],
-    ['Agente de pre-ofertas (Hito 2)', 8, 'pendiente', '2026-08-28'],
-    ['Review Panel, Marketplace y Meta', 9, 'pendiente', '2026-09-04'],
-    ['Revisión formal de Hito 2', 10, 'pendiente', '2026-09-11'],
-    ['Producción y white-label (Hito 3)', 11, 'pendiente', '2026-09-18'],
-    ['Handover completo (Hito 3)', 12, 'pendiente', '2026-09-25'],
-  ]
-  const rde = state.projects.find((p) => p.id === 'p8' || p.name === 'Real Deal Exchange AI')
-  if (rde && !rde._sprintsImportRDE1) {
-    rde.sprints = RDE.map(([name, week, status, d]) => ({ id: 'rde-s' + week, name, status, week, estimatedDate: new Date(d + 'T12:00:00').toISOString(), actualDate: null, assigneeIds: ['u3'], description: '', comments: [] }))
-    rde._sprintsImportRDE1 = true
-  }
   return state
 }
 function loadState() {
@@ -1421,7 +1817,8 @@ const stripRemovedAssign = (as) => {
   return r
 }
 function normalizeProject(p) {
-  const { devUrl, ...rest } = p   // devUrl eliminado del modelo (igual que migrate)
+  // devUrl y sprints eliminados del modelo (igual que migrate)
+  const { devUrl, sprints, _sprintsImportRDE1, ...rest } = p
   return {
     ...rest,
     assignments: stripRemovedAssign(rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null }),
@@ -1429,7 +1826,7 @@ function normalizeProject(p) {
     priority: rest.priority || 'normal',
     createdAt: rest.createdAt || new Date().toISOString(),
     // marca de "último avance" automática: se actualiza al tachar una tarea del
-    // roadmap o terminar un sprint (no depende del log manual de `avances`).
+    // plan asociado (no depende del log manual de `avances`).
     lastProgressAt: rest.lastProgressAt || null,
     avances: rest.avances || [],
     comms: rest.comms || [],
@@ -1444,13 +1841,6 @@ function normalizeProject(p) {
     driveUrl: rest.driveUrl || '',
     clientTasks: rest.clientTasks || [],
     planId: rest.planId ?? null,
-    sprints: (rest.sprints || []).map((s) => ({
-      ...s,
-      status: normSprint(s.status),
-      description: s.description || '',
-      comments: s.comments || [],
-      assigneeIds: s.assigneeIds || [],
-    })),
   }
 }
 const normalizeClient = (c) => c
@@ -1548,13 +1938,13 @@ function Badge({ children, tone = 'neutral' }) {
   const s = map[tone] || map.neutral
   return <span className="tag" style={{ color: s.color, background: s.bg, borderColor: s.bd }}>{children}</span>
 }
-const statusTone = (s) => (s === 'completado' || s === 'delivered' ? 'green' : s === 'en progreso' || s === 'active' ? 'accent' : 'neutral')
 const prioTone = (p) => (p === 'alta' ? 'red' : p === 'media' ? 'yellow' : 'neutral')
 const sevTone = (s) => (s === 'alta' ? 'red' : s === 'media' ? 'yellow' : 'neutral')
 
 /* project status (activo / pausado / entregado) */
 const PROJECT_STATUS = [
-  { key: 'active', label: 'Activo', tone: 'accent', dot: 'var(--accent)' },
+  /* "Activo" en verde: el naranja es el color de marca y de acción, no un estado. */
+  { key: 'active', label: 'Activo', tone: 'green', dot: 'var(--green)' },
   { key: 'pending', label: 'Pendiente', tone: 'blue', dot: 'var(--blue)' },
   { key: 'paused', label: 'Pausado', tone: 'yellow', dot: 'var(--yellow)' },
   { key: 'delivered', label: 'Entregado', tone: 'green', dot: 'var(--green)' },
@@ -1568,17 +1958,6 @@ const PROJECT_PRIORITY = [
   { key: 'baja', label: 'Baja', color: 'var(--blue)', rank: 1 },
 ]
 const projPrioMeta = (p) => PROJECT_PRIORITY.find((x) => x.key === p) || PROJECT_PRIORITY[1]
-
-/* sprint statuses: pendiente (default) · en proceso · pausado · terminado */
-const SPRINT_STATUS = [
-  { key: 'pendiente', label: 'Pendiente', tone: 'neutral', dot: 'var(--text-faint)' },
-  { key: 'en proceso', label: 'En proceso', tone: 'accent', dot: 'var(--accent)' },
-  { key: 'pausado', label: 'Pausado', tone: 'yellow', dot: 'var(--yellow)' },
-  { key: 'terminado', label: 'Terminado', tone: 'green', dot: 'var(--green)' },
-]
-/* normalize legacy values (completado/en progreso) to the new vocabulary */
-const normSprint = (s) => (s === 'completado' ? 'terminado' : s === 'en progreso' ? 'en proceso' : (s || 'pendiente'))
-const sprintMeta = (s) => SPRINT_STATUS.find((x) => x.key === normSprint(s)) || SPRINT_STATUS[0]
 
 /* tipos de call: onboarding · soporte · entrega */
 const CALL_TYPES = [
@@ -1647,7 +2026,7 @@ function latestISO(...isos) {
 }
 /* estado de seguimiento de avance/comunicación de un proyecto (primer registro vs días sin).
    - 'avance' toma el más reciente entre el log manual y `lastProgressAt` (tachar una
-     tarea del roadmap o terminar un sprint cuenta como avance, sin cargar nada a mano).
+     tarea del plan cuenta como avance, sin cargar nada a mano).
    - 'comm' toma el más reciente entre el log manual y `botCommAt` (último mensaje del
      equipo en el grupo de WhatsApp, que reporta el bot). */
 function trackInfo(project, kind, botCommAt) {
@@ -1687,7 +2066,7 @@ function fileToImageDataURL(file, maxW = 1100, quality = 0.82) {
 
 /* fecha estimada de ingreso de proyecto pendiente: chip con color por proximidad */
 const parseLocalDate = (iso) => { if (!iso) return null; const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d) }
-const daysUntil = (iso) => { const dt = parseLocalDate(iso); return dt ? Math.ceil((dt - new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate())) / 86400000) : null }
+const daysUntil = (iso) => { const dt = parseLocalDate(iso); if (!dt) return null; const t = NOW(); return Math.ceil((dt - new Date(t.getFullYear(), t.getMonth(), t.getDate())) / 86400000) }
 const fmtShortDate = (iso) => {
   const dt = parseLocalDate(iso)
   if (!dt) return ''
@@ -1705,7 +2084,7 @@ function PendingDateChip({ date, style }) {
   const col = pendingDateColor(date)
   return (
     <span className="tag" title="Ingreso estimado del proyecto" style={{ color: col, background: 'transparent', borderColor: col, fontWeight: 700, ...style }}>
-      <I.calendar width={12} height={12} /> {fmtShortDate(date)}
+      <I2.calendar width={12} height={12} /> {fmtShortDate(date)}
     </span>
   )
 }
@@ -1805,7 +2184,7 @@ function CommentThread({ comments, onAdd, onDelete, subject, label = 'Comentario
   }
   return (
     <div>
-      <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.comment width={14} height={14} /> {label} ({list.length})</div>
+      <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I2.comment width={14} height={14} /> {label} ({list.length})</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
         {list.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Sin comentarios todavía.</div>}
         {list.map((c) => {
@@ -1816,7 +2195,7 @@ function CommentThread({ comments, onAdd, onDelete, subject, label = 'Comentario
                 {u ? <Avatar user={u} size={22} ring="var(--bg-elevated)" /> : <Avatar empty size={22} ring="var(--bg-elevated)" />}
                 <span style={{ fontSize: 12.5, fontWeight: 600 }}>{u ? u.name : 'Alguien'}</span>
                 <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fmtDate(c.date)}</span>
-                <button className="btn btn-sm btn-ghost" onClick={() => onDelete(c.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
+                <button className="btn btn-sm btn-ghost" onClick={() => onDelete(c.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I2.x width={12} height={12} /></button>
               </div>
               <MentionText text={c.text} style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', display: 'block' }} />
             </div>
@@ -1825,35 +2204,17 @@ function CommentThread({ comments, onAdd, onDelete, subject, label = 'Comentario
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <MentionTextarea value={text} onChange={setText} onEnter={submit} placeholder="Dejá un comentario… @ para etiquetar · Enter envía" style={{ resize: 'none' }} />
-        <button className="btn btn-accent" onClick={submit} style={{ alignSelf: 'stretch' }}><I.send width={15} height={15} /></button>
+        <button className="btn btn-accent" onClick={submit} style={{ alignSelf: 'stretch' }}><I2.send width={15} height={15} /></button>
       </div>
     </div>
   )
 }
 
-/* progress derived live from sprints (keeps overview/detail in sync) */
-function calcProgress(project) {
-  const sprints = project.sprints || []
-  if (!sprints.length) return project.progress ?? 0
-  const done = sprints.filter((s) => normSprint(s.status) === 'terminado').length
-  const inProg = sprints.filter((s) => normSprint(s.status) === 'en proceso').length * 0.5
-  return Math.round(((done + inProg) / sprints.length) * 100)
-}
-/* module counts derived live from sprint tasks */
-function moduleCounts(project) {
-  const mods = (project.sprints || []).flatMap((s) => s.modules || [])
-  return {
-    total: mods.length,
-    delivered: mods.filter((m) => m.status === 'completado').length,
-    partial: mods.filter((m) => m.status === 'en progreso').length,
-    pending: mods.filter((m) => m.status === 'pendiente').length,
-  }
-}
-const MODULE_STATES = ['pendiente', 'en progreso', 'completado']
-const nextModuleStatus = (s) => MODULE_STATES[(MODULE_STATES.indexOf(s) + 1) % MODULE_STATES.length]
-
-/* clickable status badge with a dropdown (activo/pausado/entregado) */
-function StatusMenu({ status, onChange }) {
+/* clickable status badge with a dropdown (activo/pausado/entregado).
+   `compact` = variante de la card de proyecto: sin pastilla, solo el punto (que
+   late si el proyecto está activo) + la etiqueta. El chevron aparece en hover
+   para que se note que es un menú sin ensuciar la card en reposo. */
+function StatusMenu({ status, onChange, compact = false }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState(null)
   const btnRef = useRef(null)
@@ -1870,12 +2231,20 @@ function StatusMenu({ status, onChange }) {
   }
   return (
     <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
+      {compact ? (
+        <button ref={btnRef} onClick={toggle} className="pj-status" title="Cambiar estado" aria-haspopup="menu" aria-expanded={open}>
+          <span className={`pj-dot${status === 'active' ? ' live' : ''}`} style={{ background: meta.dot }} />
+          {meta.label}
+          <I2.chevD className="cv" width={10} height={10} style={{ color: 'var(--text-faint)' }} />
+        </button>
+      ) : (
       <button ref={btnRef} onClick={toggle} title="Cambiar estado">
         <span className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text)', background: 'var(--bg-elevated)', borderColor: 'var(--border)', cursor: 'pointer' }}>
           <span style={{ width: 7, height: 7, borderRadius: 99, background: meta.dot, flexShrink: 0 }} />
-          {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1, color: 'var(--text-faint)' }} />
+          {meta.label}<I2.chevD width={11} height={11} style={{ marginLeft: 1, color: 'var(--text-faint)' }} />
         </span>
       </button>
+      )}
       {open && pos && createPortal(
         <>
           <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
@@ -1884,7 +2253,7 @@ function StatusMenu({ status, onChange }) {
               <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: o.key === status ? 'var(--accent)' : 'var(--text)' }}>
                 <span style={{ width: 8, height: 8, borderRadius: 99, background: o.dot, flexShrink: 0 }} />{o.label}
-                {o.key === status && <I.check width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
+                {o.key === status && <I2.check width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
               </button>
             ))}
           </div>
@@ -1914,7 +2283,7 @@ function PriorityMenu({ value, onChange, size = 16 }) {
   return (
     <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
       <button ref={btnRef} onClick={toggle} title={`Prioridad: ${meta.label}`} style={{ display: 'inline-flex', alignItems: 'center', padding: 4, borderRadius: 8 }} className="row-hover">
-        <I.flag width={size} height={size} style={{ color: meta.color }} />
+        <I2.flag width={size} height={size} style={{ color: meta.color }} />
       </button>
       {open && pos && createPortal(
         <>
@@ -1924,8 +2293,8 @@ function PriorityMenu({ value, onChange, size = 16 }) {
             {PROJECT_PRIORITY.map((o) => (
               <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: o.key === value ? 'var(--accent)' : 'var(--text)' }}>
-                <I.flag width={15} height={15} style={{ color: o.color, flexShrink: 0 }} />{o.label}
-                {o.key === value && <I.check width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
+                <I2.flag width={15} height={15} style={{ color: o.color, flexShrink: 0 }} />{o.label}
+                {o.key === value && <I2.check width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
               </button>
             ))}
           </div>
@@ -1947,17 +2316,17 @@ function CardLinks({ project, onSave }) {
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
       <a href={testing || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!testing) e.preventDefault() }}
-        className="btn btn-sm" title="Abrir testing / deploy" style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', opacity: testing ? 1 : 0.45 }}><I.ext width={14} height={14} /></a>
+        className="btn btn-sm" title="Abrir testing / deploy" style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', opacity: testing ? 1 : 0.45 }}><I2.ext width={14} height={14} /></a>
       <a href={wa || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!wa) e.preventDefault() }}
-        className="btn btn-sm" style={{ justifyContent: 'center', color: wa ? 'var(--green)' : undefined, opacity: wa ? 1 : 0.45 }}><I.whatsapp width={14} height={14} /> WhatsApp</a>
-      <button className="btn btn-sm" onClick={openEdit} title="Editar links" style={{ width: 34, height: 34, padding: 0, justifyContent: 'center' }}><I.pencil width={14} height={14} /></button>
+        className="btn btn-sm" style={{ justifyContent: 'center', color: wa ? 'var(--green)' : undefined, opacity: wa ? 1 : 0.45 }}><I2.whatsapp width={14} height={14} /> WhatsApp</a>
+      <button className="btn btn-sm" onClick={openEdit} title="Editar links" style={{ width: 34, height: 34, padding: 0, justifyContent: 'center' }}><I2.pencil width={14} height={14} /></button>
       <Modal open={editing} onClose={() => setEditing(false)} title="Editar links del proyecto" sub={project.name} width={460}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Field label="Testing / Deploy URL (Render, Vercel…)"><input className="input" value={t} onChange={(e) => setT(e.target.value)} placeholder="https://mi-app.onrender.com" /></Field>
           <Field label="Grupo de WhatsApp"><input className="input" value={w} onChange={(e) => setW(e.target.value)} placeholder="https://chat.whatsapp.com/..." /></Field>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <button className="btn" onClick={() => setEditing(false)}>Cancelar</button>
-            <button className="btn btn-accent" onClick={() => { onSave({ testingUrl: t, whatsappUrl: w }); setEditing(false) }}><I.check width={15} height={15} /> Guardar</button>
+            <button className="btn btn-accent" onClick={() => { onSave({ testingUrl: t, whatsappUrl: w }); setEditing(false) }}><I2.check width={15} height={15} /> Guardar</button>
           </div>
         </div>
       </Modal>
@@ -1996,40 +2365,103 @@ function CardConfigModal({ open, project, onClose, onSave }) {
         <div>
           <div className="label" style={{ marginBottom: 8 }}>Accesos visibles en la tarjeta</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <Toggle k="scope" label="Alcance" sub="PDFs, contexto, calls y notas" Ico={I.pdf} />
-            <Toggle k="testing" label="Testing / deploy" sub="Abre la URL de la app" Ico={I.gear} />
-            <Toggle k="whatsapp" label="WhatsApp" sub="Grupo del cliente" Ico={I.whatsapp} />
+            <Toggle k="scope" label="Alcance" sub="PDFs, contexto, calls y notas" Ico={I2.pdf} />
+            <Toggle k="testing" label="Testing / deploy" sub="Abre la URL de la app" Ico={I2.gear} />
+            <Toggle k="whatsapp" label="WhatsApp" sub="Grupo del cliente" Ico={I2.whatsapp} />
           </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={() => { onSave({ testingUrl: t, whatsappUrl: w, cardActions: show }); onClose() }}><I.check width={15} height={15} /> Guardar</button>
+          <button className="btn btn-accent" onClick={() => { onSave({ testingUrl: t, whatsappUrl: w, cardActions: show }); onClose() }}><I2.check width={15} height={15} /> Guardar</button>
         </div>
       </div>
     </Modal>
   )
 }
 
-/* inline "add task" input used inside expanded sprints */
+/* inline "add task" input reutilizable (tareas del equipo y del cliente) */
 function AddTaskInput({ onAdd }) {
   const [v, setV] = useState('')
   const submit = () => { const t = v.trim(); if (!t) return; onAdd(t); setV('') }
   return (
     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
       <input className="input" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }} placeholder="Agregar tarea…" style={{ padding: '7px 10px', fontSize: 13 }} />
-      <button className="btn btn-sm" onClick={submit}><I.plus width={13} height={13} /> Agregar</button>
+      <button className="btn btn-sm" onClick={submit}><I2.plus width={13} height={13} /> Agregar</button>
     </div>
   )
 }
 
-/* full project editor (meta · URLs · financials · sprints) */
+/* full project editor (meta · URLs · financials) */
+/* Errores de los campos de mantenimiento, EXPLICADOS. Un input rojo mudo no dice
+   por qué el 31 no sirve; el texto sí. Devuelve {} cuando está todo bien. */
+function maintenanceErrors(lc) {
+  const e = {}
+  const raw = lc || {}
+
+  const amt = raw.maintenanceAmount
+  if (amt !== null && amt !== undefined && String(amt).trim() !== '') {
+    const n = Number(amt)
+    if (!Number.isFinite(n)) e.maintenanceAmount = 'Escribí solo el número, sin símbolos ni texto. Por ejemplo: 250'
+    else if (n < 0) e.maintenanceAmount = 'El monto no puede ser negativo. Si todavía no se cobra, dejalo vacío.'
+  }
+
+  const day = raw.billingDay
+  if (day !== null && day !== undefined && String(day).trim() !== '') {
+    const n = Number(day)
+    if (!Number.isInteger(n)) e.billingDay = 'Tiene que ser un día entero del mes. Por ejemplo: 10'
+    else if (n < 1 || n > 28) e.billingDay = 'Elegí un día del 1 al 28: del 29 en adelante no existe en febrero y el cobro se saltearía el mes.'
+  }
+
+  const t = Number(raw.trialDays)
+  if (!Number.isFinite(t) || !Number.isInteger(t)) e.trialDays = 'Escribí la cantidad de días en número entero. Por ejemplo: 30'
+  else if (t < 1) e.trialDays = 'La prueba tiene que durar al menos 1 día.'
+  else if (t > 365) e.trialDays = 'Como mucho 365 días. Si va a durar más que un año, ya es mantenimiento.'
+
+  return e
+}
+
+/* Ayuda o error debajo de un campo. El error lleva icono y role="alert" para que
+   el lector de pantalla lo anuncie sin que el usuario tenga que volver al campo. */
+function FieldNote({ error, hint }) {
+  if (!error && !hint) return null
+  return (
+    <span role={error ? 'alert' : undefined}
+      style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 11.5, lineHeight: 1.45, marginTop: -1, color: error ? 'var(--red)' : 'var(--text-faint)' }}>
+      {error && <I2.alert width={13} height={13} style={{ flex: 'none', marginTop: 1 }} />}
+      <span>{error || hint}</span>
+    </span>
+  )
+}
+
+/* Campos que EditProjectModal edita de verdad. El commit del modal escribe SOLO
+   estos sobre el proyecto vivo (ver saveProject): el modal snapshotea al abrir y
+   nunca resincroniza, así que todo lo que no esté acá —lifecycle.phase, sellos de
+   fase, lastNoticeSentAt, activity, avances, comms, clientTasks, chats…— tiene que
+   releerse del proyecto actual o guardar pisa el estado que decide cuándo se cobra. */
+const PROJECT_FORM_FIELDS = [
+  'name', 'stack', 'status', 'priority', 'kind', 'clientId', 'githubRepo',
+  'productionUrl', 'testingUrl', 'whatsappUrl', 'driveUrl',
+  'totalAmount', 'paidAmount', 'expectedStartDate', 'kickoff',
+]
+/* Del lifecycle, el formulario solo toca los datos del cobro. La fase y sus
+   fechas se mueven desde el detalle con confirmación. */
+const PROJECT_FORM_LIFECYCLE_FIELDS = ['maintenanceAmount', 'billingDay', 'trialDays']
+
 function EditProjectModal({ open, project, clients = [], onClose, onSave, onDelete }) {
   const [d, setD] = useState(null)
-  useEffect(() => { if (open && project) setD(JSON.parse(JSON.stringify(project))) }, [open, project && project.id])
+  useEffect(() => {
+    if (open && project) {
+      const copy = JSON.parse(JSON.stringify(project))
+      copy.lifecycle = normalizeLifecycle(project)   // el proyecto viejo puede no tenerlo
+      setD(copy)
+    }
+  }, [open, project && project.id])
   const set = (k, v) => setD((s) => ({ ...s, [k]: v }))
-  const setSprint = (sid, k, v) => setD((s) => ({ ...s, sprints: s.sprints.map((sp) => sp.id === sid ? { ...sp, [k]: v } : sp) }))
-  const delSprint = (sid) => setD((s) => ({ ...s, sprints: s.sprints.filter((sp) => sp.id !== sid) }))
-  const addSprint = () => setD((s) => ({ ...s, sprints: [...s.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', estimatedDate: NOW.toISOString(), actualDate: null, modules: [] }] }))
+  const setLc = (k, v) => setD((s) => ({ ...s, lifecycle: { ...(s.lifecycle || {}), [k]: v } }))
+  const errs = d ? maintenanceErrors(d.lifecycle) : {}
+  const invalid = Object.keys(errs).length > 0
+  // Guardar normaliza: los inputs guardan texto y la base espera números.
+  const commit = () => { if (invalid) return; onSave({ ...d, lifecycle: normalizeLifecycle(d) }); onClose() }
   return (
     <Modal open={open} onClose={onClose} title="Editar proyecto" sub={d ? d.name : ''} width={780}>
       {d && (
@@ -2065,35 +2497,58 @@ function EditProjectModal({ open, project, clients = [], onClose, onSave, onDele
             <Field label="URL Producción"><input className="input" value={d.productionUrl || ''} onChange={(e) => set('productionUrl', e.target.value)} /></Field>
             <Field label="Testing / Deploy URL"><input className="input" value={d.testingUrl || ''} onChange={(e) => set('testingUrl', e.target.value)} /></Field>
             <Field label="Grupo de WhatsApp"><input className="input" value={d.whatsappUrl || ''} onChange={(e) => set('whatsappUrl', e.target.value)} /></Field>
+            <Field label="Carpeta de Drive (compartida con el cliente)"><input className="input" value={d.driveUrl || ''} onChange={(e) => set('driveUrl', e.target.value)} placeholder="https://drive.google.com/…" /></Field>
             <Field label="Contrato total (USD)"><input className="input mono" type="number" value={d.totalAmount} onChange={(e) => set('totalAmount', Number(e.target.value))} /></Field>
             <Field label="Cobrado / pagado (USD)"><input className="input mono" type="number" value={d.paidAmount} onChange={(e) => set('paidAmount', Number(e.target.value))} /></Field>
             <Field label="Ingreso estimado (si está pendiente)"><input className="input mono" type="date" value={(d.expectedStartDate || '').slice(0, 10)} onChange={(e) => set('expectedStartDate', e.target.value)} /></Field>
           </div>
           <Field label="Kick-off"><textarea className="input" rows={3} value={d.kickoff || ''} onChange={(e) => set('kickoff', e.target.value)} /></Field>
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span className="label">Sprints</span>
-              <button className="btn btn-sm" onClick={addSprint}><I.plus width={13} height={13} /> Agregar sprint</button>
+
+          {/* CICLO DE VIDA — lo único editable a mano. La fase se mueve desde el
+              detalle con confirmación, porque sella una fecha que después factura. */}
+          <div className="pd-panel" style={{ padding: '14px 16px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 4 }}>
+              <I2.phase3 width={15} height={15} style={{ color: 'var(--blue)' }} />
+              <strong style={{ fontSize: 13.5 }}>Prueba y mantenimiento</strong>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {d.sprints.map((sp) => (
-                <div key={sp.id} className="surface" style={{ padding: 9, background: 'var(--bg-elevated)', display: 'grid', gridTemplateColumns: '1fr 130px 140px 34px', gap: 8, alignItems: 'center' }}>
-                  <input className="input" value={sp.name} onChange={(e) => setSprint(sp.id, 'name', e.target.value)} style={{ padding: '7px 9px', fontSize: 13 }} />
-                  <select className="input" value={normSprint(sp.status)} onChange={(e) => setSprint(sp.id, 'status', e.target.value)} style={{ padding: '7px 9px', fontSize: 13 }}>
-                    {SPRINT_STATUS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                  </select>
-                  <input className="input mono" type="date" value={(sp.estimatedDate || '').slice(0, 10)} onChange={(e) => setSprint(sp.id, 'estimatedDate', e.target.value ? new Date(e.target.value).toISOString() : null)} style={{ padding: '7px 9px', fontSize: 12 }} />
-                  <button className="btn btn-sm btn-ghost" onClick={() => delSprint(sp.id)} title="Eliminar sprint" style={{ color: 'var(--red)', padding: 7 }}><I.trash width={14} height={14} /></button>
-                </div>
-              ))}
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.55, marginBottom: 13 }}>
+              Los datos del cobro. La fase del proyecto se cambia desde el detalle, con confirmación.
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 8 }}>Las tareas de cada sprint se editan desde la tabla de Sprints (clic en un sprint para expandir y agregar/renombrar/cambiar estado).</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12 }}>
+              <Field label="Monto mensual (USD)">
+                <input className="input mono" inputMode="decimal" placeholder="Todavía sin definir"
+                  aria-invalid={!!errs.maintenanceAmount}
+                  value={d.lifecycle?.maintenanceAmount ?? ''}
+                  onChange={(e) => setLc('maintenanceAmount', e.target.value === '' ? null : e.target.value)}
+                  style={errs.maintenanceAmount ? { borderColor: 'var(--red)' } : undefined} />
+                <FieldNote error={errs.maintenanceAmount} hint="Lo que se le cobra al cliente cada mes." />
+              </Field>
+              <Field label="Día de cobro">
+                <input className="input mono" inputMode="numeric" placeholder="Ej: 10"
+                  aria-invalid={!!errs.billingDay}
+                  value={d.lifecycle?.billingDay ?? ''}
+                  onChange={(e) => setLc('billingDay', e.target.value === '' ? null : e.target.value)}
+                  style={errs.billingDay ? { borderColor: 'var(--red)' } : undefined} />
+                <FieldNote error={errs.billingDay} hint="Del 1 al 28, para que exista en todos los meses." />
+              </Field>
+              <Field label="Días de prueba gratis">
+                <input className="input mono" inputMode="numeric"
+                  aria-invalid={!!errs.trialDays}
+                  value={d.lifecycle?.trialDays ?? ''}
+                  onChange={(e) => setLc('trialDays', e.target.value === '' ? '' : e.target.value)}
+                  style={errs.trialDays ? { borderColor: 'var(--red)' } : undefined} />
+                <FieldNote error={errs.trialDays} hint="Cuánto dura la fase 2 antes de empezar a cobrar." />
+              </Field>
+            </div>
           </div>
+
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-            {onDelete ? <button className="btn" onClick={() => { if (window.confirm(`¿Eliminar el proyecto "${d.name}"? Se borran sus sprints, registro y datos. No se puede deshacer.`)) { onDelete(d.id); onClose() } }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I.trash width={15} height={15} /> Eliminar proyecto</button> : <span />}
-            <div style={{ display: 'flex', gap: 10 }}>
+            {onDelete ? <button className="btn" onClick={() => { if (window.confirm(`¿Eliminar el proyecto "${d.name}"? Se borra su registro y sus datos. No se puede deshacer.`)) { onDelete(d.id); onClose() } }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I2.trash width={15} height={15} /> Eliminar proyecto</button> : <span />}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {invalid && <span style={{ fontSize: 11.5, color: 'var(--red)' }}>Revisá los campos marcados para poder guardar.</span>}
               <button className="btn" onClick={onClose}>Cancelar</button>
-              <button className="btn btn-accent" onClick={() => { onSave(d); onClose() }}><I.check width={15} height={15} /> Guardar cambios</button>
+              <button className="btn btn-accent" onClick={commit} disabled={invalid}
+                style={invalid ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}><I2.check width={15} height={15} /> Guardar cambios</button>
             </div>
           </div>
         </div>
@@ -2102,7 +2557,7 @@ function EditProjectModal({ open, project, clients = [], onClose, onSave, onDele
   )
 }
 function Progress({ value, height = 8, showLabel = false, color }) {
-  const c = color || pctColor(value)
+  const c = color || progressColor(value)
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
       <div style={{ flex: 1, height, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}>
@@ -2151,7 +2606,7 @@ function Avatar({ user, size = 28, ring = 'var(--card)', title, onClick, badge, 
   if (empty || !user) {
     return (
       <Tag title={title || 'Asignar'} onClick={onClick} style={{ ...common, background: 'var(--bg-elevated)', border: `2px dashed var(--border-strong)`, color: 'var(--text-faint)' }}>
-        <I.plus width={Math.round(size * 0.5)} height={Math.round(size * 0.5)} />
+        <I2.plus width={Math.round(size * 0.5)} height={Math.round(size * 0.5)} />
       </Tag>
     )
   }
@@ -2179,7 +2634,7 @@ function AssignMenu({ slot, assignment, team, onChange, onClose, pos }) {
         <div className="label" style={{ marginBottom: 8 }}>Asignar {slot === 'pm' ? 'PM' : 'Dev'}</div>
         <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Rol (ej: Lead Dev, Tech Lead…)" style={{ padding: '7px 9px', fontSize: 12.5, marginBottom: 7 }} />
         <div style={{ position: 'relative', marginBottom: 7 }}>
-          <I.search width={13} height={13} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-faint)' }} />
+          <I2.search width={13} height={13} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-faint)' }} />
           <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona…" style={{ padding: '7px 9px 7px 28px', fontSize: 12.5 }} autoFocus />
         </div>
         <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -2187,14 +2642,14 @@ function AssignMenu({ slot, assignment, team, onChange, onClose, pos }) {
             <button key={u.id} className="row-hover" onClick={() => pick(u.id)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 7px', borderRadius: 8, width: '100%', textAlign: 'left' }}>
               <Avatar user={u} size={24} ring="var(--card)" />
               <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{u.name}</span>
-              {assignment?.userId === u.id && <I.check width={14} height={14} style={{ color: 'var(--accent)' }} />}
+              {assignment?.userId === u.id && <I2.check width={14} height={14} style={{ color: 'var(--accent)' }} />}
             </button>
           ))}
           {filtered.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-faint)', padding: '6px 7px' }}>Sin resultados</div>}
         </div>
         {assignment && (
           <button className="btn btn-sm btn-ghost" onClick={() => { onChange(null); onClose() }} style={{ marginTop: 8, color: 'var(--red)', width: '100%', justifyContent: 'center' }}>
-            <I.x width={13} height={13} /> Quitar asignación
+            <I2.x width={13} height={13} /> Quitar asignación
           </button>
         )}
       </div>
@@ -2298,13 +2753,13 @@ function ProjectTags({ tags, onChange, size = 'sm' }) {
           {t.text}
           {hoverId === t.id && (
             <span onClick={(e) => { e.stopPropagation(); remove(t.id) }} title="Eliminar" style={{ display: 'inline-flex', marginLeft: 1 }}>
-              <I.x width={11} height={11} />
+              <I2.x width={11} height={11} />
             </span>
           )}
         </span>
       ))}
       <button onClick={startNew} title="Agregar etiqueta" className="tag" style={{ cursor: 'pointer', color: 'var(--text-faint)', background: 'var(--bg-elevated)', borderColor: 'var(--border)', padding: '3px 6px' }}>
-        <I.plus width={11} height={11} />
+        <I2.plus width={11} height={11} />
       </button>
 
       {editId && (
@@ -2320,423 +2775,10 @@ function ProjectTags({ tags, onChange, size = 'sm' }) {
             </div>
             <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end' }}>
               <button className="btn btn-sm" onClick={close}>Cancelar</button>
-              <button className="btn btn-sm btn-accent" onClick={save}><I.check width={13} height={13} /> Guardar</button>
+              <button className="btn btn-sm btn-accent" onClick={save}><I2.check width={13} height={13} /> Guardar</button>
             </div>
           </div>
         </>
-      )}
-    </div>
-  )
-}
-
-/* correo del cliente en la tarjeta: se ve a simple vista y se puede cargar/editar
-   a mano con un click (sin abrir el proyecto). Guarda en client.email. */
-function ClientEmailField({ email, onSave }) {
-  const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState(email || '')
-  useEffect(() => { setVal(email || '') }, [email])
-
-  const commit = () => {
-    setEditing(false)
-    const next = val.trim()
-    if (next !== (email || '')) onSave(next)
-  }
-
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        className="input mono"
-        type="email"
-        value={val}
-        placeholder="correo@cliente.com"
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => setVal(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur()
-          if (e.key === 'Escape') { setVal(email || ''); setEditing(false) }
-        }}
-        style={{ padding: '5px 8px', fontSize: 12.5, height: 28 }}
-      />
-    )
-  }
-  return (
-    <button
-      onClick={(e) => { e.stopPropagation(); setEditing(true) }}
-      title="Editar correo del cliente"
-      className="btn btn-sm btn-ghost"
-      style={{ justifyContent: 'flex-start', gap: 6, padding: '2px 0', height: 'auto', fontSize: 12.5, color: email ? 'var(--text-dim)' : 'var(--text-faint)', maxWidth: '100%' }}>
-      <I.mail width={13} height={13} style={{ flexShrink: 0 }} />
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email || 'Agregar correo del cliente'}</span>
-    </button>
-  )
-}
-
-/* ============================================================================
-   9c · SPRINTS — status dropdown · detail modal · table/kanban board
-============================================================================ */
-/* clickable sprint-status badge with dropdown (pendiente/en proceso/pausado/terminado) */
-function SprintStatusBadge({ status, onChange, full }) {
-  const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState(null)
-  const btnRef = useRef(null)
-  const meta = sprintMeta(status)
-  const tint = (tone) => ({ color: `var(--${tone === 'neutral' ? 'text-dim' : tone})`, bg: tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${tone}-soft)`, bd: tone === 'accent' ? 'var(--accent-line)' : tone === 'neutral' ? 'var(--border)' : 'transparent' })
-  const s = tint(meta.tone)
-  const menuH = SPRINT_STATUS.length * 38 + 12
-  const toggle = (e) => {
-    e.stopPropagation()
-    if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect()
-      const down = r.bottom + menuH <= window.innerHeight
-      setPos({ left: r.left, top: down ? r.bottom + 4 : Math.max(8, r.top - menuH - 4) })
-    }
-    setOpen((v) => !v)
-  }
-  return (
-    <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
-      <button ref={btnRef} onClick={toggle} title="Cambiar estado">
-        <span className="tag" style={{ cursor: 'pointer', color: s.color, background: s.bg, borderColor: s.bd, minWidth: full ? 96 : 0, justifyContent: 'center' }}>
-          {meta.label}<I.chevD width={11} height={11} style={{ marginLeft: 1 }} />
-        </span>
-      </button>
-      {open && pos && createPortal(
-        <>
-          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
-          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, minWidth: 150, boxShadow: 'var(--shadow)' }}>
-            {SPRINT_STATUS.map((o) => (
-              <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: normSprint(status) === o.key ? 'var(--accent)' : 'var(--text)' }}>
-                <span style={{ width: 8, height: 8, borderRadius: 99, background: o.dot, flexShrink: 0 }} />{o.label}
-                {normSprint(status) === o.key && <I.check width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
-              </button>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
-    </span>
-  )
-}
-
-/* sprint detail card: estado · semana · asignados · fecha · descripción · comentarios */
-function SprintDetailModal({ open, sprint, team, defaultId, onClose, onPatch }) {
-  if (!sprint) return <Modal open={open} onClose={onClose} title="Sprint" />
-  return (
-    <Modal open={open} onClose={onClose} title={sprint.name} sub="Detalle del sprint" width={640}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="label">Estado</span><SprintStatusBadge status={sprint.status} onChange={(v) => onPatch({ status: v })} /></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="label">Semana</span>
-            <input type="number" min="1" className="input mono" value={sprint.week || 1} onChange={(e) => onPatch({ week: Math.max(1, Number(e.target.value) || 1) })} style={{ width: 64, padding: '6px 8px', fontSize: 12.5 }} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="label">Fecha estimada</span>
-            <input type="date" className="input mono" value={(sprint.estimatedDate || '').slice(0, 10)} onChange={(e) => onPatch({ estimatedDate: e.target.value ? new Date(e.target.value).toISOString() : null })} style={{ width: 'auto', padding: '6px 9px', fontSize: 12.5 }} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="label">Asignados</span>
-          <SprintAssignees ids={sprint.assigneeIds} team={team || []} defaultId={defaultId} onChange={(a) => onPatch({ assigneeIds: a })} size={28} />
-          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Por defecto el developer de la tarjeta; podés sumar más.</span>
-        </div>
-        <Field label="Nombre del sprint"><input className="input" value={sprint.name} onChange={(e) => onPatch({ name: e.target.value })} /></Field>
-        <Field label="Explicación detallada"><textarea className="input" rows={4} value={sprint.description || ''} onChange={(e) => onPatch({ description: e.target.value })} placeholder="Describí el alcance, objetivos y notas del sprint…" /></Field>
-
-        <CommentThread comments={sprint.comments} subject={`el sprint "${sprint.name}"`}
-          onAdd={(c) => onPatch({ comments: [...(sprint.comments || []), c] })}
-          onDelete={(id) => onPatch({ comments: (sprint.comments || []).filter((x) => x.id !== id) })} />
-      </div>
-    </Modal>
-  )
-}
-
-/* sprint board: table (drag to reorder) or kanban (drag between status columns) */
-/* avatares (solapados) de los developers asignados a un sprint; editable. Default = dev de la tarjeta */
-function SprintAssignees({ ids, team, defaultId, onChange, size = 24 }) {
-  const [menu, setMenu] = useState(false)
-  const [pos, setPos] = useState(null)
-  const btnRef = useRef(null)
-  const list = (ids && ids.length) ? ids : (defaultId ? [defaultId] : [])
-  const users = list.map((id) => team.find((u) => u.id === id)).filter(Boolean)
-  const toggle = (e) => { e.stopPropagation(); if (!menu && btnRef.current) { const r = btnRef.current.getBoundingClientRect(); setPos({ left: Math.min(Math.max(8, r.left), window.innerWidth - 228), top: r.bottom + 6 }) } setMenu((v) => !v) }
-  const toggleUser = (uid2) => { const next = list.includes(uid2) ? list.filter((x) => x !== uid2) : [...list, uid2]; onChange(next) }
-  return (
-    <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex' }}>
-      <button ref={btnRef} onClick={toggle} title="Asignar developers" className="row-hover" style={{ display: 'inline-flex', alignItems: 'center', padding: 2, borderRadius: 8 }}>
-        {users.length === 0 ? <Avatar empty size={size} ring="var(--card)" /> : users.map((u, i) => (
-          <span key={u.id} style={{ marginLeft: i === 0 ? 0 : -Math.round(size * 0.32), position: 'relative', zIndex: users.length - i }}><Avatar user={u} size={size} ring="var(--card)" title={u.name} /></span>
-        ))}
-      </button>
-      {menu && pos && createPortal(<>
-        <div onClick={(e) => { e.stopPropagation(); setMenu(false) }} style={{ position: 'fixed', inset: 0, zIndex: 300 }} />
-        <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 301, width: 220, padding: 6, boxShadow: 'var(--shadow)', maxHeight: 280, overflowY: 'auto' }}>
-          <div className="label" style={{ padding: '4px 8px 6px' }}>Developers del sprint</div>
-          {team.map((u) => { const on = list.includes(u.id); return (
-            <button key={u.id} className="row-hover" onClick={() => toggleUser(u.id)} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '6px 8px', borderRadius: 8 }}>
-              <Avatar user={u} size={22} ring="var(--card)" /><span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{u.name}</span>{on && <I.check width={14} height={14} style={{ color: 'var(--accent)' }} />}
-            </button>
-          )})}
-        </div>
-      </>, document.body)}
-    </span>
-  )
-}
-
-/* parsea texto pegado con el formato: "# -- Nombre -- Sem N -- Asignado -- Estado -- DD/MM/YYYY" */
-function parseSprintImport(text, team) {
-  const out = []
-  const normStatus = (s) => { const x = (s || '').toLowerCase(); if (/proceso|progreso|curso|haciendo/.test(x)) return 'en proceso'; if (/termin|hecho|complet|listo|finaliz/.test(x)) return 'terminado'; if (/pausa|frenad|espera/.test(x)) return 'pausado'; return 'pendiente' }
-  const findUser = (name) => { const n = (name || '').toLowerCase().trim(); if (!n) return null; return team.find((u) => u.name && (u.name.toLowerCase() === n || u.name.toLowerCase().includes(n) || n.includes(u.name.toLowerCase()))) || null }
-  const parseDate = (d) => {
-    const s = (d || '').trim()
-    let m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/) // DD/MM/YYYY
-    if (m) { let yy = m[3]; if (yy.length === 2) yy = '20' + yy; return new Date(`${yy}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}T12:00:00`).toISOString() }
-    m = s.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/) // YYYY-MM-DD
-    if (m) return new Date(`${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}T12:00:00`).toISOString()
-    return null
-  }
-  for (const raw of (text || '').split('\n')) {
-    const line = raw.trim()
-    if (!line) continue
-    if (/nombre/i.test(line) && /(semana|estado|estimad|asignad)/i.test(line)) continue // header
-    let parts = line.split(/\s*--\s*|\t+|\s*\|\s*/).map((x) => x.trim()).filter((x) => x !== '')
-    if (parts.length < 2) continue
-    if (/^\d+$/.test(parts[0]) && parts.length > 2) parts = parts.slice(1) // saca el "#"
-    const [name, weekRaw, assigneeRaw, statusRaw, dateRaw] = parts
-    if (!name) continue
-    const wm = String(weekRaw || '').match(/\d+/)
-    const u = findUser(assigneeRaw)
-    out.push({ name, week: wm ? Number(wm[0]) : null, assigneeName: (assigneeRaw || '').trim(), assigneeUser: u, assigneeIds: u ? [u.id] : [], status: normStatus(statusRaw), estimatedDate: parseDate(dateRaw), dateStr: (dateRaw || '').trim() })
-  }
-  return out
-}
-
-const IMPORT_EXAMPLE = `# -- Nombre -- Semana -- Asignado -- Estado -- Estimado
-1 -- Investigación de datos -- Sem 1 -- Manuel Navarro -- En proceso -- 10/07/2026
-2 -- Modelo de datos -- Sem 2 -- Manuel Navarro -- Pendiente -- 17/07/2026`
-
-function ImportSprintsModal({ open, team, defaultDevId, hasSprints, onClose, onImport }) {
-  const [text, setText] = useState('')
-  const [replace, setReplace] = useState(true)
-  useEffect(() => { if (open) { setText(''); setReplace(true) } }, [open])
-  const parsed = parseSprintImport(text, team)
-  const unmatched = parsed.filter((r) => r.assigneeName && !r.assigneeUser).map((r) => r.assigneeName)
-  const create = () => {
-    if (!parsed.length) return
-    const list = parsed.map((r, i) => ({ id: uid(), name: r.name, status: r.status, week: r.week || (i + 1), estimatedDate: r.estimatedDate || NOW.toISOString(), actualDate: null, assigneeIds: r.assigneeIds.length ? r.assigneeIds : (defaultDevId ? [defaultDevId] : []), description: '', comments: [] }))
-    onImport(list, replace)
-    onClose()
-  }
-  return (
-    <Modal open={open} onClose={onClose} title="Importar sprints" sub="Pegá la lista y revisá la vista previa antes de crear" width={720}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.6, background: 'var(--bg-elevated)', padding: 12, borderRadius: 10, border: '1px solid var(--border)' }}>
-          Formato (una fila por sprint, columnas separadas por <span className="mono">--</span>):<br />
-          <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 11.5 }}># -- Nombre -- Semana -- Asignado -- Estado -- DD/MM/YYYY</span>
-        </div>
-        <Field label="Pegá acá los sprints">
-          <textarea className="input mono" rows={7} value={text} onChange={(e) => setText(e.target.value)} placeholder={IMPORT_EXAMPLE} style={{ resize: 'vertical', fontSize: 12.5, lineHeight: 1.5 }} />
-        </Field>
-
-        <div>
-          <div className="label" style={{ marginBottom: 8 }}>Vista previa ({parsed.length} sprint{parsed.length === 1 ? '' : 's'})</div>
-          {parsed.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--text-faint)', padding: '8px 2px' }}>Pegá la lista arriba para ver cómo va a quedar.</div>
-          ) : (
-            <div className="surface" style={{ overflow: 'auto', maxHeight: 260 }}>
-              <table>
-                <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>{['#', 'Nombre', 'Semana', 'Asignado', 'Estado', 'Estimada'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '9px 12px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600, position: 'sticky', top: 0, background: 'var(--card)' }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {parsed.map((r, i) => { const m = sprintMeta(r.status); return (
-                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '9px 12px' }} className="mono">{i + 1}</td>
-                      <td style={{ padding: '9px 12px', fontWeight: 600, fontSize: 13 }}>{r.name}</td>
-                      <td style={{ padding: '9px 12px', fontSize: 12.5, color: 'var(--text-dim)' }}>Sem {r.week || (i + 1)}</td>
-                      <td style={{ padding: '9px 12px' }}>{r.assigneeUser ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Avatar user={r.assigneeUser} size={20} ring="var(--card)" /><span style={{ fontSize: 12.5 }}>{r.assigneeUser.name}</span></span> : <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }} title="No coincide con ningún miembro — se usará el dev de la tarjeta">{r.assigneeName || '—'} {r.assigneeName ? '⚠' : ''}</span>}</td>
-                      <td style={{ padding: '9px 12px' }}><span className="tag" style={{ color: `var(--${m.tone === 'neutral' ? 'text-dim' : m.tone === 'accent' ? 'accent' : m.tone})`, background: m.tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${m.tone}-soft)`, borderColor: 'transparent' }}>{m.label}</span></td>
-                      <td style={{ padding: '9px 12px', fontSize: 12, color: r.estimatedDate ? 'var(--text-dim)' : 'var(--red)' }} className="mono">{r.estimatedDate ? fmtDate(r.estimatedDate) : (r.dateStr ? 'fecha ?' : '—')}</td>
-                    </tr>
-                  )})}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {unmatched.length > 0 && <div style={{ fontSize: 12, color: 'var(--yellow)', marginTop: 8 }}>⚠ No encontré a: {[...new Set(unmatched)].join(', ')}. A esos sprints se les va a asignar el developer de la tarjeta (podés cambiarlo después).</div>}
-        </div>
-
-        {hasSprints && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, cursor: 'pointer' }}>
-            <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
-            <span>Reemplazar los sprints actuales <span style={{ color: 'var(--text-faint)' }}>(si lo destildás, se agregan a los existentes)</span></span>
-          </label>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={create} disabled={!parsed.length}><I.check width={15} height={15} /> Crear {parsed.length || ''} sprint{parsed.length === 1 ? '' : 's'}</button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
-function SprintBoard({ project, patch, onOpenSprint, linkedPlan, patchPlan }) {
-  const { data, logActivity } = useApp()
-  const [boardView, setBoardView] = useState('table')
-  const [dragId, setDragId] = useState(null)
-  const [overId, setOverId] = useState(null)
-  const [weekFilter, setWeekFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('encurso')   // encurso (default, archiva terminados) | terminados | todos
-  const [importOpen, setImportOpen] = useState(false)
-  const sprints = project.sprints || []
-  const team = data.team || []
-  const devId = project.assignments?.dev?.userId || null
-  const weekOf = (s, i) => s.week || (i + 1)
-  const weeks = [...new Set(sprints.map((s, i) => weekOf(s, i)))].sort((a, b) => a - b)
-  const setSprint = (sid, fields) => {
-    const prev = sprints.find((s) => s.id === sid)
-    const becomingDone = !!fields.status && normSprint(fields.status) === 'terminado' && prev && normSprint(prev.status) !== 'terminado'
-    // terminar un sprint también cuenta como "último avance" del proyecto
-    patch((p) => ({ ...p, ...(becomingDone ? { lastProgressAt: new Date().toISOString() } : {}), sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
-    if (becomingDone && logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${prev.name}" de ${project.name}` })
-    // Sync sprint→plan: entrar/salir de "terminado" marca/desmarca toda la semana apareada.
-    // Usa setWeekAllDone (no toggle) → idempotente, sin loop con el toggle de tareas.
-    if (fields.status && linkedPlan && patchPlan) {
-      const idx = sprints.findIndex((s) => s.id === sid)
-      const weekN = (sprints[idx] && sprints[idx].week) || (idx + 1)
-      const nextDone = normSprint(fields.status) === 'terminado'
-      const prevDone = normSprint(prev && prev.status) === 'terminado'
-      if (nextDone !== prevDone) {
-        patchPlan(linkedPlan.id, (p) => ({ ...p, weeks: (p.weeks || []).map((w) => w.n === weekN ? setWeekAllDone(w, nextDone) : w) }))
-      }
-    }
-  }
-  const addSprint = () => { patch((p) => ({ ...p, sprints: [...p.sprints, { id: uid(), name: 'Nuevo sprint', status: 'pendiente', week: (p.sprints.length + 1), estimatedDate: NOW.toISOString(), actualDate: null, assigneeIds: devId ? [devId] : [], description: '', comments: [] }] })); logActivity && logActivity({ type: 'sprint-add', text: `agregó un sprint a ${project.name}` }) }
-
-  const reorder = (fromId, toId) => {
-    if (fromId === toId) return
-    patch((p) => {
-      const arr = [...p.sprints]
-      const from = arr.findIndex((s) => s.id === fromId)
-      const to = arr.findIndex((s) => s.id === toId)
-      if (from < 0 || to < 0) return p
-      const [moved] = arr.splice(from, 1)
-      arr.splice(to, 0, moved)
-      return { ...p, sprints: arr }
-    })
-  }
-  const doneCount = sprints.filter((s) => normSprint(s.status) === 'terminado').length
-  const statusOk = (s) => { const done = normSprint(s.status) === 'terminado'; return statusFilter === 'terminados' ? done : statusFilter === 'todos' ? true : !done }
-  const rows = sprints.map((s, i) => ({ s, i, week: weekOf(s, i) })).filter((r) => (weekFilter === 'all' || r.week === weekFilter) && statusOk(r.s))
-  const canDrag = weekFilter === 'all' && statusFilter !== 'terminados'
-
-  return (
-    <div style={{ marginBottom: 26 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 19 }}>Sprints</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 'auto', padding: '7px 9px', fontSize: 12.5 }} title="Filtrar por estado">
-            <option value="encurso">En curso</option>
-            <option value="terminados">Terminados{doneCount ? ` (${doneCount})` : ''}</option>
-            <option value="todos">Todos</option>
-          </select>
-          <select className="input" value={weekFilter} onChange={(e) => setWeekFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={{ width: 'auto', padding: '7px 9px', fontSize: 12.5 }}>
-            <option value="all">Todas las semanas</option>
-            {weeks.map((w) => <option key={w} value={w}>Semana {w}</option>)}
-          </select>
-          <button className="btn btn-sm" onClick={() => setImportOpen(true)} title="Importar sprints desde una lista"><I.download width={14} height={14} /> Importar</button>
-          <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
-            <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('table')} title="Tabla" style={{ background: boardView === 'table' ? 'var(--card-hover)' : 'transparent', color: boardView === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
-            <button className="btn btn-sm btn-ghost" onClick={() => setBoardView('kanban')} title="Kanban" style={{ background: boardView === 'kanban' ? 'var(--card-hover)' : 'transparent', color: boardView === 'kanban' ? 'var(--accent)' : 'var(--text-dim)' }}><I.kanban width={15} height={15} /></button>
-          </div>
-        </div>
-      </div>
-      <ImportSprintsModal open={importOpen} team={team} defaultDevId={devId} hasSprints={sprints.length > 0} onClose={() => setImportOpen(false)}
-        onImport={(list, replace) => { patch((p) => ({ ...p, sprints: replace ? list : [...(p.sprints || []), ...list] })); logActivity && logActivity({ type: 'sprint-add', text: `importó ${list.length} sprints a ${project.name}` }) }} />
-
-      {boardView === 'table' ? (
-        <>
-          <div className="surface tbl" style={{ overflow: 'hidden' }}>
-            <table>
-              <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['', '#', 'Nombre', 'Semana', 'Asignado', 'Estado', 'Estimada'].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {rows.map(({ s, i, week }) => {
-                  const inProc = normSprint(s.status) === 'en proceso'
-                  const done = normSprint(s.status) === 'terminado'
-                  return (
-                  <tr key={s.id} draggable={canDrag}
-                    onDragStart={(e) => { if (!canDrag) return; e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragId(s.id) }}
-                    onDragOver={(e) => { if (!canDrag) return; e.preventDefault(); setOverId(s.id) }}
-                    onDragEnd={() => { setDragId(null); setOverId(null) }}
-                    onDrop={(e) => { if (!canDrag) return; e.preventDefault(); reorder(e.dataTransfer.getData('text/plain') || dragId, s.id); setDragId(null); setOverId(null) }}
-                    style={{ borderBottom: '1px solid var(--border)', borderLeft: inProc ? '3px solid var(--accent)' : '3px solid transparent', background: overId === s.id && dragId !== s.id ? 'var(--card-hover)' : dragId === s.id ? 'var(--bg-elevated)' : inProc ? 'var(--accent-soft)' : 'transparent', opacity: dragId === s.id ? 0.5 : done ? 0.5 : 1 }}>
-                    <td style={{ padding: '12px 8px 12px 14px', width: 28, cursor: canDrag ? 'grab' : 'default', color: 'var(--text-faint)' }} title={canDrag ? 'Arrastrá para reordenar' : ''}><I.grip width={16} height={16} /></td>
-                    <td style={{ padding: '12px 14px' }} className="mono">{i + 1}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <button className="click" onClick={() => onOpenSprint(s.id)} title="Ver detalle" style={{ fontWeight: 600, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, color: 'var(--text)' }}>
-                        {s.name}
-                        {done && <span className="tag" style={{ color: 'var(--text-faint)', background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>archivado</span>}
-                        {(s.comments || []).length > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{s.comments.length}</span>}
-                      </button>
-                    </td>
-                    <td style={{ padding: '8px 14px' }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                        <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Sem</span>
-                        <input type="number" min="1" className="input mono" value={week} onChange={(e) => setSprint(s.id, { week: Math.max(1, Number(e.target.value) || 1) })} style={{ width: 52, padding: '5px 6px', fontSize: 12.5 }} />
-                      </div>
-                    </td>
-                    <td style={{ padding: '10px 14px' }} onClick={(e) => e.stopPropagation()}><SprintAssignees ids={s.assigneeIds} team={team} defaultId={devId} onChange={(a) => setSprint(s.id, { assigneeIds: a })} /></td>
-                    <td style={{ padding: '12px 14px' }}><SprintStatusBadge status={s.status} onChange={(v) => setSprint(s.id, { status: v })} /></td>
-                    <td style={{ padding: '8px 14px' }}>
-                      <input type="date" className="input mono" value={(s.estimatedDate || '').slice(0, 10)} onChange={(e) => setSprint(s.id, { estimatedDate: e.target.value ? new Date(e.target.value).toISOString() : null })} onClick={(e) => e.stopPropagation()} style={{ width: 'auto', padding: '5px 8px', fontSize: 12, background: 'transparent', border: '1px solid transparent' }} onFocus={(e) => (e.target.style.borderColor = 'var(--border)')} onBlur={(e) => (e.target.style.borderColor = 'transparent')} />
-                    </td>
-                  </tr>
-                )})}
-                {rows.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>{statusFilter === 'terminados' ? 'No hay sprints terminados todavía.' : 'Sin sprints para este filtro.'}</td></tr>}
-              </tbody>
-            </table>
-          </div>
-          <button className="btn btn-sm" onClick={addSprint} style={{ marginTop: 12 }}><I.plus width={13} height={13} /> Agregar sprint</button>
-        </>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, alignItems: 'start' }}>
-          {SPRINT_STATUS.map((col) => {
-            const colSprints = sprints.filter((s) => normSprint(s.status) === col.key)
-            return (
-              <div key={col.key}
-                onDragOver={(e) => { e.preventDefault(); setOverId(col.key) }}
-                onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain') || dragId; if (id) setSprint(id, { status: col.key }); setDragId(null); setOverId(null) }}
-                className="surface" style={{ padding: 10, background: overId === col.key ? 'var(--card-hover)' : 'var(--bg-elevated)', minHeight: 120, borderColor: overId === col.key ? 'var(--accent-line)' : 'var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10, padding: '0 2px' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 99, background: col.dot }} />
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.02em' }}>{col.label}</span>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 'auto' }}>{colSprints.length}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {colSprints.map((s) => (
-                    <div key={s.id} draggable
-                      onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragId(s.id) }}
-                      onDragEnd={() => { setDragId(null); setOverId(null) }}
-                      onClick={() => onOpenSprint(s.id)}
-                      className="surface click" style={{ padding: 11, background: 'var(--card)', cursor: 'grab', opacity: dragId === s.id ? 0.5 : 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, lineHeight: 1.3 }}>{s.name}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-faint)' }} className="mono">
-                        <span>Semana {s.week || (sprints.indexOf(s) + 1)}</span>
-                        <span>{fmtDate(s.estimatedDate)}</span>
-                      </div>
-                      <div style={{ marginTop: 7 }} onClick={(e) => e.stopPropagation()}><SprintAssignees ids={s.assigneeIds} team={team} defaultId={devId} onChange={(a) => setSprint(s.id, { assigneeIds: a })} size={22} /></div>
-                      {(s.comments || []).length > 0 && <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{s.comments.length}</div>}
-                    </div>
-                  ))}
-                  {colSprints.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-faint)', padding: '6px 2px' }}>—</div>}
-                </div>
-              </div>
-            )
-          })}
-          <div style={{ gridColumn: '1 / -1' }}><button className="btn btn-sm" onClick={addSprint}><I.plus width={13} height={13} /> Agregar sprint</button></div>
-        </div>
       )}
     </div>
   )
@@ -2753,7 +2795,7 @@ function CommitChip({ repo, compact }) {
   const stale = d > 7
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--text-dim)', minWidth: 0 }}>
-      <I.github width={13} height={13} style={{ flexShrink: 0 }} />
+      <I2.github width={13} height={13} style={{ flexShrink: 0 }} />
       <span className="mono" style={{ color: 'var(--text)' }}>{data.sha}</span>
       {!compact && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{data.message}</span>}
       <span className="tag" style={{ color: stale ? 'var(--red)' : 'var(--green)', background: stale ? 'var(--red-soft)' : 'var(--green-soft)', padding: '1px 7px', fontSize: 10 }}>
@@ -2763,7 +2805,7 @@ function CommitChip({ repo, compact }) {
   )
 }
 
-/* alta de un proyecto nuevo: cliente + WhatsApp + testing (opcional). Los sprints se cargan luego dentro de la tarjeta. */
+/* alta de un proyecto nuevo: cliente + WhatsApp + testing (opcional). El plan se asocia luego dentro de la tarjeta. */
 function NewProjectModal({ open, clients, onClose, onCreate }) {
   const [name, setName] = useState('')
   const [kind, setKind] = useState('cliente')
@@ -2777,12 +2819,12 @@ function NewProjectModal({ open, clients, onClose, onCreate }) {
     <button type="button" onClick={() => setKind(k)} className="btn btn-sm" style={{ flex: 1, justifyContent: 'center', background: kind === k ? 'var(--accent-soft)' : 'transparent', color: kind === k ? 'var(--accent)' : 'var(--text-dim)', borderColor: kind === k ? 'var(--accent-line)' : 'var(--border)' }}>{Icon}{label}</button>
   )
   return (
-    <Modal open={open} onClose={onClose} title="Nuevo proyecto" sub="Creá la tarjeta; después cargás los sprints adentro" width={460}>
+    <Modal open={open} onClose={onClose} title="Nuevo proyecto" sub="Creá la tarjeta; después le asociás el plan adentro" width={460}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Field label="Nombre del proyecto"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Chamber OS" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); create() } }} /></Field>
         <Field label="Tipo de proyecto">
           <div style={{ display: 'flex', gap: 8 }}>
-            {kindBtn('cliente', 'De un cliente', <I.users width={14} height={14} />)}
+            {kindBtn('cliente', 'De un cliente', <I2.users width={14} height={14} />)}
             {kindBtn('interno', 'Interno (Insights)', <span style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 12, marginRight: 2 }}>I</span>)}
           </div>
         </Field>
@@ -2800,70 +2842,272 @@ function NewProjectModal({ open, clients, onClose, onCreate }) {
         <Field label="Testing / Deploy URL (opcional)"><input className="input" value={testing} onChange={(e) => setTesting(e.target.value)} placeholder="https://mi-app.onrender.com" /></Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={create} disabled={!canCreate}><I.plus width={15} height={15} /> Crear proyecto</button>
+          <button className="btn btn-accent" onClick={create} disabled={!canCreate}><I2.plus width={15} height={15} /> Crear proyecto</button>
         </div>
       </div>
     </Modal>
   )
 }
 
-/* vista Gantt / semanal: proyectos (filas) × semanas (columnas), con los sprints ubicados por su fecha estimada */
-function SprintGantt({ projects, clientOf, onOpen }) {
-  const monday = (d) => { const x = new Date(d); const day = (x.getDay() + 6) % 7; x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - day); return x }
-  const addD = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
-  const fmtWk = (mon) => { const sun = addD(mon, 6); const mm = mon.toLocaleDateString('es-AR', { month: 'short' }).replace('.', ''); const sm = sun.toLocaleDateString('es-AR', { month: 'short' }).replace('.', ''); return mm === sm ? `${mon.getDate()}–${sun.getDate()} ${sm}` : `${mon.getDate()} ${mm} – ${sun.getDate()} ${sm}` }
-  const items = []
-  projects.forEach((p) => (p.sprints || []).forEach((s) => { if (s.estimatedDate) items.push({ pid: p.id, s, mon: monday(s.estimatedDate) }) }))
-  const todayMon = monday(new Date())
-  let weeks = []
-  if (items.length) {
-    const minT = Math.min(...items.map((i) => i.mon.getTime()), todayMon.getTime())
-    const maxT = Math.max(...items.map((i) => i.mon.getTime()), todayMon.getTime())
-    let cur = new Date(minT), guard = 0
-    while (cur.getTime() <= maxT && guard < 30) { weeks.push(new Date(cur)); cur = addD(cur, 7); guard++ }
-  } else weeks = [todayMon]
-  const cell = {}
-  items.forEach(({ pid, s, mon }) => { const k = pid + '|' + mon.getTime(); (cell[k] = cell[k] || []).push(s) })
-  const colW = 148
-  const anyDated = items.length > 0
+/* ============================================================================
+   12 · PROJECTS LIST
+============================================================================ */
+
+/* Anillo de avance. El color sale de la FASE, no del porcentaje: el % ya lo dice
+   el número del medio, y teñirlo también por porcentaje haría que dos proyectos
+   en la misma fase se vean como cosas distintas.
+   El trazo se dibuja con una keyframe que arranca en `--ring-c` (circunferencia
+   entera) y termina en el dashoffset real del elemento — así no hace falta ni un
+   rAF ni un estado extra, y `prefers-reduced-motion` la apaga de una línea. */
+function ProgressRing({ pct, colorVar = '--accent', size = 104, stroke = 7 }) {
+  const r = (size - stroke) / 2 - 1
+  const c = 2 * Math.PI * r
+  const value = clamp(Math.round(pct || 0), 0, 100)
+  const off = c * (1 - value / 100)
   return (
-    <div className="surface tbl" style={{ overflowX: 'auto', padding: 0 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: `minmax(180px,200px) repeat(${weeks.length}, ${colW}px)`, minWidth: 'min-content' }}>
-        <div style={{ position: 'sticky', left: 0, zIndex: 2, background: 'var(--card)', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', padding: '12px 14px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>Proyecto</div>
-        {weeks.map((w, i) => { const now = w.getTime() === todayMon.getTime(); return (
-          <div key={'h' + i} style={{ borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', padding: '10px', fontSize: 11.5, fontWeight: 600, color: now ? 'var(--accent)' : 'var(--text-dim)', background: now ? 'var(--accent-soft)' : 'transparent', textAlign: 'center', whiteSpace: 'nowrap' }}>{fmtWk(w)}{now ? ' · hoy' : ''}</div>
-        )})}
-        {projects.flatMap((p) => {
-          const label = (
-            <div key={p.id + '-l'} onClick={() => onOpen(p.id)} className="click row-hover" style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--card)', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-              <div style={{ flex: 'none', width: 30, height: 30, borderRadius: 9, display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 11, background: hexA(projectHue(p), 0.16), color: projectHue(p) }}>{projectInitials(p.name)}</div>
-              <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div><div style={{ fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clientOf(p.clientId)?.company || ''}</div></div>
-            </div>
-          )
-          const cells = weeks.map((w, ci) => {
-            const sp = cell[p.id + '|' + w.getTime()] || []
-            const now = w.getTime() === todayMon.getTime()
-            return (
-              <div key={p.id + '-' + ci} onClick={() => onOpen(p.id)} className="click" style={{ borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', padding: 6, minHeight: 54, background: now ? 'var(--accent-soft)' : 'transparent', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {sp.map((s) => { const m = sprintMeta(s.status); const tone = m.tone; return (
-                  <span key={s.id} title={`${s.name} · ${m.label} · ${fmtDate(s.estimatedDate)}`} style={{ fontSize: 11, fontWeight: 600, padding: '3px 7px', borderRadius: 6, background: tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${tone}-soft)`, color: tone === 'neutral' ? 'var(--text-dim)' : `var(--${tone === 'accent' ? 'accent' : tone})`, border: `1px solid ${tone === 'accent' ? 'var(--accent-line)' : 'var(--border)'}`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
-                )})}
-              </div>
-            )
-          })
-          return [label, ...cells]
-        })}
-      </div>
-      {!anyDated && <div style={{ padding: 16, fontSize: 13, color: 'var(--text-faint)' }}>Todavía no hay sprints con fecha estimada. Entrá a cada proyecto y cargá la fecha de los sprints para verlos acá por semana.</div>}
+    <div className="pj-ring" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth={stroke} />
+        <circle
+          className="pj-ringfill" cx={size / 2} cy={size / 2} r={r} fill="none"
+          stroke={`var(${colorVar})`} strokeWidth={stroke} strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{ '--ring-c': c, strokeDasharray: c, strokeDashoffset: off }}
+        />
+      </svg>
+      <span className="in">
+        <span className="pct" style={{ color: value === 0 ? 'var(--text-faint)' : 'var(--text)' }}>{value}%</span>
+      </span>
     </div>
   )
 }
 
-/* ============================================================================
-   12 · PROJECTS LIST
-============================================================================ */
+/* "avance hace 2 d". Sale de project.lastProgressAt, que se actualiza sola al
+   tildar tareas del plan. Pasada una semana sin movimiento se tiñe de ámbar:
+   es el único dato de la card que puede pedir atención. */
+function lastAdvanceInfo(project) {
+  const d = daysAgo(project?.lastProgressAt)
+  if (d == null) return { text: 'sin avances', stale: false, none: true }
+  if (d === 0) return { text: 'hoy', stale: false }
+  if (d === 1) return { text: 'ayer', stale: false }
+  return { text: `hace ${d} d`, stale: d > 7 }
+}
+
+/* Texto del contador de fase: "62 días · desarrollo". El número grande va con el
+   color de la fase para que lea junto al anillo. */
+function phaseCounter(info) {
+  const label = (info.label || '').toLowerCase()
+  if (info.phase === 1) return { n: info.days == null ? null : info.days + 1, unit: 'días', label }
+  if (info.phase === 2) {
+    if (info.expired) return { n: null, unit: 'prueba vencida', label: '' }
+    return { n: info.countdown, unit: 'días de prueba', label: '' }
+  }
+  // Fase 3 sin día de cobro cargado: no hay número que mostrar, y "días · cobro"
+  // suelto no dice nada. Se pide el dato que falta.
+  if (info.countdown == null) return { n: null, unit: 'definir día de cobro', label: '' }
+  return { n: info.countdown, unit: info.countdown === 1 ? 'día · cobro' : 'días · cobro', label: '' }
+}
+
+function ProjectCard({ project: p, client, team, pct, onOpen, onStatus, onAssign, onScope, onLinks, onPending }) {
+  const info = phaseInfo(p)
+  const adv = lastAdvanceInfo(p)
+  const counter = phaseCounter(info)
+  const show = { scope: true, testing: true, whatsapp: true, ...(p.cardActions || {}) }
+  const testingUrl = p.testingUrl || p.productionUrl || ''
+  const waUrl = p.whatsappUrl || ''
+  const stop = (e) => e.stopPropagation()
+  // La card entera abre el detalle; con teclado es un botón más (Enter / Espacio).
+  const onKey = (e) => {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
+  }
+  return (
+    <motion.div
+      variants={rise} className="pj-card" role="button" tabIndex={0}
+      onClick={onOpen} onKeyDown={onKey}
+      aria-label={`Abrir ${p.name}`}
+    >
+      <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', minHeight: 24 }}>
+        <StatusMenu compact status={p.status} onChange={onStatus} />
+      </div>
+
+      {/* el anillo mide avance, no fase: va siempre en verde. La fase se lee en el
+          texto de abajo ("32 días · desarrollo"), donde sí lleva su color. */}
+      <ProgressRing pct={pct} colorVar="--green" />
+
+      <div style={{ marginTop: 12, width: '100%' }}>
+        <div className="nm" title={p.name}>{p.name}</div>
+      </div>
+
+      {p.status === 'pending' && (
+        <div style={{ marginTop: 9 }} onClick={(e) => { stop(e); onPending() }}>
+          {p.expectedStartDate
+            ? <PendingDateChip date={p.expectedStartDate} style={{ cursor: 'pointer' }} />
+            : <span className="tag click" style={{ color: 'var(--blue)', background: 'transparent', borderColor: 'var(--blue)' }}><I2.calendar width={12} height={12} /> Definir ingreso</span>}
+        </div>
+      )}
+
+      <div className="pj-line">
+        <span title={info.countdownLabel} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
+          {counter.n != null && <b style={{ color: `var(${info.colorVar})` }}>{counter.n}</b>}
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {counter.unit}{counter.label ? ` · ${counter.label}` : ''}
+          </span>
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4, flex: 'none' }}>
+          {!adv.none && 'avance'}
+          <b style={{ fontSize: 11.5, color: adv.stale ? 'var(--yellow)' : 'var(--text-dim)' }}>{adv.text}</b>
+        </span>
+      </div>
+
+      <div className="pj-foot">
+        <TeamAvatars assignments={p.assignments} team={team} onChange={onAssign} size={22} ring="var(--card)" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }} onClick={stop}>
+          {show.scope && (
+            <button className="pj-ib scope" title="Alcance · PDFs, contexto, notas" onClick={(e) => { stop(e); onScope() }}>
+              <I2.pdf width={16} height={16} />
+            </button>
+          )}
+          {show.testing && (
+            testingUrl
+              ? <a className="pj-ib" href={testingUrl} target="_blank" rel="noreferrer" title="Testing / deploy" onClick={stop}><I2.ext width={15} height={15} /></a>
+              : <button className="pj-ib off" title="Sin link de testing — clic para cargarlo" onClick={(e) => { stop(e); onLinks() }}><I2.ext width={15} height={15} /></button>
+          )}
+          {show.whatsapp && (
+            waUrl
+              ? <a className="pj-ib wa" href={waUrl} target="_blank" rel="noreferrer" title="Grupo de WhatsApp" onClick={stop}><I2.whatsapp width={15} height={15} /></a>
+              : <button className="pj-ib wa off" title="Sin grupo de WhatsApp — clic para cargarlo" onClick={(e) => { stop(e); onLinks() }}><I2.whatsapp width={15} height={15} /></button>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+/* <select> nativo (accesible, teclado intacto) con el chevron dibujado aparte y
+   la pastilla encendida en naranja cuando el filtro está aplicado.
+   `block` = variante para el panel de filtros: ocupa el ancho de su columna y
+   lleva su propia etiqueta arriba, así que no repite el título adentro. */
+function FilterSelect({ value, onChange, active, title, block = false, children }) {
+  const id = useMemo(() => 'flt-' + Math.random().toString(36).slice(2, 8), [])
+  const sel = (
+    <span className="pj-selw" style={block ? { width: '100%' } : undefined}>
+      <select id={id} className={`pj-sel${block ? ' blk' : ''}`} data-on={active ? '1' : '0'} title={title}
+        aria-label={block ? undefined : title} value={value} onChange={(e) => onChange(e.target.value)}>
+        {children}
+      </select>
+      <I2.chevD width={13} height={13} />
+    </span>
+  )
+  if (!block) return sel
+  return <div className="fld"><label htmlFor={id}>{title}</label>{sel}</div>
+}
+
+/* Panel de filtros: un solo disparador en la barra en lugar de seis <select>
+   sueltos comiéndose una franja entera. Adentro siguen siendo <select> nativos
+   —mismas opciones, mismo teclado, misma sincronización con la URL—; lo que
+   cambia es que solo aparecen cuando los pedís, y lo que queda a la vista son
+   los filtros efectivamente aplicados, cada uno descartable de a uno.
+   Teclado: abre/cierra con Enter o Espacio, atrapa el foco mientras está
+   abierto, cierra con Escape (devolviendo el foco al botón) y con clic afuera. */
+function FilterPanel({ count, onClear, children }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const btnRef = useRef(null)
+  const popRef = useRef(null)
+
+  const close = useCallback((refocus) => {
+    setOpen(false)
+    if (refocus && btnRef.current) btnRef.current.focus()
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const focusables = () => [...(popRef.current?.querySelectorAll('select,button,a[href],input') || [])]
+      .filter((el) => !el.disabled && el.offsetParent !== null)
+    const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) close(false) }
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); return }
+      if (e.key !== 'Tab') return
+      const f = focusables()
+      if (!f.length) return
+      const first = f[0], last = f[f.length - 1]
+      const el = document.activeElement
+      /* el propio contenedor cuenta como "antes del primero": si no, un shift+Tab
+         desde el panel recién abierto se escapaba del foco atrapado. */
+      const atStart = el === first || el === popRef.current || !popRef.current.contains(el)
+      const atEnd = el === last || el === popRef.current || !popRef.current.contains(el)
+      if (e.shiftKey && atStart) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && atEnd && el !== popRef.current) { e.preventDefault(); first.focus() }
+      else if (!e.shiftKey && el === popRef.current) { e.preventDefault(); first.focus() }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey, true)
+    const t = setTimeout(() => { if (popRef.current) popRef.current.focus() }, 30)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey, true)
+      clearTimeout(t)
+    }
+  }, [open, close])
+
+  return (
+    <span className="pj-popwrap" ref={wrapRef}>
+      <button ref={btnRef} className="pj-filt" data-on={count > 0 ? '1' : '0'}
+        aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((v) => !v)}
+        aria-label={count > 0 ? `Filtros · ${count} filtro${count > 1 ? 's' : ''} aplicado${count > 1 ? 's' : ''}` : 'Filtros · ninguno aplicado'}>
+        <I2.filter width={15} height={15} />
+        <span aria-hidden="true">Filtros</span>
+        {count > 0 && <span className="n" aria-hidden="true">{count}</span>}
+        <I2.chevD className="cd" width={13} height={13} style={{ opacity: .55 }} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            ref={popRef} className="pj-pop" role="dialog" aria-modal="false" aria-label="Filtros de proyectos" tabIndex={-1}
+            initial={{ opacity: 0, scale: .97, y: -6 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .97, y: -6 }}
+            transition={{ duration: .2, ease: [.32, .72, 0, 1] }}
+            style={{ outline: 'none' }}
+          >
+            <div className="gr">{children}</div>
+            <div className="ft">
+              <span className="hint">{count > 0 ? `${count} filtro${count > 1 ? 's' : ''} aplicado${count > 1 ? 's' : ''}` : 'Sin filtros aplicados'}</span>
+              <span style={{ display: 'flex', gap: 8 }}>
+                <button className="pj-clear" onClick={onClear} disabled={count === 0}
+                  style={count === 0 ? { opacity: .4, cursor: 'default' } : undefined}>
+                  <I2.x width={13} height={13} /> Limpiar todo
+                </button>
+                <button className="pj-clear" onClick={() => close(true)} style={{ color: 'var(--text)' }}>Listo</button>
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </span>
+  )
+}
+
 function Projects({ onOpenProject }) {
-  const { data, logActivity, projectStore, clientStore, botComms } = useApp()
+  const { data, myId, logActivity, projectStore, clientStore, botComms, plans, plansReady } = useApp()
+  // Los planes llegan DESPUÉS que los proyectos. Si solo esperáramos projectStore,
+  // cada card pintaría el % legacy y saltaría al real un instante después.
+  const loading = (projectStore ? projectStore.ready === false : false) || plansReady === false
+  // Quién soy: el switch "ver todos" solo existe para devs, y apagado ven solo
+  // los proyectos donde figuran como dev asignado.
+  const me = useMemo(() => (data.team || []).find((u) => u.id === myId) || null, [data.team, myId])
+  const showAllToggle = canSeeAllToggle(me)
+  const [showAll, setShowAll] = useState(() => {
+    try { return localStorage.getItem('pj_show_all') === '1' } catch { return false }
+  })
+  useEffect(() => { try { localStorage.setItem('pj_show_all', showAll ? '1' : '0') } catch {} }, [showAll])
+  // Índice planId → plan, armado una sola vez: el avance de cada tarjeta sale del
+  // plan asociado y no queremos un find() por proyecto dentro del map.
+  const planById = useMemo(() => {
+    const m = new Map()
+    for (const pl of (plans || [])) m.set(pl.id, pl)
+    return m
+  }, [plans])
+  const planOf = (p) => (p.planId ? planById.get(p.planId) || null : null)
   const [newOpen, setNewOpen] = useState(false)
   const qp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
   const [tab, setTab] = useState(qp.get('tab') || 'active')
@@ -2889,7 +3133,7 @@ function Projects({ onOpenProject }) {
     const id = uid()
     const proj = {
       id, name, clientId: kind === 'interno' ? '' : clientId, kind: kind || 'cliente', status: 'active', priority: 'normal',
-      assignments: { pm: null, dev: null }, tags: [], sprints: [],
+      assignments: { pm: null, dev: null }, tags: [],
       avances: [], comms: [], scopeFiles: [], salesLinks: [], scopeNotes: [],
       risks: [], pendingAgency: [], pendingClient: [], chats: [],
       createdAt: new Date().toISOString(),
@@ -2900,7 +3144,7 @@ function Projects({ onOpenProject }) {
     projectStore.create(proj)
     if (logActivity) logActivity({ type: 'project-add', text: `creó el proyecto "${name}"` })
     setNewOpen(false)
-    onOpenProject(id)   // abre la tarjeta nueva para cargar los sprints
+    onOpenProject(id)   // abre la tarjeta nueva para asociarle el plan
   }
 
   // keep filters URL-friendly
@@ -2917,9 +3161,23 @@ function Projects({ onOpenProject }) {
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
   }, [tab, clientFilter, pmFilter, devFilter, tagFilter, prioFilter, kindFilter])
 
-  const allTags = [...new Set(data.projects.flatMap((p) => (p.tags || []).map((t) => t.text)))]
+  // Universo visible ANTES de filtrar: un dev con el switch apagado no ve el
+  // resto de la agencia, y por lo tanto los contadores de las pestañas tampoco
+  // pueden contarlo — el número tiene que coincidir con lo que hay en pantalla.
+  const universe = useMemo(() => visibleProjects(data.projects, me, showAll || !showAllToggle), [data.projects, me, showAll, showAllToggle])
+  const hiddenCount = showAllToggle && !showAll ? data.projects.length - universe.length : 0
+  const allTags = [...new Set(universe.flatMap((p) => (p.tags || []).map((t) => t.text)))]
   const filtersActive = clientFilter !== 'all' || pmFilter !== 'all' || devFilter !== 'all' || tagFilter !== 'all' || prioFilter !== 'all' || kindFilter !== 'all'
   const clearFilters = () => { setClientFilter('all'); setPmFilter('all'); setDevFilter('all'); setTagFilter('all'); setPrioFilter('all'); setKindFilter('all') }
+  /* Lo aplicado se ve como chips: el usuario no tiene que abrir el panel para
+     saber qué está filtrando, y saca uno sin tocar los otros. */
+  const chips = []
+  if (kindFilter !== 'all') chips.push({ id: 'kind', k: 'Tipo', v: kindFilter === 'interno' ? 'Internos' : 'De clientes', off: () => setKindFilter('all') })
+  if (clientFilter !== 'all') chips.push({ id: 'client', k: 'Cliente', v: clientOf(clientFilter)?.company || '—', off: () => setClientFilter('all') })
+  if (pmFilter !== 'all') chips.push({ id: 'pm', k: 'PM', v: userOf(pmFilter)?.name || '—', off: () => setPmFilter('all') })
+  if (devFilter !== 'all') chips.push({ id: 'dev', k: 'Dev', v: userOf(devFilter)?.name || '—', off: () => setDevFilter('all') })
+  if (tagFilter !== 'all') chips.push({ id: 'tag', k: 'Etiqueta', v: tagFilter, off: () => setTagFilter('all') })
+  if (prioFilter !== 'all') chips.push({ id: 'prio', k: 'Prioridad', v: prioFilter === 'sort' ? 'Prioritarios primero' : prioFilter.charAt(0).toUpperCase() + prioFilter.slice(1), off: () => setPrioFilter('all') })
   const matchesFilters = (p) =>
     (kindFilter === 'all' || (p.kind || 'cliente') === kindFilter) &&
     (clientFilter === 'all' || p.clientId === clientFilter) &&
@@ -2936,156 +3194,171 @@ function Projects({ onOpenProject }) {
     return hay.includes(q)
   }
   const keep = (p) => matchesFilters(p) && matchesSearch(p)
-  const countFor = (status) => data.projects.filter((p) => p.status === status && keep(p)).length
-  let list = data.projects.filter((p) => p.status === tab && keep(p))
+  const countFor = (status) => universe.filter((p) => p.status === status && keep(p)).length
+  let list = universe.filter((p) => p.status === tab && keep(p))
   if (prioFilter === 'sort') list = [...list].sort((a, b) => projPrioMeta(b.priority).rank - projPrioMeta(a.priority).rank)
+  const TABS = [['active', 'Activos'], ['pending', 'Pendiente'], ['paused', 'Pausados'], ['delivered', 'Entregados']]
+  const tabLabel = (TABS.find(([k]) => k === tab) || TABS[0])[1].toLowerCase()
 
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginBottom: 22 }}>
-        <div>
+      <div className="pj-head" style={{ marginBottom: 14 }}>
+        <div style={{ minWidth: 0 }}>
           <div className="label" style={{ marginBottom: 6 }}>Cartera</div>
-          <h1 style={{ fontSize: 32 }}>Proyectos</h1>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, width: 300, maxWidth: '52vw', height: 40, padding: '0 12px', borderRadius: 10, background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-            <I.search width={15} height={15} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar proyecto, cliente o miembro…"
-              style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 13.5, color: 'var(--text)', outline: 'none' }} />
-            {search && <button onClick={() => setSearch('')} title="Limpiar búsqueda" style={{ display: 'flex', padding: 2, border: 'none', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer' }}><I.x width={14} height={14} /></button>}
-          </label>
-          <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
-            <button className="btn btn-sm btn-ghost" onClick={() => setView('cards')} title="Tarjetas" style={{ background: view === 'cards' ? 'var(--card-hover)' : 'transparent', color: view === 'cards' ? 'var(--accent)' : 'var(--text-dim)' }}><I.cards width={15} height={15} /></button>
-            <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} title="Tabla" style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
-            <button className="btn btn-sm btn-ghost" onClick={() => setView('gantt')} title="Gantt / semanal" style={{ background: view === 'gantt' ? 'var(--card-hover)' : 'transparent', color: view === 'gantt' ? 'var(--accent)' : 'var(--text-dim)' }}><I.gantt width={15} height={15} /></button>
-          </div>
-          <button className="btn btn-accent" onClick={() => setNewOpen(true)} title="Nuevo proyecto" style={{ fontWeight: 800 }}><span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1, marginTop: -2 }}>+</span> Nuevo proyecto</button>
+          <h1 style={{ fontSize: 32, lineHeight: 1.05 }}>Proyectos</h1>
         </div>
       </div>
 
-      {/* filtros */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
-        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
-          <option value="all">Tipo: todos</option>
-          <option value="cliente">De clientes</option>
-          <option value="interno">Internos (Insights)</option>
-        </select>
-        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
-          <option value="all">Todos los clientes</option>
-          {data.clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
-        </select>
-        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={pmFilter} onChange={(e) => setPmFilter(e.target.value)}>
-          <option value="all">PM: todos</option>
-          {data.team.filter((u) => u.role === 'pm').map((u) => <option key={u.id} value={u.id}>PM: {u.name}</option>)}
-        </select>
-        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={devFilter} onChange={(e) => setDevFilter(e.target.value)}>
-          <option value="all">Dev: todos</option>
-          {data.team.filter((u) => u.role === 'dev').map((u) => <option key={u.id} value={u.id}>Dev: {u.name}</option>)}
-        </select>
-        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
-          <option value="all">Etiqueta: todas</option>
-          {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select className="input" style={{ width: 'auto', padding: '8px 10px', fontSize: 13 }} value={prioFilter} onChange={(e) => setPrioFilter(e.target.value)}>
-          <option value="all">Prioridad: todas</option>
-          <option value="sort">▼ Más prioritario primero</option>
-          <option value="alta">🚩 Alta</option>
-          <option value="normal">🚩 Normal</option>
-          <option value="baja">🚩 Baja</option>
-        </select>
-        {filtersActive && <button className="btn btn-sm btn-ghost" onClick={clearFilters} style={{ color: 'var(--text-dim)' }}><I.x width={13} height={13} /> Limpiar</button>}
-      </div>
+      {/* Una sola fila de control: estado, filtros, lo que está aplicado, búsqueda
+          y la acción principal. Antes eran tres franjas apiladas. */}
+      <div className="pj-bar" style={{ marginBottom: 20 }}>
+        <div className="pj-tabs" role="tablist" aria-label="Estado del proyecto">
+          {TABS.map(([k, l]) => (
+            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
+              {tab === k && (
+                <motion.span layoutId="pjTabGlide" className="glide"
+                  transition={{ type: 'spring', stiffness: 520, damping: 44 }} />
+              )}
+              <span className="lb">{l}<span className="n">{countFor(k)}</span></span>
+            </button>
+          ))}
+        </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 22, borderBottom: '1px solid var(--border)' }}>
-        {[['active', 'Activos'], ['pending', 'Pendiente'], ['paused', 'Pausados'], ['delivered', 'Entregados']].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)}
-            style={{ padding: '10px 16px', fontWeight: 600, fontSize: 14, color: tab === k ? 'var(--text)' : 'var(--text-faint)', borderBottom: tab === k ? '2px solid var(--accent)' : '2px solid transparent', marginBottom: -1 }}>
-            {l} <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>({countFor(k)})</span>
-          </button>
-        ))}
-      </div>
+        <FilterPanel count={chips.length} onClear={clearFilters}>
+          <FilterSelect block title="Tipo" value={kindFilter} onChange={setKindFilter} active={kindFilter !== 'all'}>
+            <option value="all">Todos</option>
+            <option value="cliente">De clientes</option>
+            <option value="interno">Internos (Insights)</option>
+          </FilterSelect>
+          <FilterSelect block title="Cliente" value={clientFilter} onChange={setClientFilter} active={clientFilter !== 'all'}>
+            <option value="all">Todos los clientes</option>
+            {data.clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
+          </FilterSelect>
+          <FilterSelect block title="Project Manager" value={pmFilter} onChange={setPmFilter} active={pmFilter !== 'all'}>
+            <option value="all">Cualquier PM</option>
+            {data.team.filter((u) => u.role === 'pm').map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </FilterSelect>
+          <FilterSelect block title="Developer" value={devFilter} onChange={setDevFilter} active={devFilter !== 'all'}>
+            <option value="all">Cualquier dev</option>
+            {data.team.filter((u) => u.role === 'dev').map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </FilterSelect>
+          <FilterSelect block title="Etiqueta" value={tagFilter} onChange={setTagFilter} active={tagFilter !== 'all'}>
+            <option value="all">Todas</option>
+            {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+          </FilterSelect>
+          <FilterSelect block title="Prioridad" value={prioFilter} onChange={setPrioFilter} active={prioFilter !== 'all'}>
+            <option value="all">Todas</option>
+            <option value="sort">Más prioritario primero</option>
+            <option value="alta">Alta</option>
+            <option value="normal">Normal</option>
+            <option value="baja">Baja</option>
+          </FilterSelect>
+        </FilterPanel>
 
-      {list.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>{q ? <>Sin proyectos que coincidan con «{search.trim()}».</> : 'Sin proyectos en esta vista.'}</div>}
-
-      {view === 'cards' ? (
-        <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,340px),1fr))', gap: 16 }}>
-          {list.map((p) => {
-            const cl = clientOf(p.clientId)
-            const dd = daysAgo(p.lastDeployDate)
-            const currentSprint = p.sprints.find((s) => normSprint(s.status) === 'en proceso')
-            const hue = projectHue(p)
-            const pct = calcProgress(p)
-            const show = { scope: true, testing: true, whatsapp: true, ...(p.cardActions || {}) }
-            const testingUrl = p.testingUrl || p.productionUrl || ''
-            const waUrl = p.whatsappUrl || ''
-            const mini = (label, Icon, kind, firstLabel) => {
-              const t = trackInfo(p, kind, kind === 'comm' ? (botComms || {})[p.id] : undefined)
-              const bad = t.overdue
-              const val = t.first ? (t.delivered ? '—' : firstLabel) : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)
-              return (
-                <button onClick={(e) => { e.stopPropagation(); setLogModal({ projectId: p.id, kind }) }}
-                  style={{ display: 'flex', flexDirection: 'column', gap: 5, textAlign: 'left', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', minWidth: 0 }}>
-                  <span className="mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9.5, letterSpacing: '.09em', fontWeight: 500, color: bad ? 'var(--red)' : 'var(--text-faint)' }}><Icon width={12} height={12} /> {label.toUpperCase()}</span>
-                  <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: bad ? 'var(--red)' : t.first ? 'var(--text-faint)' : 'var(--text)' }}>{val}{bad ? ' ⚠' : ''}</span>
+        {chips.length > 0 && (
+          <div className="pj-chips">
+            {chips.map((c) => (
+              <span key={c.id} className="pj-chip">
+                <span className="k">{c.k}</span>
+                <span className="v" title={c.v}>{c.v}</span>
+                <button onClick={c.off} aria-label={`Quitar filtro ${c.k}: ${c.v}`} title="Quitar este filtro">
+                  <I2.x width={12} height={12} />
                 </button>
-              )
-            }
-            return (
-              <motion.div key={p.id} variants={rise} whileHover={{ y: -3 }} onClick={() => onOpenProject(p.id)} className="surface surface-hover click" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 15 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ flex: 'none', width: 44, height: 44, borderRadius: 12, display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 15, letterSpacing: '-.01em', background: hexA(hue, 0.16), color: hue }}>{projectInitials(p.name)}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
-                      <span style={{ flex: 'none', display: 'inline-flex' }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} size={14} /></span>
-                    </div>
-                    <div style={{ fontSize: 12.5, color: p.kind === 'interno' ? 'var(--accent)' : 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{p.kind === 'interno' ? '◆ Interno · Insights' : cl?.company}</div>
-                  </div>
-                  <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />
-                    <button className="btn btn-sm btn-ghost" title="Editar tarjeta (links y qué mostrar)" onClick={(e) => { e.stopPropagation(); setCardCfgFor(p.id) }} style={{ padding: 5, color: 'var(--text-faint)' }}><I.pencil width={14} height={14} /></button>
-                  </div>
-                </div>
-                {p.status === 'pending' && (
-                  <div onClick={(e) => { e.stopPropagation(); setPendingFor(p.id) }}>
-                    {p.expectedStartDate
-                      ? <PendingDateChip date={p.expectedStartDate} style={{ cursor: 'pointer' }} />
-                      : <span className="tag click" style={{ color: 'var(--blue)', background: 'transparent', borderColor: 'var(--blue)' }}><I.calendar width={12} height={12} /> Definir ingreso</span>}
-                  </div>
-                )}
-                <Progress value={pct} height={6} showLabel color={cardPctColor(pct)} />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }}>
-                  {mini('Último avance', I.folder, 'avance', 'Sin primer avance')}
-                </div>
-                <ProjectTags tags={p.tags} onChange={(tags) => updateProject(p.id, { tags })} />
-                <div style={{ height: 1, background: 'var(--border)' }} />
-                {cl && <ClientEmailField email={cl.email} onSave={(email) => updateClient(cl.id, { email })} />}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                    {show.scope && <button className="btn btn-sm" title="Alcance · PDFs, contexto, notas" onClick={(e) => { e.stopPropagation(); setScopeFor(p.id) }} style={{ width: 36, height: 34, padding: 0, justifyContent: 'center', color: 'var(--accent)', borderColor: 'var(--accent-line)', background: 'var(--accent-soft)' }}><I.pdf width={17} height={17} /></button>}
-                    {show.testing && <a href={testingUrl || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!testingUrl) e.preventDefault() }} className="btn btn-sm" title="Testing / deploy" style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', opacity: testingUrl ? 1 : 0.45 }}><I.gear width={15} height={15} /></a>}
-                    {show.whatsapp && <a href={waUrl || undefined} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); if (!waUrl) e.preventDefault() }} className="btn btn-sm" title="Grupo de WhatsApp" style={{ justifyContent: 'center', color: waUrl ? 'var(--green)' : undefined, opacity: waUrl ? 1 : 0.45 }}><I.whatsapp width={14} height={14} /> WhatsApp</a>}
-                  </div>
-                </div>
-              </motion.div>
-            )
-          })}
+              </span>
+            ))}
+            {chips.length > 1 && (
+              <button className="pj-clear" onClick={clearFilters}>Limpiar todo</button>
+            )}
+          </div>
+        )}
+
+        <label className="pj-search">
+          <I2.search width={15} height={15} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Buscar proyecto" placeholder="Buscar proyecto, cliente o miembro…" />
+          {search && <button onClick={() => setSearch('')} title="Limpiar búsqueda" style={{ display: 'flex', padding: 2, color: 'var(--text-faint)' }}><I2.x width={14} height={14} /></button>}
+        </label>
+
+        <div className="pj-seg" role="group" aria-label="Modo de vista">
+          <button onClick={() => setView('cards')} title="Tarjetas" aria-pressed={view === 'cards'} style={{ padding: '0 10px' }}><I2.cards width={15} height={15} /></button>
+          <button onClick={() => setView('table')} title="Tabla" aria-pressed={view === 'table'} style={{ padding: '0 10px' }}><I2.table width={15} height={15} /></button>
+        </div>
+
+        {showAllToggle && (
+          <button
+            className="pj-switch" role="switch" aria-checked={showAll} onClick={() => setShowAll((v) => !v)}
+            aria-label="Ver los proyectos de todo el equipo"
+            title={showAll ? 'Volver a ver solo tus proyectos' : `Mostrar también los ${hiddenCount} proyectos del resto del equipo`}
+          >
+            <span className="tr" />
+            <I2.eyeAll width={14} height={14} />
+            <span aria-hidden="true">Ver equipo</span>
+          </button>
+        )}
+
+        <button className="pj-cta" onClick={() => setNewOpen(true)} title="Nuevo proyecto">
+          Nuevo proyecto
+          <i><I2.plus width={15} height={15} /></i>
+        </button>
+      </div>
+
+      {loading && (
+        <div className="pj-grid" aria-hidden="true">
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <div key={i} className="pj-skel" />)}
+        </div>
+      )}
+
+      {!loading && list.length === 0 && (
+        <div className="pj-empty">
+          <span className="ic"><I2.circleDash width={22} height={22} /></span>
+          <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 600, fontSize: 16, letterSpacing: '-.02em' }}>
+            {q ? 'Nada coincide con la búsqueda' : filtersActive ? 'Ningún proyecto pasa estos filtros' : `No hay proyectos ${tabLabel}`}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-faint)', maxWidth: 380, lineHeight: 1.5 }}>
+            {q
+              ? <>Probá con otro nombre, o revisá si el proyecto está en otra pestaña.</>
+              : filtersActive
+                ? <>Sacá alguno de los filtros de arriba para ver más.</>
+                : showAllToggle && !showAll && hiddenCount > 0
+                  ? <>Hay {hiddenCount} proyectos asignados a otras personas. Prendé «Ver todos los proyectos» para verlos.</>
+                  : <>Cuando crees uno va a aparecer acá con su avance y su fase.</>}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            {q && <button className="btn btn-sm" onClick={() => setSearch('')}>Limpiar búsqueda</button>}
+            {filtersActive && <button className="btn btn-sm" onClick={clearFilters}>Quitar filtros</button>}
+            {!q && !filtersActive && <button className="pj-cta" onClick={() => setNewOpen(true)} style={{ height: 36 }}>Nuevo proyecto<i><I2.plus width={14} height={14} /></i></button>}
+          </div>
+        </div>
+      )}
+
+      {loading ? null : view === 'cards' ? (
+        <motion.div className="pj-grid" variants={stagger} initial="hidden" animate="show">
+          {list.map((p) => (
+            <ProjectCard
+              key={p.id}
+              project={p}
+              client={clientOf(p.clientId)}
+              team={data.team}
+              pct={projectProgress(p, planOf(p))}
+              onOpen={() => onOpenProject(p.id)}
+              onStatus={(s) => setStatus(p.id, s)}
+              onAssign={(assignments) => updateProject(p.id, { assignments })}
+              onScope={() => setScopeFor(p.id)}
+              onLinks={() => setCardCfgFor(p.id)}
+              onPending={() => setPendingFor(p.id)}
+            />
+          ))}
         </motion.div>
-      ) : view === 'gantt' ? (
-        <SprintGantt projects={list} clientOf={clientOf} onOpen={onOpenProject} />
       ) : (
         <div className="surface tbl" style={{ overflow: 'hidden' }}>
           <table>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Proyecto', 'Cliente', 'Equipo', 'Estado', 'Avance', 'Sprint actual', 'Últ. comunicación', 'Últ. avance'].map((h) =><th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+                {['Proyecto', 'Cliente', 'Equipo', 'Estado', 'Avance', 'Últ. comunicación', 'Últ. avance'].map((h) =><th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {list.map((p) => {
                 const cl = clientOf(p.clientId)
-                const cs = p.sprints.find((s) => normSprint(s.status) === 'en proceso')
                 const trackCell = (kind, firstLabel) => {
                   const t = trackInfo(p, kind, kind === 'comm' ? (botComms || {})[p.id] : undefined)
                   const bad = t.overdue
@@ -3105,8 +3378,7 @@ function Projects({ onOpenProject }) {
                     <td style={{ padding: '13px 16px', color: p.kind === 'interno' ? 'var(--accent)' : 'var(--text-dim)' }}>{p.kind === 'interno' ? 'Interno · Insights' : cl?.company}</td>
                     <td style={{ padding: '13px 16px' }}><TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} size={26} ring="var(--card)" /></td>
                     <td style={{ padding: '13px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} /><StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />{p.status === 'pending' && p.expectedStartDate && <PendingDateChip date={p.expectedStartDate} />}</div></td>
-                    <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={calcProgress(p)} showLabel /></td>
-                    <td style={{ padding: '13px 16px', color: 'var(--text-dim)', fontSize: 13 }}>{cs?.name || '—'}</td>
+                    <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={projectProgress(p, planOf(p))} showLabel /></td>
                     {trackCell('comm', 'Sin primer mensaje')}
                     {trackCell('avance', 'Sin primer avance')}
                   </tr>
@@ -3145,7 +3417,7 @@ function PendingDatePrompt({ open, project, onClose, onSave }) {
           {date ? <button className="btn" onClick={() => { setDate(''); onSave('') }} style={{ color: 'var(--text-dim)' }}>Quitar fecha</button> : <span />}
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn" onClick={onClose}>Cancelar</button>
-            <button className="btn btn-accent" onClick={() => onSave(date)}><I.check width={15} height={15} /> Guardar</button>
+            <button className="btn btn-accent" onClick={() => onSave(date)}><I2.check width={15} height={15} /> Guardar</button>
           </div>
         </div>
       </div>
@@ -3166,7 +3438,7 @@ function PersonPicker({ value, team, onChange, size = 22, placeholder = 'Alguien
       <button ref={btnRef} onClick={toggle} className="row-hover" title="Cambiar quién lo registró" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '2px 6px', borderRadius: 8 }}>
         {u ? <Avatar user={u} size={size} ring="var(--bg-elevated)" /> : <Avatar empty size={size} ring="var(--bg-elevated)" />}
         <span style={{ fontSize: 12.5, fontWeight: 600, color: u ? 'var(--text)' : 'var(--text-faint)' }}>{u ? u.name : placeholder}</span>
-        <I.chevD width={11} height={11} style={{ color: 'var(--text-faint)' }} />
+        <I2.chevD width={11} height={11} style={{ color: 'var(--text-faint)' }} />
       </button>
       {open && pos && createPortal(<>
         <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 300 }} />
@@ -3174,7 +3446,7 @@ function PersonPicker({ value, team, onChange, size = 22, placeholder = 'Alguien
           <div className="label" style={{ padding: '4px 8px 6px' }}>Quién lo registró</div>
           {team.map((x) => (
             <button key={x.id} className="row-hover" onClick={() => { onChange(x.id); setOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '6px 8px', borderRadius: 8 }}>
-              <Avatar user={x} size={22} ring="var(--card)" /><span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{x.name}</span>{value === x.id && <I.check width={14} height={14} style={{ color: 'var(--accent)' }} />}
+              <Avatar user={x} size={22} ring="var(--card)" /><span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{x.name}</span>{value === x.id && <I2.check width={14} height={14} style={{ color: 'var(--accent)' }} />}
             </button>
           ))}
         </div>
@@ -3208,7 +3480,7 @@ function LogEntry({ entry, team, myId, projectName, onUpdate, onDelete, logActiv
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <PersonPicker value={entry.authorId} team={team} onChange={(id) => onUpdate(entry.id, { authorId: id })} />
         <input type="date" className="input mono" title="Editar fecha del registro" value={(entry.date || '').slice(0, 10)} onChange={(e) => onUpdate(entry.id, { date: dateInputISO(e.target.value) })} style={{ width: 'auto', padding: '4px 7px', fontSize: 11, marginLeft: 'auto' }} />
-        <button className="btn btn-sm btn-ghost" onClick={() => onDelete(entry.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>
+        <button className="btn btn-sm btn-ghost" onClick={() => onDelete(entry.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I2.x width={12} height={12} /></button>
       </div>
       {entry.text && <MentionText text={entry.text} style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', display: 'block' }} />}
       {(entry.shots || []).length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>{entry.shots.map((s, i) => <a key={i} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></a>)}</div>}
@@ -3226,7 +3498,7 @@ function LogEntry({ entry, team, myId, projectName, onUpdate, onDelete, logActiv
             {LOG_EMOJIS.map((em) => <button key={em} onClick={() => { react(em); setPicker(false) }} className="row-hover" style={{ fontSize: 18, padding: '3px 5px', borderRadius: 7 }}>{em}</button>)}
           </div>}
         </span>
-        <button onClick={() => setReplyOpen((v) => !v)} className="btn btn-sm btn-ghost" style={{ padding: '3px 8px', fontSize: 12, color: 'var(--text-dim)' }}><I.comment width={12} height={12} /> Responder{(entry.replies || []).length ? ` (${entry.replies.length})` : ''}</button>
+        <button onClick={() => setReplyOpen((v) => !v)} className="btn btn-sm btn-ghost" style={{ padding: '3px 8px', fontSize: 12, color: 'var(--text-dim)' }}><I2.comment width={12} height={12} /> Responder{(entry.replies || []).length ? ` (${entry.replies.length})` : ''}</button>
       </div>
 
       {(entry.replies || []).length > 0 && (
@@ -3237,7 +3509,7 @@ function LogEntry({ entry, team, myId, projectName, onUpdate, onDelete, logActiv
                 {ru ? <Avatar user={ru} size={16} ring="var(--bg-elevated)" /> : <Avatar empty size={16} ring="var(--bg-elevated)" />}
                 <span style={{ fontSize: 11.5, fontWeight: 600 }}>{ru ? ru.name : 'Alguien'}</span>
                 <span className="mono" style={{ fontSize: 10, color: 'var(--text-faint)' }}>{fmtDate(r.date)}</span>
-                <button onClick={() => onUpdate(entry.id, { replies: entry.replies.filter((x) => x.id !== r.id) })} title="Eliminar respuesta" style={{ marginLeft: 'auto', color: 'var(--text-faint)', display: 'flex', background: 'transparent' }}><I.x width={11} height={11} /></button>
+                <button onClick={() => onUpdate(entry.id, { replies: entry.replies.filter((x) => x.id !== r.id) })} title="Eliminar respuesta" style={{ marginLeft: 'auto', color: 'var(--text-faint)', display: 'flex', background: 'transparent' }}><I2.x width={11} height={11} /></button>
               </div>
               <MentionText text={r.text} style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.45, display: 'block' }} />
             </div>
@@ -3247,7 +3519,7 @@ function LogEntry({ entry, team, myId, projectName, onUpdate, onDelete, logActiv
       {replyOpen && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <input className="input" value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addReply() } }} placeholder="Responder…" autoFocus style={{ padding: '7px 10px', fontSize: 13 }} />
-          <button className="btn btn-sm btn-accent" onClick={addReply}><I.send width={14} height={14} /></button>
+          <button className="btn btn-sm btn-accent" onClick={addReply}><I2.send width={14} height={14} /></button>
         </div>
       )}
     </div>
@@ -3264,8 +3536,8 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
   if (!project) return <Modal open={open} onClose={onClose} title="Registro" />
   const clientName = data.clients.find((c) => c.id === project.clientId)?.company || 'el cliente'
   const cfg = kind === 'comm'
-    ? { field: 'comms', title: 'Última comunicación', icon: I.phone, accent: 'var(--blue)', placeholder: 'Ej: hablé con el cliente por WhatsApp, pidió un cambio en…', actText: `registró comunicación con ${clientName}`, unit: 'comunicación', firstLabel: 'Sin primer mensaje', firstMax: 3 }
-    : { field: 'avances', title: 'Último avance', icon: I.folder, accent: 'var(--green)', placeholder: 'Ej: le mandé la v2 con el módulo de pagos para revisar…', actText: `registró un avance en ${project.name}`, unit: 'avance', firstLabel: 'Sin primer avance', firstMax: 7 }
+    ? { field: 'comms', title: 'Última comunicación', icon: I2.phone, accent: 'var(--blue)', placeholder: 'Ej: hablé con el cliente por WhatsApp, pidió un cambio en…', actText: `registró comunicación con ${clientName}`, unit: 'comunicación', firstLabel: 'Sin primer mensaje', firstMax: 3 }
+    : { field: 'avances', title: 'Último avance', icon: I2.folder, accent: 'var(--green)', placeholder: 'Ej: le mandé la v2 con el módulo de pagos para revisar…', actText: `registró un avance en ${project.name}`, unit: 'avance', firstLabel: 'Sin primer avance', firstMax: 7 }
   const entries = project[cfg.field] || []
   const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
   const userOf = (id) => (data.team || []).find((u) => u.id === id)
@@ -3297,7 +3569,7 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
             {track.first
               ? <div style={{ fontSize: 14 }}><strong style={{ color: overdue ? 'var(--red)' : 'var(--text)' }}>{cfg.firstLabel}</strong> <span style={{ color: 'var(--text-faint)', fontSize: 12.5 }}>· máx {cfg.firstMax} días hábiles{track.days != null ? ` (van ${track.days})` : ''}</span></div>
               : <div style={{ fontSize: 14 }}>Último{kind === 'comm' ? 'a' : ''} {cfg.unit}: <strong style={{ color: overdue ? 'var(--red)' : 'var(--text)' }}>{track.days === 0 ? 'hoy' : `hace ${track.days} ${track.days === 1 ? 'día hábil' : 'días hábiles'}`}</strong></div>}
-            {overdue && <span className="tag" style={{ marginLeft: 'auto', color: 'var(--red)', background: 'transparent', borderColor: 'var(--red)' }}><I.alert width={12} height={12} /> {track.first ? 'Mandar primer ' + cfg.unit : 'Reportarse con el cliente'}</span>}
+            {overdue && <span className="tag" style={{ marginLeft: 'auto', color: 'var(--red)', background: 'transparent', borderColor: 'var(--red)' }}><I2.alert width={12} height={12} /> {track.first ? 'Mandar primer ' + cfg.unit : 'Reportarse con el cliente'}</span>}
           </div>
         </div>
 
@@ -3315,15 +3587,15 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
               {shots.map((s, i) => (
                 <div key={i} style={{ position: 'relative' }}>
                   <img src={s} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
-                  <button onClick={() => setShots((arr) => arr.filter((_, j) => j !== i))} style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 99, background: 'var(--red)', color: '#fff', display: 'grid', placeItems: 'center' }}><I.x width={11} height={11} /></button>
+                  <button onClick={() => setShots((arr) => arr.filter((_, j) => j !== i))} style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 99, background: 'var(--red)', color: '#fff', display: 'grid', placeItems: 'center' }}><I2.x width={11} height={11} /></button>
                 </div>
               ))}
             </div>
           )}
           <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} style={{ display: 'none' }} />
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}><I.paperclip width={14} height={14} /> {busy ? 'Procesando…' : 'Adjuntar capturas'}</button>
-            <button className="btn btn-sm btn-accent" onClick={addEntry} style={{ marginLeft: 'auto' }}><I.check width={14} height={14} /> Registrar {cfg.unit}</button>
+            <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}><I2.paperclip width={14} height={14} /> {busy ? 'Procesando…' : 'Adjuntar capturas'}</button>
+            <button className="btn btn-sm btn-accent" onClick={addEntry} style={{ marginLeft: 'auto' }}><I2.check width={14} height={14} /> Registrar {cfg.unit}</button>
           </div>
         </div>
 
@@ -3361,17 +3633,17 @@ function PmStartupAlert({ open, projects, clients, onClose, onOpenProject }) {
                 <div style={{ fontWeight: 600, fontSize: 14, cursor: 'pointer' }} onClick={() => { onClose(); onOpenProject(p.id) }}>{p.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>{clientOf(p.clientId)?.company}</div>
                 <div style={{ display: 'flex', gap: 14, marginTop: 6, fontSize: 12 }}>
-                  <span style={{ color: commBad ? 'var(--red)' : 'var(--text-dim)' }}><I.phone width={11} height={11} /> Comunicación: <strong>{fmtD(comm, 'sin primer mensaje')}</strong></span>
-                  <span style={{ color: avBad ? 'var(--red)' : 'var(--text-dim)' }}><I.folder width={11} height={11} /> Avance: <strong>{fmtD(av, 'sin primer avance')}</strong></span>
+                  <span style={{ color: commBad ? 'var(--red)' : 'var(--text-dim)' }}><I2.phone width={11} height={11} /> Comunicación: <strong>{fmtD(comm, 'sin primer mensaje')}</strong></span>
+                  <span style={{ color: avBad ? 'var(--red)' : 'var(--text-dim)' }}><I2.folder width={11} height={11} /> Avance: <strong>{fmtD(av, 'sin primer avance')}</strong></span>
                 </div>
               </div>
               <a href={p.whatsappUrl || undefined} target="_blank" rel="noreferrer" onClick={(e) => { if (!p.whatsappUrl) e.preventDefault() }}
-                className="btn btn-sm" title={p.whatsappUrl ? 'Abrir grupo de WhatsApp' : 'Sin link de WhatsApp cargado'} style={{ color: p.whatsappUrl ? 'var(--green)' : 'var(--text-faint)', opacity: p.whatsappUrl ? 1 : 0.5, flexShrink: 0 }}><I.whatsapp width={15} height={15} /> WhatsApp</a>
+                className="btn btn-sm" title={p.whatsappUrl ? 'Abrir grupo de WhatsApp' : 'Sin link de WhatsApp cargado'} style={{ color: p.whatsappUrl ? 'var(--green)' : 'var(--text-faint)', opacity: p.whatsappUrl ? 1 : 0.5, flexShrink: 0 }}><I2.whatsapp width={15} height={15} /> WhatsApp</a>
             </div>
           )
         })}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-          <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Entendido</button>
+          <button className="btn btn-accent" onClick={onClose}><I2.check width={15} height={15} /> Entendido</button>
         </div>
       </div>
     </Modal>
@@ -3382,12 +3654,12 @@ function PmStartupAlert({ open, projects, clients, onClose, onOpenProject }) {
 function LinkAdder({ onAdd, cta = 'Agregar link' }) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
-  const submit = () => { const u = url.trim(); if (!u) return; onAdd({ id: uid(), kind: 'link', name: name.trim() || u, url: u, date: NOW.toISOString() }); setName(''); setUrl('') }
+  const submit = () => { const u = url.trim(); if (!u) return; onAdd({ id: uid(), kind: 'link', name: name.trim() || u, url: u, date: NOW().toISOString() }); setName(''); setUrl('') }
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
       <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre (opcional)" style={{ flex: '1 1 110px', padding: '7px 10px', fontSize: 13 }} />
       <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }} placeholder="https://…" style={{ flex: '2 1 200px', padding: '7px 10px', fontSize: 13 }} />
-      <button className="btn btn-sm" onClick={submit}><I.plus width={13} height={13} /> {cta}</button>
+      <button className="btn btn-sm" onClick={submit}><I2.plus width={13} height={13} /> {cta}</button>
     </div>
   )
 }
@@ -3494,10 +3766,10 @@ function AccountsModal({ open, project, onClose, patch }) {
           {accounts.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Todavía no agregaste cuentas. Sumá las que vas a necesitar con los botones de abajo.</div>}
           {accounts.map((a) => (
             <div key={a.id} className="surface surface-hover click" onClick={() => toggle(a.id)} title={a.done ? 'Marcar como no creada' : 'Marcar como creada'} style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-              <span style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (a.done ? 'var(--green)' : 'var(--border-strong)'), background: a.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{a.done && <I.check width={13} height={13} style={{ color: '#fff' }} />}</span>
+              <span style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (a.done ? 'var(--green)' : 'var(--border-strong)'), background: a.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{a.done && <I2.check width={13} height={13} style={{ color: '#fff' }} />}</span>
               <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, textDecoration: a.done ? 'line-through' : 'none', color: a.done ? 'var(--text-faint)' : 'var(--text)' }}>{a.label}</span>
               <span style={{ fontSize: 11.5, fontWeight: 600, color: a.done ? 'var(--green)' : 'var(--text-faint)' }}>{a.done ? 'Creada' : 'Falta'}</span>
-              <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); remove(a.id) }} title="Quitar" style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={13} height={13} /></button>
+              <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); remove(a.id) }} title="Quitar" style={{ padding: 4, color: 'var(--text-faint)' }}><I2.x width={13} height={13} /></button>
             </div>
           ))}
         </div>
@@ -3519,16 +3791,16 @@ function AccountsModal({ open, project, onClose, patch }) {
         {/* Cuenta personalizada */}
         <div style={{ display: 'flex', gap: 8 }}>
           <input className="input" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustom() } }} placeholder="Otra cuenta (ej. Stripe, Cloudflare…)" style={{ flex: 1 }} />
-          <button className="btn btn-accent" onClick={addCustom} disabled={!draft.trim()}><I.plus width={15} height={15} /> Agregar</button>
+          <button className="btn btn-accent" onClick={addCustom} disabled={!draft.trim()}><I2.plus width={15} height={15} /> Agregar</button>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{accounts.length ? `${doneCount}/${accounts.length} creadas` : ''}</span>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-sm" onClick={() => exportAccountsPdf(project, accounts)} disabled={!accounts.length} title="Descarga un PDF prolijo con el estado actual, para compartir con el cliente">
-              <I.pdf width={14} height={14} /> Exportar PDF
+              <I2.pdf width={14} height={14} /> Exportar PDF
             </button>
-            <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button>
+            <button className="btn btn-accent" onClick={onClose}><I2.check width={15} height={15} /> Listo</button>
           </div>
         </div>
       </div>
@@ -3543,11 +3815,11 @@ function AccountsModal({ open, project, onClose, patch }) {
    proyecto (campo `vault`). Solo lo ve el equipo (nunca sale en el link público).
 ============================================================================ */
 const VAULT_TYPES = [
-  { key: 'email', label: 'Correo', Ico: I.mail, color: '#38BDF8' },
-  { key: 'domain', label: 'Dominio', Ico: I.globe, color: '#2DD4BF' },
-  { key: 'payments', label: 'Pagos', Ico: I.card, color: '#22C55E' },
-  { key: 'social', label: 'Redes', Ico: I.at, color: '#EC4899' },
-  { key: 'other', label: 'Otro', Ico: I.key, color: '#9CA3AF' },
+  { key: 'email', label: 'Correo', Ico: I2.mail, color: '#38BDF8' },
+  { key: 'domain', label: 'Dominio', Ico: I2.globe, color: '#2DD4BF' },
+  { key: 'payments', label: 'Pagos', Ico: I2.card, color: '#22C55E' },
+  { key: 'social', label: 'Redes', Ico: I2.at, color: '#EC4899' },
+  { key: 'other', label: 'Otro', Ico: I2.key, color: '#9CA3AF' },
 ]
 const vaultMeta = (k) => VAULT_TYPES.find((t) => t.key === k) || VAULT_TYPES[VAULT_TYPES.length - 1]
 const VAULT_PRESETS = [
@@ -3578,7 +3850,7 @@ function CopyBtn({ value, title = 'Copiar' }) {
   }
   return (
     <button className="btn btn-sm btn-ghost" onClick={copy} title={ok ? 'Copiado' : title} style={{ padding: 5, color: ok ? 'var(--green)' : 'var(--text-faint)', flexShrink: 0 }}>
-      {ok ? <I.check width={13} height={13} /> : <I.copy width={13} height={13} />}
+      {ok ? <I2.check width={13} height={13} /> : <I2.copy width={13} height={13} />}
     </button>
   )
 }
@@ -3595,7 +3867,7 @@ function VaultRow({ Ico, value, mono = true, secret = false, isLink = false }) {
       {isLink && !masked
         ? <a href={value} target="_blank" rel="noreferrer" className={mono ? 'mono' : ''} style={{ flex: 1, fontSize: 12.5, color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</a>
         : <span className={mono ? 'mono' : ''} style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: masked ? 2 : 0 }}>{display}</span>}
-      {secret && <button className="btn btn-sm btn-ghost" onClick={() => setShow((s) => !s)} title={show ? 'Ocultar' : 'Mostrar'} style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}>{show ? <I.eyeOff width={13} height={13} /> : <I.eye width={13} height={13} />}</button>}
+      {secret && <button className="btn btn-sm btn-ghost" onClick={() => setShow((s) => !s)} title={show ? 'Ocultar' : 'Mostrar'} style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}>{show ? <I2.eyeOff width={13} height={13} /> : <I2.eye width={13} height={13} />}</button>}
       <CopyBtn value={value} />
     </div>
   )
@@ -3627,7 +3899,7 @@ function VaultModal({ open, project, onClose, patch }) {
     <Modal open={open} onClose={onClose} title="Datos del cliente" sub={project.name} width={560}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.55, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
-          <I.lock width={15} height={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <I2.lock width={15} height={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
           <span>Guardá acá los accesos y datos del cliente: correos, contraseñas, dominios, hosting, pagos… Solo lo ve el equipo — nunca aparece en el link público.</span>
         </div>
 
@@ -3654,8 +3926,8 @@ function VaultModal({ open, project, onClose, patch }) {
                 <Field label="Contraseña">
                   <div style={{ display: 'flex', gap: 6 }}>
                     <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
-                    <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I.eyeOff width={14} height={14} /> : <I.eye width={14} height={14} />}</button>
-                    <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I.spark width={14} height={14} /></button>
+                    <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>
+                    <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I2.spark width={14} height={14} /></button>
                   </div>
                 </Field>
               </div>
@@ -3664,7 +3936,7 @@ function VaultModal({ open, project, onClose, patch }) {
             <Field label="Notas (opcional)"><textarea className="input" rows={2} value={editing.notes} onChange={(e) => set('notes', e.target.value)} placeholder="2FA, PIN, datos de recuperación, etc." style={{ resize: 'none' }} /></Field>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn" onClick={() => setEditing(null)}>Cancelar</button>
-              <button className="btn btn-accent" onClick={save} disabled={!canSave}><I.check width={15} height={15} /> Guardar dato</button>
+              <button className="btn btn-accent" onClick={save} disabled={!canSave}><I2.check width={15} height={15} /> Guardar dato</button>
             </div>
           </div>
         ) : (
@@ -3673,7 +3945,7 @@ function VaultModal({ open, project, onClose, patch }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {items.length === 0 && (
                 <div className="surface" style={{ padding: '22px 16px', textAlign: 'center', color: 'var(--text-faint)', fontSize: 13, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                  <I.lock width={22} height={22} style={{ color: 'var(--text-faint)', opacity: 0.7 }} />
+                  <I2.lock width={22} height={22} style={{ color: 'var(--text-faint)', opacity: 0.7 }} />
                   Todavía no guardaste ningún dato. Sumá el primero con los accesos rápidos o el botón de abajo.
                 </div>
               )}
@@ -3685,15 +3957,15 @@ function VaultModal({ open, project, onClose, patch }) {
                       <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{m.label}</div>
                     </div>
-                    <button className="btn btn-sm btn-ghost" onClick={() => startEdit(it)} title="Editar" style={{ padding: 5, color: 'var(--text-faint)' }}><I.pencil width={14} height={14} /></button>
-                    <button className="btn btn-sm btn-ghost" onClick={() => remove(it.id)} title="Eliminar" style={{ padding: 5, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => startEdit(it)} title="Editar" style={{ padding: 5, color: 'var(--text-faint)' }}><I2.pencil width={14} height={14} /></button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => remove(it.id)} title="Eliminar" style={{ padding: 5, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
                   </div>
                   {(it.username || it.password || it.url || it.notes) && (
                     <div style={{ padding: '7px 13px 10px' }}>
-                      <VaultRow Ico={I.user} value={it.username} />
-                      <VaultRow Ico={I.lock} value={it.password} secret />
-                      <VaultRow Ico={I.link} value={it.url} isLink mono={false} />
-                      {it.notes && <div style={{ display: 'flex', gap: 8, padding: '5px 0' }}><I.comment width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0, marginTop: 2 }} /><span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{it.notes}</span></div>}
+                      <VaultRow Ico={I2.user} value={it.username} />
+                      <VaultRow Ico={I2.lock} value={it.password} secret />
+                      <VaultRow Ico={I2.link} value={it.url} isLink mono={false} />
+                      {it.notes && <div style={{ display: 'flex', gap: 8, padding: '5px 0' }}><I2.comment width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0, marginTop: 2 }} /><span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{it.notes}</span></div>}
                     </div>
                   )}
                 </div>
@@ -3714,7 +3986,7 @@ function VaultModal({ open, project, onClose, patch }) {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{items.length ? `${items.length} dato${items.length === 1 ? '' : 's'} guardado${items.length === 1 ? '' : 's'}` : ''}</span>
-              <button className="btn btn-accent" onClick={() => startNew(null)}><I.plus width={15} height={15} /> Agregar dato</button>
+              <button className="btn btn-accent" onClick={() => startNew(null)}><I2.plus width={15} height={15} /> Agregar dato</button>
             </div>
           </>
         )}
@@ -3740,7 +4012,7 @@ function ScopeModal({ open, project, onClose, patch }) {
     if (f.size > 1.6 * 1024 * 1024) { alert('El archivo supera 1.6 MB. Para archivos grandes, mejor agregalo como link (Google Drive, Dropbox, etc.).'); e.target.value = ''; return }
     setBusy(true)
     const reader = new FileReader()
-    reader.onload = () => { addFile({ id: uid(), kind: 'file', name: f.name, data: reader.result, ext: (f.name.split('.').pop() || '').toLowerCase(), size: f.size, date: NOW.toISOString() }); setBusy(false) }
+    reader.onload = () => { addFile({ id: uid(), kind: 'file', name: f.name, data: reader.result, ext: (f.name.split('.').pop() || '').toLowerCase(), size: f.size, date: NOW().toISOString() }); setBusy(false) }
     reader.onerror = () => setBusy(false)
     reader.readAsDataURL(f)
     e.target.value = ''
@@ -3748,10 +4020,10 @@ function ScopeModal({ open, project, onClose, patch }) {
 
   const ResourceRow = ({ it, onDelete }) => (
     <div className="surface" style={{ padding: '9px 11px', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 10 }}>
-      <span style={{ color: it.kind === 'file' ? 'var(--red)' : 'var(--accent)', flexShrink: 0 }}>{it.kind === 'file' ? <I.pdf width={17} height={17} /> : <I.link width={16} height={16} />}</span>
+      <span style={{ color: it.kind === 'file' ? 'var(--red)' : 'var(--accent)', flexShrink: 0 }}>{it.kind === 'file' ? <I2.pdf width={17} height={17} /> : <I2.link width={16} height={16} />}</span>
       <a href={it.kind === 'file' ? it.data : it.url} target="_blank" rel="noreferrer" download={it.kind === 'file' ? it.name : undefined} style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</a>
-      <a href={it.kind === 'file' ? it.data : it.url} target="_blank" rel="noreferrer" download={it.kind === 'file' ? it.name : undefined} title={it.kind === 'file' ? 'Descargar' : 'Abrir'} className="btn btn-sm btn-ghost" style={{ padding: 6, color: 'var(--text-dim)' }}>{it.kind === 'file' ? <I.download width={15} height={15} /> : <I.ext width={15} height={15} />}</a>
-      <button onClick={() => onDelete(it.id)} title="Eliminar" className="btn btn-sm btn-ghost" style={{ padding: 6, color: 'var(--text-faint)' }}><I.x width={14} height={14} /></button>
+      <a href={it.kind === 'file' ? it.data : it.url} target="_blank" rel="noreferrer" download={it.kind === 'file' ? it.name : undefined} title={it.kind === 'file' ? 'Descargar' : 'Abrir'} className="btn btn-sm btn-ghost" style={{ padding: 6, color: 'var(--text-dim)' }}>{it.kind === 'file' ? <I2.download width={15} height={15} /> : <I2.ext width={15} height={15} />}</a>
+      <button onClick={() => onDelete(it.id)} title="Eliminar" className="btn btn-sm btn-ghost" style={{ padding: 6, color: 'var(--text-faint)' }}><I2.x width={14} height={14} /></button>
     </div>
   )
 
@@ -3760,14 +4032,14 @@ function ScopeModal({ open, project, onClose, patch }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
         {/* Documentos / archivos */}
         <div>
-          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.pdf width={14} height={14} /> Documentos del alcance ({files.length})</div>
+          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I2.pdf width={14} height={14} /> Documentos del alcance ({files.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {files.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>Subí los PDFs/archivos del alcance o pegá un link.</div>}
             {files.map((it) => <ResourceRow key={it.id} it={it} onDelete={delFile} />)}
           </div>
           <input ref={fileRef} type="file" onChange={onFile} style={{ display: 'none' }} />
           <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
-            <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}><I.paperclip width={14} height={14} /> {busy ? 'Subiendo…' : 'Subir archivo / PDF'}</button>
+            <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}><I2.paperclip width={14} height={14} /> {busy ? 'Subiendo…' : 'Subir archivo / PDF'}</button>
             <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>hasta 1.6 MB — más grande, usá link</span>
           </div>
           <LinkAdder onAdd={addFile} cta="Agregar link" />
@@ -3777,7 +4049,7 @@ function ScopeModal({ open, project, onClose, patch }) {
 
         {/* Llamadas de venta Fathom */}
         <div>
-          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I.phone width={14} height={14} /> Llamadas de venta (Fathom) ({sales.length})</div>
+          <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}><I2.phone width={14} height={14} /> Llamadas de venta (Fathom) ({sales.length})</div>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 8 }}>Pegá el link de la call de venta para que el equipo vea qué se le vendió al cliente.</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {sales.map((it) => <ResourceRow key={it.id} it={it} onDelete={delSale} />)}
@@ -3805,7 +4077,7 @@ function Clients() {
   const [creating, setCreating] = useState(false)
   const projectsOf = (id) => data.projects.filter((p) => p.clientId === id && p.status === 'active').length
 
-  const blank = { id: '', name: '', company: '', email: '', phone: '', onboardDate: NOW.toISOString(), onboarding: { businessDescription: '', goals: '', existingTech: '', approvedBudget: 0, notes: '' } }
+  const blank = { id: '', name: '', company: '', email: '', phone: '', onboardDate: NOW().toISOString(), onboarding: { businessDescription: '', goals: '', existingTech: '', approvedBudget: 0, notes: '' } }
 
   const saveClient = (c) => {
     if (c.id && clientStore.items.some((x) => x.id === c.id)) clientStore.patch(c.id, () => c)
@@ -3835,10 +4107,10 @@ function Clients() {
         <Field label="Objetivos"><textarea className="input" rows={2} value={f.onboarding.goals} onChange={(e) => setO('goals', e.target.value)} /></Field>
         <Field label="Observaciones"><textarea className="input" rows={2} value={f.onboarding.notes} onChange={(e) => setO('notes', e.target.value)} /></Field>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-          {onDelete && f.id ? <button className="btn" onClick={() => { if (window.confirm(`¿Eliminar el cliente "${f.name || f.company}"?${activeProjs ? ` Tiene ${activeProjs} proyecto(s) activo(s); esos proyectos no se borran.` : ''} No se puede deshacer.`)) onDelete(f.id) }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I.trash width={15} height={15} /> Eliminar cliente</button> : <span />}
+          {onDelete && f.id ? <button className="btn" onClick={() => { if (window.confirm(`¿Eliminar el cliente "${f.name || f.company}"?${activeProjs ? ` Tiene ${activeProjs} proyecto(s) activo(s); esos proyectos no se borran.` : ''} No se puede deshacer.`)) onDelete(f.id) }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I2.trash width={15} height={15} /> Eliminar cliente</button> : <span />}
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn" onClick={onCancel}>Cancelar</button>
-            <button className="btn btn-accent" onClick={() => onSave(f)}><I.check width={15} height={15} /> Guardar</button>
+            <button className="btn btn-accent" onClick={() => onSave(f)}><I2.check width={15} height={15} /> Guardar</button>
           </div>
         </div>
       </div>
@@ -3849,7 +4121,7 @@ function Clients() {
     <div className="view" style={{ padding: '28px 34px 60px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Cuentas</div><h1 style={{ fontSize: 32 }}>Clientes</h1></div>
-        <button className="btn btn-accent" onClick={() => setCreating(true)}><I.plus width={15} height={15} /> Agregar cliente</button>
+        <button className="btn btn-accent" onClick={() => setCreating(true)}><I2.plus width={15} height={15} /> Agregar cliente</button>
       </div>
       <div className="surface tbl" style={{ overflow: 'hidden' }}>
         <table>
@@ -3868,7 +4140,7 @@ function Clients() {
                 <td style={{ padding: '13px 16px', color: 'var(--text-dim)' }}>{c.company}</td>
                 <td style={{ padding: '13px 16px', color: 'var(--text-dim)' }} className="mono">{c.email}</td>
                 <td style={{ padding: '13px 16px' }}><Badge tone="accent">{projectsOf(c.id)}</Badge></td>
-                <td style={{ padding: '13px 16px', color: 'var(--text-dim)' }}>{fmtDate(c.onboardDate || NOW.toISOString())}</td>
+                <td style={{ padding: '13px 16px', color: 'var(--text-dim)' }}>{fmtDate(c.onboardDate || NOW().toISOString())}</td>
               </tr>
             ))}
           </tbody>
@@ -3916,7 +4188,7 @@ function SopMarkdown({ text }) {
       while (i < lines.length && /^\[[ xX]\]/.test(lines[i].trim())) { const l = lines[i].trim(); items.push({ checked: /^\[[xX]\]/.test(l), text: l.replace(/^\[[ xX]\]\s?/, '') }); i++ }
       out.push(<div key={'c' + i} style={{ display: 'flex', flexDirection: 'column', gap: 7, margin: '10px 0' }}>{items.map((it, k) => (
         <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, fontSize: 14.5, color: 'var(--text-dim)' }}>
-          <span style={{ flexShrink: 0, width: 17, height: 17, marginTop: 1, borderRadius: 5, border: '1.5px solid var(--border-strong, var(--border))', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}>{it.checked ? <I.check width={12} height={12} /> : null}</span>
+          <span style={{ flexShrink: 0, width: 17, height: 17, marginTop: 1, borderRadius: 5, border: '1.5px solid var(--border-strong, var(--border))', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}>{it.checked ? <I2.check width={12} height={12} /> : null}</span>
           <span>{sopInline(it.text, 'c' + i + k)}</span>
         </div>))}</div>)
       continue
@@ -3949,9 +4221,9 @@ function SopLink({ link }) {
   )
   return (
     <a href={link.url} target="_blank" rel="noreferrer" className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', marginBottom: 8, color: 'var(--text)', textDecoration: 'none' }}>
-      <I.link width={16} height={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+      <I2.link width={16} height={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
       <div style={{ minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{link.label || link.url}</div><div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link.url}</div></div>
-      <I.ext width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--text-faint)', flexShrink: 0 }} />
+      <I2.ext width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--text-faint)', flexShrink: 0 }} />
     </a>
   )
 }
@@ -4005,18 +4277,18 @@ function Sops() {
 
   const FolderCard = ({ c }) => (
     <div className="surface-hover click" onClick={() => setFolder(c.id)} style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
-      <div style={{ width: 40, height: 40, borderRadius: 11, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', flexShrink: 0 }}><I.folder width={20} height={20} /></div>
+      <div style={{ width: 40, height: 40, borderRadius: 11, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', flexShrink: 0 }}><I2.folder width={20} height={20} /></div>
       <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div><div style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{childrenCats(c.id).length + procsIn(c.id).length} elemento(s)</div></div>
-      <div className="sop-actions" style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
-        <button className="btn btn-sm btn-ghost" title="Renombrar" onClick={() => setCatModal({ id: c.id, name: c.name, parentId: c.parentId || null })} style={{ padding: 5 }}><I.pencil width={14} height={14} /></button>
-        <button className="btn btn-sm btn-ghost" title="Eliminar carpeta" onClick={() => { if (window.confirm(`¿Eliminar la carpeta "${c.name}"? Su contenido se mueve a la carpeta superior.`)) deleteCategory(c.id) }} style={{ padding: 5, color: 'var(--red)' }}><I.trash width={14} height={14} /></button>
+      <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
+        <button className="btn btn-sm btn-ghost" title="Renombrar" onClick={() => setCatModal({ id: c.id, name: c.name, parentId: c.parentId || null })} style={{ padding: 5 }}><I2.pencil width={14} height={14} /></button>
+        <button className="btn btn-sm btn-ghost" title="Eliminar carpeta" onClick={() => { if (window.confirm(`¿Eliminar la carpeta "${c.name}"? Su contenido se mueve a la carpeta superior.`)) deleteCategory(c.id) }} style={{ padding: 5, color: 'var(--red)' }}><I2.trash width={14} height={14} /></button>
       </div>
     </div>
   )
   const ProcCard = ({ p }) => (
     <div className="surface-hover click" onClick={() => setOpenId(p.id)} style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', position: 'relative' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 11, background: 'var(--card-hover)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', color: 'var(--text-dim)', flexShrink: 0 }}><I.doc width={19} height={19} /></div>
+        <div style={{ width: 40, height: 40, borderRadius: 11, background: 'var(--card-hover)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', color: 'var(--text-dim)', flexShrink: 0 }}><I2.doc width={19} height={19} /></div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{p.title}</div>
           <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.description}</div>
@@ -4025,8 +4297,8 @@ function Sops() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
         <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Actualizado {fmtDate(p.updatedAt || p.createdAt)}</span>
         <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
-          <button className="btn btn-sm btn-ghost" title="Editar" onClick={() => setEditProc(p)} style={{ padding: 5 }}><I.pencil width={14} height={14} /></button>
-          <button className="btn btn-sm btn-ghost" title="Eliminar" onClick={() => { if (window.confirm(`¿Eliminar el proceso "${p.title}"?`)) deleteProcess(p.id) }} style={{ padding: 5, color: 'var(--red)' }}><I.trash width={14} height={14} /></button>
+          <button className="btn btn-sm btn-ghost" title="Editar" onClick={() => setEditProc(p)} style={{ padding: 5 }}><I2.pencil width={14} height={14} /></button>
+          <button className="btn btn-sm btn-ghost" title="Eliminar" onClick={() => { if (window.confirm(`¿Eliminar el proceso "${p.title}"?`)) deleteProcess(p.id) }} style={{ padding: 5, color: 'var(--red)' }}><I2.trash width={14} height={14} /></button>
         </div>
       </div>
     </div>
@@ -4039,28 +4311,28 @@ function Sops() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Segmento de procesos</div><h1 style={{ fontSize: 32 }}>SOP · Procesos</h1><div style={{ fontSize: 13.5, color: 'var(--text-dim)', marginTop: 4 }}>Documentá cómo se hacen las cosas. Carpetas por área, procesos adentro.</div></div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn" onClick={() => setCatModal({ name: '', parentId: folder })}><I.folder width={15} height={15} /> Nueva carpeta</button>
-          <button className="btn btn-accent" onClick={() => setEditProc({ id: '', title: '', description: '', categoryId: folder, content: '', links: [], images: [] })}><I.plus width={15} height={15} /> Nuevo proceso</button>
+          <button className="btn" onClick={() => setCatModal({ name: '', parentId: folder })}><I2.folder width={15} height={15} /> Nueva carpeta</button>
+          <button className="btn btn-accent" onClick={() => setEditProc({ id: '', title: '', description: '', categoryId: folder, content: '', links: [], images: [] })}><I2.plus width={15} height={15} /> Nuevo proceso</button>
         </div>
       </div>
 
       {/* toolbar: buscador + toggle vista */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 220, maxWidth: 460 }}>
-          <I.search width={15} height={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)' }} />
+          <I2.search width={15} height={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)' }} />
           <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar procesos…" style={{ paddingLeft: 34 }} />
         </div>
         <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
-          <button className="btn btn-sm btn-ghost" title="Carpetas" onClick={() => setViewMode('folders')} style={{ background: viewMode === 'folders' ? 'var(--card-hover)' : 'transparent', color: viewMode === 'folders' ? 'var(--accent)' : 'var(--text-dim)' }}><I.cards width={15} height={15} /></button>
-          <button className="btn btn-sm btn-ghost" title="Tabla" onClick={() => setViewMode('table')} style={{ background: viewMode === 'table' ? 'var(--card-hover)' : 'transparent', color: viewMode === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
+          <button className="btn btn-sm btn-ghost" title="Carpetas" onClick={() => setViewMode('folders')} style={{ background: viewMode === 'folders' ? 'var(--card-hover)' : 'transparent', color: viewMode === 'folders' ? 'var(--accent)' : 'var(--text-dim)' }}><I2.cards width={15} height={15} /></button>
+          <button className="btn btn-sm btn-ghost" title="Tabla" onClick={() => setViewMode('table')} style={{ background: viewMode === 'table' ? 'var(--card-hover)' : 'transparent', color: viewMode === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I2.table width={15} height={15} /></button>
         </div>
       </div>
 
       {/* breadcrumb */}
       {!searching && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 16, fontSize: 13.5 }}>
-          <button className="row-hover" onClick={() => setFolder(null)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 8px', borderRadius: 8, color: folder ? 'var(--text-dim)' : 'var(--text)', fontWeight: 600 }}><I.folder width={14} height={14} /> Inicio</button>
-          {crumbs.map((c) => (<React.Fragment key={c.id}><I.chevR width={13} height={13} style={{ color: 'var(--text-faint)' }} /><button className="row-hover" onClick={() => setFolder(c.id)} style={{ padding: '4px 8px', borderRadius: 8, color: c.id === folder ? 'var(--text)' : 'var(--text-dim)', fontWeight: 600 }}>{c.name}</button></React.Fragment>))}
+          <button className="row-hover" onClick={() => setFolder(null)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 8px', borderRadius: 8, color: folder ? 'var(--text-dim)' : 'var(--text)', fontWeight: 600 }}><I2.folder width={14} height={14} /> Inicio</button>
+          {crumbs.map((c) => (<React.Fragment key={c.id}><I2.chevR width={13} height={13} style={{ color: 'var(--text-faint)' }} /><button className="row-hover" onClick={() => setFolder(c.id)} style={{ padding: '4px 8px', borderRadius: 8, color: c.id === folder ? 'var(--text)' : 'var(--text-dim)', fontWeight: 600 }}>{c.name}</button></React.Fragment>))}
         </div>
       )}
       {searching && <div style={{ marginBottom: 16, fontSize: 13.5, color: 'var(--text-dim)' }}>{searchResults.length} resultado(s) para «{q}»</div>}
@@ -4068,7 +4340,7 @@ function Sops() {
       {/* contenido */}
       {(searching ? searchResults.length === 0 : subFolders.length === 0 && folderProcs.length === 0) ? (
         <div className="surface" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-faint)' }}>
-          <I.doc width={30} height={30} style={{ opacity: .5 }} />
+          <I2.doc width={30} height={30} style={{ opacity: .5 }} />
           <div style={{ marginTop: 10, fontSize: 14 }}>{searching ? 'No se encontraron procesos.' : 'Esta carpeta está vacía. Creá una carpeta o un proceso nuevo.'}</div>
         </div>
       ) : viewMode === 'folders' ? (
@@ -4085,19 +4357,19 @@ function Sops() {
             <tbody>
               {tableRows.map((r, k) => r.kind === 'cat' ? (
                 <tr key={'c' + r.c.id} className="row-hover click" onClick={() => setFolder(r.c.id)} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '12px 16px', fontWeight: 600 }}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><I.folder width={16} height={16} style={{ color: 'var(--accent)' }} />{r.c.name}</div></td>
+                  <td style={{ padding: '12px 16px', fontWeight: 600 }}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><I2.folder width={16} height={16} style={{ color: 'var(--accent)' }} />{r.c.name}</div></td>
                   <td style={{ padding: '12px 16px' }}><Badge tone="accent">Carpeta</Badge></td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-faint)' }}>—</td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-faint)' }}>—</td>
-                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}><button className="btn btn-sm btn-ghost" onClick={() => setCatModal({ id: r.c.id, name: r.c.name, parentId: r.c.parentId || null })} style={{ padding: 5 }}><I.pencil width={14} height={14} /></button><button className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm(`¿Eliminar la carpeta "${r.c.name}"?`)) deleteCategory(r.c.id) }} style={{ padding: 5, color: 'var(--red)' }}><I.trash width={14} height={14} /></button></div></td>
+                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}><button className="btn btn-sm btn-ghost" onClick={() => setCatModal({ id: r.c.id, name: r.c.name, parentId: r.c.parentId || null })} style={{ padding: 5 }}><I2.pencil width={14} height={14} /></button><button className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm(`¿Eliminar la carpeta "${r.c.name}"?`)) deleteCategory(r.c.id) }} style={{ padding: 5, color: 'var(--red)' }}><I2.trash width={14} height={14} /></button></div></td>
                 </tr>
               ) : (
                 <tr key={'p' + r.p.id} className="row-hover click" onClick={() => setOpenId(r.p.id)} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '12px 16px', fontWeight: 600 }}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><I.doc width={16} height={16} style={{ color: 'var(--text-dim)' }} />{r.p.title}</div></td>
+                  <td style={{ padding: '12px 16px', fontWeight: 600 }}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><I2.doc width={16} height={16} style={{ color: 'var(--text-dim)' }} />{r.p.title}</div></td>
                   <td style={{ padding: '12px 16px' }}><Badge>Proceso</Badge></td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{catById(r.p.categoryId)?.name || 'Sin categoría'}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{fmtDate(r.p.updatedAt || r.p.createdAt)}</td>
-                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}><button className="btn btn-sm btn-ghost" onClick={() => setEditProc(r.p)} style={{ padding: 5 }}><I.pencil width={14} height={14} /></button><button className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm(`¿Eliminar el proceso "${r.p.title}"?`)) deleteProcess(r.p.id) }} style={{ padding: 5, color: 'var(--red)' }}><I.trash width={14} height={14} /></button></div></td>
+                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}><button className="btn btn-sm btn-ghost" onClick={() => setEditProc(r.p)} style={{ padding: 5 }}><I2.pencil width={14} height={14} /></button><button className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm(`¿Eliminar el proceso "${r.p.title}"?`)) deleteProcess(r.p.id) }} style={{ padding: 5, color: 'var(--red)' }}><I2.trash width={14} height={14} /></button></div></td>
                 </tr>
               ))}
             </tbody>
@@ -4110,7 +4382,7 @@ function Sops() {
         {openProc && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 14 }}>
-              <button className="btn" onClick={() => { setEditProc(openProc); setOpenId(null) }}><I.pencil width={14} height={14} /> Editar</button>
+              <button className="btn" onClick={() => { setEditProc(openProc); setOpenId(null) }}><I2.pencil width={14} height={14} /> Editar</button>
             </div>
             {openProc.description && <p style={{ fontSize: 15, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 8, paddingBottom: 14, borderBottom: '1px solid var(--border)' }}>{openProc.description}</p>}
             {(openProc.images || []).length > 0 && (
@@ -4173,13 +4445,13 @@ function SopEditor({ proc, cats, onClose, onSave }) {
 
         {/* links */}
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}><span className="label">Links / embeds</span><button className="btn btn-sm" onClick={addLink}><I.plus width={13} height={13} /> Agregar link</button></div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}><span className="label">Links / embeds</span><button className="btn btn-sm" onClick={addLink}><I2.plus width={13} height={13} /> Agregar link</button></div>
           {f.links.length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>Loom, YouTube o Vimeo se muestran embebidos; el resto como tarjeta.</div> : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{f.links.map((l) => (
               <div key={l.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input className="input" value={l.label} onChange={(e) => setLink(l.id, 'label', e.target.value)} placeholder="Etiqueta" style={{ maxWidth: 180 }} />
                 <input className="input mono" value={l.url} onChange={(e) => setLink(l.id, 'url', e.target.value)} placeholder="https://…" style={{ fontSize: 12.5 }} />
-                <button className="btn btn-sm btn-ghost" onClick={() => rmLink(l.id)} style={{ padding: 6, color: 'var(--red)' }}><I.trash width={14} height={14} /></button>
+                <button className="btn btn-sm btn-ghost" onClick={() => rmLink(l.id)} style={{ padding: 6, color: 'var(--red)' }}><I2.trash width={14} height={14} /></button>
               </div>))}</div>
           )}
         </div>
@@ -4189,8 +4461,8 @@ function SopEditor({ proc, cats, onClose, onSave }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <span className="label">Imágenes</span>
             <div style={{ display: 'flex', gap: 6 }}>
-              <label className="btn btn-sm" style={{ cursor: 'pointer' }}><I.paperclip width={13} height={13} /> Subir<input type="file" accept="image/*" multiple onChange={onFiles} style={{ display: 'none' }} /></label>
-              <button className="btn btn-sm" onClick={addImgUrl}><I.link width={13} height={13} /> Por URL</button>
+              <label className="btn btn-sm" style={{ cursor: 'pointer' }}><I2.paperclip width={13} height={13} /> Subir<input type="file" accept="image/*" multiple onChange={onFiles} style={{ display: 'none' }} /></label>
+              <button className="btn btn-sm" onClick={addImgUrl}><I2.link width={13} height={13} /> Por URL</button>
             </div>
           </div>
           {f.images.length > 0 && (
@@ -4198,7 +4470,7 @@ function SopEditor({ proc, cats, onClose, onSave }) {
               {f.images.map((im) => (
                 <div key={im.id} style={{ position: 'relative' }}>
                   <img src={im.src} alt={im.name || ''} style={{ width: '100%', height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
-                  <button className="btn btn-sm" onClick={() => rmImg(im.id)} style={{ position: 'absolute', top: 4, right: 4, padding: 4, background: 'rgba(0,0,0,.6)', color: '#fff', border: 'none' }}><I.x width={12} height={12} /></button>
+                  <button className="btn btn-sm" onClick={() => rmImg(im.id)} style={{ position: 'absolute', top: 4, right: 4, padding: 4, background: 'rgba(0,0,0,.6)', color: '#fff', border: 'none' }}><I2.x width={12} height={12} /></button>
                 </div>))}
             </div>
           )}
@@ -4206,7 +4478,7 @@ function SopEditor({ proc, cats, onClose, onSave }) {
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
           <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={() => onSave(f, newCat)} disabled={!canSave}><I.check width={15} height={15} /> Guardar proceso</button>
+          <button className="btn btn-accent" onClick={() => onSave(f, newCat)} disabled={!canSave}><I2.check width={15} height={15} /> Guardar proceso</button>
         </div>
       </div>
     </Modal>
@@ -4230,7 +4502,7 @@ function SopCatModal({ cat, cats, onClose, onSave }) {
         </Field>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
           <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={() => onSave({ ...cat, name: name.trim(), parentId: parentId || null })} disabled={!name.trim()}><I.check width={15} height={15} /> Guardar</button>
+          <button className="btn btn-accent" onClick={() => onSave({ ...cat, name: name.trim(), parentId: parentId || null })} disabled={!name.trim()}><I2.check width={15} height={15} /> Guardar</button>
         </div>
       </div>
     </Modal>
@@ -4246,7 +4518,7 @@ function CallEditor({ open, call, isNew, onClose, onSave, onDelete }) {
   const [f, setF] = useState(null)
   useEffect(() => {
     if (!open) return
-    setF(call ? { ...call } : { id: uid(), advisor: data.team[0]?.name || '', clientId: data.clients[0]?.id || '', projectId: '', date: NOW.toISOString().slice(0, 10), type: 'onboarding', priority: 'normal', summary: '', transcript: '', fathomUrl: '' })
+    setF(call ? { ...call } : { id: uid(), advisor: data.team[0]?.name || '', clientId: data.clients[0]?.id || '', projectId: '', date: NOW().toISOString().slice(0, 10), type: 'onboarding', priority: 'normal', summary: '', transcript: '', fathomUrl: '' })
   }, [open, call && call.id])
   if (!f) return <Modal open={open} onClose={onClose} title="Llamada" />
   const set = (k, v) => setF((s) => {
@@ -4293,10 +4565,10 @@ function CallEditor({ open, call, isNew, onClose, onSave, onDelete }) {
         <Field label="Resumen"><textarea className="input" rows={3} value={f.summary || ''} onChange={(e) => set('summary', e.target.value)} placeholder="Resumen de la llamada…" /></Field>
         <Field label="Transcript completo"><textarea className="input mono" rows={8} value={f.transcript || ''} onChange={(e) => set('transcript', e.target.value)} placeholder="Pegá acá el transcript completo…" style={{ fontSize: 12.5, lineHeight: 1.6 }} /></Field>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-          {!isNew ? <button className="btn" onClick={() => { onDelete(f.id); onClose() }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I.trash width={15} height={15} /> Eliminar</button> : <span />}
+          {!isNew ? <button className="btn" onClick={() => { onDelete(f.id); onClose() }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I2.trash width={15} height={15} /> Eliminar</button> : <span />}
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn" onClick={onClose}>Cancelar</button>
-            <button className="btn btn-accent" onClick={() => { onSave(f); onClose() }}><I.check width={15} height={15} /> Guardar</button>
+            <button className="btn btn-accent" onClick={() => { onSave(f); onClose() }}><I2.check width={15} height={15} /> Guardar</button>
           </div>
         </div>
       </div>
@@ -4338,7 +4610,7 @@ function FathomAccountsModal({ open, onClose, accounts, onReload }) {
                 <div style={{ fontWeight: 600, fontSize: 13.5 }}>{a.label}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>{a.email || '—'} · {a.last_synced ? `sync ${fmtRelative(a.last_synced)}` : 'sin sincronizar'}</div>
               </div>
-              <button className="btn btn-sm btn-ghost" onClick={() => remove(a.id)} title="Quitar cuenta" style={{ padding: 6, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
+              <button className="btn btn-sm btn-ghost" onClick={() => remove(a.id)} title="Quitar cuenta" style={{ padding: 6, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
             </div>
           ))}
         </div>
@@ -4350,7 +4622,7 @@ function FathomAccountsModal({ open, onClose, accounts, onReload }) {
         <Field label="API key de Fathom (Fathom → Settings → API)"><input className="input mono" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="fathom_…" /></Field>
         {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8 }}>{err}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn btn-accent" onClick={add} disabled={busy}><I.plus width={15} height={15} /> {busy ? 'Guardando…' : 'Agregar cuenta'}</button>
+          <button className="btn btn-accent" onClick={add} disabled={busy}><I2.plus width={15} height={15} /> {busy ? 'Guardando…' : 'Agregar cuenta'}</button>
         </div>
       </div>
     </Modal>
@@ -4416,7 +4688,7 @@ function Calls() {
   const Flag = ({ on, label, row }) => (
     <button onClick={(e) => { e.stopPropagation(); toggleFlag(row, label === 'Testimonio' ? 'testimonial' : 'upsell') }} title={label}
       className="tag" style={{ cursor: 'pointer', color: on ? 'var(--green)' : 'var(--text-faint)', background: on ? 'var(--green-soft)' : 'var(--bg-elevated)', borderColor: on ? 'transparent' : 'var(--border)' }}>
-      {on ? <I.check width={11} height={11} /> : <I.x width={11} height={11} />} {label}
+      {on ? <I2.check width={11} height={11} /> : <I2.x width={11} height={11} />} {label}
     </button>
   )
 
@@ -4425,16 +4697,16 @@ function Calls() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div><div className="label" style={{ marginBottom: 6 }}>Soporte & seguimiento</div><h1 style={{ fontSize: 32 }}>Calls</h1></div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button className="btn btn-accent" onClick={traerCalls} disabled={syncing}><I.refresh width={15} height={15} style={syncing ? { animation: 'spin 1s linear infinite' } : {}} /> {syncing ? 'Trayendo…' : 'Traer calls'}</button>
-          <button className="btn" onClick={() => setFathomOpen(true)}><I.phone width={15} height={15} /> Cuentas Fathom {accounts.length ? `(${accounts.length})` : ''}</button>
-          <button className="btn" onClick={() => setEditing({ call: null, isNew: true })}><I.plus width={15} height={15} /> Agregar manual</button>
+          <button className="btn btn-accent" onClick={traerCalls} disabled={syncing}><I2.refresh width={15} height={15} style={syncing ? { animation: 'spin 1s linear infinite' } : {}} /> {syncing ? 'Trayendo…' : 'Traer calls'}</button>
+          <button className="btn" onClick={() => setFathomOpen(true)}><I2.phone width={15} height={15} /> Cuentas Fathom {accounts.length ? `(${accounts.length})` : ''}</button>
+          <button className="btn" onClick={() => setEditing({ call: null, isNew: true })}><I2.plus width={15} height={15} /> Agregar manual</button>
         </div>
       </div>
 
       {syncMsg && (
         <div className="surface" style={{ padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, borderColor: syncMsg.error ? 'var(--red)' : 'var(--accent-line)', background: syncMsg.error ? 'var(--red-soft)' : 'var(--bg-elevated)' }}>
           <span style={{ fontSize: 13, color: syncMsg.error ? 'var(--red)' : 'var(--text-dim)', flex: 1 }}>{syncMsg.error ? syncMsg.error : `Se trajeron/actualizaron ${syncMsg.imported} calls de Fathom.${(syncMsg.errors || []).length ? ' Errores: ' + syncMsg.errors.join('; ') : ''}`}</span>
-          <button className="btn btn-sm btn-ghost" onClick={() => setSyncMsg(null)}><I.x width={13} height={13} /></button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setSyncMsg(null)}><I2.x width={13} height={13} /></button>
         </div>
       )}
 
@@ -4448,7 +4720,7 @@ function Calls() {
           <option value="all">Asesor: todos</option>
           {asesores.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
-        {(typeFilter !== 'all' || asesorFilter !== 'all') && <button className="btn btn-sm btn-ghost" onClick={() => { setTypeFilter('all'); setAsesorFilter('all') }} style={{ color: 'var(--text-dim)' }}><I.x width={13} height={13} /> Limpiar</button>}
+        {(typeFilter !== 'all' || asesorFilter !== 'all') && <button className="btn btn-sm btn-ghost" onClick={() => { setTypeFilter('all'); setAsesorFilter('all') }} style={{ color: 'var(--text-dim)' }}><I2.x width={13} height={13} /> Limpiar</button>}
       </div>
 
       {filtered.length === 0 && <div className="surface" style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)' }}>Sin llamadas. Cargá una cuenta de Fathom y tocá “Traer calls”, o agregá una manual.</div>}
@@ -4484,8 +4756,8 @@ function Calls() {
                       </select>
                     </td>
                     <td style={{ padding: '12px 16px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }} className="mono">{fmtDate(u.date)}</td>
-                    <td style={{ padding: '12px 16px', width: 50 }}>{u.url ? <a href={u.url} target="_blank" rel="noreferrer" title="Ver transcript/resumen en Fathom" style={{ color: 'var(--accent)' }}><I.link width={16} height={16} /></a> : <span style={{ color: 'var(--text-faint)' }}>—</span>}</td>
-                    <td style={{ padding: '12px 16px 12px 0', width: 40 }}>{u.source === 'manual' && <button className="btn btn-sm btn-ghost" title="Eliminar" onClick={() => { if (window.confirm('¿Eliminar esta llamada?')) deleteCall(u.id) }} style={{ padding: 6, color: 'var(--text-faint)' }}><I.x width={14} height={14} /></button>}</td>
+                    <td style={{ padding: '12px 16px', width: 50 }}>{u.url ? <a href={u.url} target="_blank" rel="noreferrer" title="Ver transcript/resumen en Fathom" style={{ color: 'var(--accent)' }}><I2.link width={16} height={16} /></a> : <span style={{ color: 'var(--text-faint)' }}>—</span>}</td>
+                    <td style={{ padding: '12px 16px 12px 0', width: 40 }}>{u.source === 'manual' && <button className="btn btn-sm btn-ghost" title="Eliminar" onClick={() => { if (window.confirm('¿Eliminar esta llamada?')) deleteCall(u.id) }} style={{ padding: 6, color: 'var(--text-faint)' }}><I2.x width={14} height={14} /></button>}</td>
                   </tr>
                 )
               })}
@@ -4501,19 +4773,8 @@ function Calls() {
 }
 
 /* ============================================================================
-   15 · PROJECT DETAIL — KPI grid · kickoff · sprints · pending · risks · chat
+   15 · PROJECT DETAIL — KPI grid · kickoff · avance del plan · tareas · registro
 ============================================================================ */
-function KpiCard({ label, value, sub, tone, onClick }) {
-  return (
-    <motion.button variants={rise} onClick={onClick} whileHover={{ y: -2 }}
-      className="surface surface-hover click" style={{ padding: 15, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span className="label">{label}</span>
-      <span className="mono" style={{ fontSize: 24, fontWeight: 600, color: tone || 'var(--text)', lineHeight: 1 }}>{value}</span>
-      {sub && <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{sub}</span>}
-    </motion.button>
-  )
-}
-
 /* configurar el link público del proyecto para el cliente (solo lectura, con contraseña) */
 function ShareModal({ open, project, onClose, patch }) {
   const [copied, setCopied] = useState(false)
@@ -4525,10 +4786,10 @@ function ShareModal({ open, project, onClose, patch }) {
     <Modal open={open} onClose={onClose} title="Compartir con el cliente" sub={project.name} width={500}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.6, background: 'var(--bg-elevated)', padding: 12, borderRadius: 10, border: '1px solid var(--border)' }}>
-          El cliente entra con la contraseña y ve una página de <strong>solo lectura</strong> en tiempo real: dashboard, sprints por semana, tareas y el registro (calls, looms y notas <strong>públicas</strong>). Las notas privadas y lo interno no se muestran.
+          El cliente entra con la contraseña y ve una página de <strong>solo lectura</strong> en tiempo real: dashboard, avance, tareas y el registro (calls, looms y notas <strong>públicas</strong>). Las notas privadas y lo interno no se muestran.
         </div>
         {!enabled ? (
-          <button className="btn btn-accent" onClick={enable} style={{ justifyContent: 'center' }}><I.eye width={15} height={15} /> Activar link para el cliente</button>
+          <button className="btn btn-accent" onClick={enable} style={{ justifyContent: 'center' }}><I2.eye width={15} height={15} /> Activar link para el cliente</button>
         ) : (
           <>
             <Field label="Contraseña de acceso (dásela al cliente)">
@@ -4537,15 +4798,15 @@ function ShareModal({ open, project, onClose, patch }) {
             <Field label="Link público">
               <div style={{ display: 'flex', gap: 8 }}>
                 <input className="input mono" readOnly value={link} style={{ fontSize: 12 }} onFocus={(e) => e.target.select()} />
-                <button className="btn btn-sm" onClick={copy} style={{ flexShrink: 0 }}>{copied ? <I.check width={14} height={14} /> : <I.link width={14} height={14} />} {copied ? 'Copiado' : 'Copiar'}</button>
+                <button className="btn btn-sm" onClick={copy} style={{ flexShrink: 0 }}>{copied ? <I2.check width={14} height={14} /> : <I2.link width={14} height={14} />} {copied ? 'Copiado' : 'Copiar'}</button>
               </div>
             </Field>
             {!(project.sharePassword || '').trim() && <div style={{ fontSize: 12, color: 'var(--yellow)' }}>⚠ Poné una contraseña — sin ella el cliente no puede entrar.</div>}
-            <a href={link} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ justifyContent: 'center' }}><I.ext width={14} height={14} /> Previsualizar como cliente</a>
-            <button className="btn btn-sm btn-ghost" onClick={() => patch((p) => ({ ...p, shareEnabled: false }))} style={{ color: 'var(--red)', justifyContent: 'center' }}><I.eyeOff width={14} height={14} /> Desactivar el link</button>
+            <a href={link} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ justifyContent: 'center' }}><I2.ext width={14} height={14} /> Previsualizar como cliente</a>
+            <button className="btn btn-sm btn-ghost" onClick={() => patch((p) => ({ ...p, shareEnabled: false }))} style={{ color: 'var(--red)', justifyContent: 'center' }}><I2.eyeOff width={14} height={14} /> Desactivar el link</button>
           </>
         )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button></div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={onClose}><I2.check width={15} height={15} /> Listo</button></div>
       </div>
     </Modal>
   )
@@ -4554,8 +4815,8 @@ function ShareModal({ open, project, onClose, patch }) {
 /* ============================================================================
    15b · AVANCE DEL PLAN — acordeón de semanas con tachado de tareas
    El equipo tacha tareas semana a semana; el % sube y el cliente lo ve en su link
-   público en vivo (patchPlan → sync a published_plans en el store). Vínculo
-   bidireccional semana↔sprint: completar una semana termina su sprint, y viceversa.
+   público en vivo (patchPlan → sync a published_plans en el store). Es la ÚNICA
+   fuente del avance del proyecto: no hay otro tablero por detrás.
 ============================================================================ */
 
 /* Checkbox custom con check animado (spring). Naranja/verde según el tema de la app. */
@@ -4639,7 +4900,7 @@ function PlanTaskCheck({ done }) {
     }}>
       <motion.span initial={false} animate={{ scale: done ? 1 : 0, opacity: done ? 1 : 0 }}
         transition={{ type: 'spring', stiffness: 520, damping: 24 }} style={{ display: 'grid', placeItems: 'center' }}>
-        <I.check width={13} height={13} style={{ color: '#0A0A0A' }} />
+        <I2.check width={13} height={13} style={{ color: '#0A0A0A' }} />
       </motion.span>
     </span>
   )
@@ -4669,19 +4930,19 @@ function TaskChips({ task, clientName }) {
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
       {respColor && (
         <span className="tag" title={`Lo hace: ${respLabel}`} style={{ color: respColor, background: hexA(respColor, 0.14), borderColor: hexA(respColor, 0.34), display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          <I.user width={10} height={10} /> {respLabel}
+          <I2.user width={10} height={10} /> {respLabel}
         </span>
       )}
       {showEstado && em && (
         <span className="tag" style={{ color: em.color, background: hexA(em.color, 0.14), borderColor: hexA(em.color, 0.28) }}>
-          {est === 'bloqueada' && <I.lock width={10} height={10} />}
+          {est === 'bloqueada' && <I2.lock width={10} height={10} />}
           {em.label}
         </span>
       )}
       {riskHigh && <span title="Riesgo alto" style={{ width: 8, height: 8, borderRadius: 999, background: RIESGOS.alto.color, flexShrink: 0 }} />}
       {evCount > 0 && (
         <span className="tag hide-mobile" title={`${evCount} evidencia${evCount === 1 ? '' : 's'}`} style={{ color: 'var(--text-dim)', background: 'var(--bg-elevated)' }}>
-          <I.paperclip width={10} height={10} /> {evCount}
+          <I2.paperclip width={10} height={10} /> {evCount}
         </span>
       )}
     </span>
@@ -4689,13 +4950,12 @@ function TaskChips({ task, clientName }) {
 }
 
 /* Una semana del acordeón: cabecera colapsable + lista de tareas al expandir. */
-function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, notes = [], onReadNote, onDeleteNote }) {
+function PlanWeekRow({ plan, week, onToggleTask, onOpenDetail, notes = [], onReadNote, onDeleteNote }) {
   const [open, setOpen] = useState(false)
   const prog = weekProgress(week)
   const complete = prog.total > 0 && prog.pct === 100
   const hito = hitoForWeek(plan, week.n)
   const tasks = Array.isArray(week.tasks) ? week.tasks : []
-  const sMeta = sprint ? sprintMeta(sprint.status) : null
   const unread = notes.filter((n) => !n.read).length
   return (
     <div style={{
@@ -4709,7 +4969,7 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, notes = [
       }}>
         <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2, ease: 'easeOut' }}
           style={{ display: 'grid', placeItems: 'center', color: complete ? 'var(--green)' : 'var(--text-faint)', flexShrink: 0 }}>
-          <I.chevR width={16} height={16} />
+          <I2.chevR width={16} height={16} />
         </motion.span>
         <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: complete ? 'var(--green)' : 'var(--text-dim)', minWidth: 52, letterSpacing: '.03em' }}>
           SEM {String(week.n).padStart(2, '0')}
@@ -4728,14 +4988,8 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, notes = [
         {notes.length > 0 && (
           <span className="tag" title={`${notes.length} nota${notes.length === 1 ? '' : 's'} del cliente${unread ? ` · ${unread} sin leer` : ''}`}
             style={{ color: unread ? 'var(--accent)' : 'var(--text-dim)', background: unread ? 'var(--accent-soft)' : 'var(--bg-elevated)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <I.comment width={11} height={11} /> {notes.length}{unread ? ` · ${unread}` : ''}
+            <I2.comment width={11} height={11} /> {notes.length}{unread ? ` · ${unread}` : ''}
           </span>
-        )}
-        {sMeta && (
-          <span className="tag hide-mobile" style={{
-            color: sMeta.tone === 'neutral' ? 'var(--text-dim)' : `var(--${sMeta.tone})`,
-            background: sMeta.tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${sMeta.tone}-soft)`,
-          }}>{sMeta.label}</span>
         )}
         <span style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
           <span style={{ width: 74, height: 6, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}>
@@ -4780,7 +5034,7 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, notes = [
                     <TaskChips task={t} clientName={plan.clientName} />
                     <button className="btn btn-sm btn-ghost" onClick={() => onOpenDetail && onOpenDetail(week.n, i, t)}
                       title="Seguimiento operativo de la tarea" style={{ padding: '4px 7px', color: 'var(--text-faint)', flexShrink: 0 }}>
-                      <I.gear width={14} height={14} />
+                      <I2.gear width={14} height={14} />
                     </button>
                   </div>
                 )
@@ -4788,7 +5042,7 @@ function PlanWeekRow({ plan, week, sprint, onToggleTask, onOpenDetail, notes = [
               {notes.length > 0 && (
                 <div style={{ marginTop: 8, padding: '10px 12px 4px', borderTop: '1px dashed var(--border)' }}>
                   <div className="label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <I.comment width={13} height={13} /> Notas del cliente ({notes.length})
+                    <I2.comment width={13} height={13} /> Notas del cliente ({notes.length})
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {notes.map((n) => (
@@ -4860,8 +5114,8 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], clientName
                 return (
                   <button key={k} className="btn btn-sm" onClick={() => changeEstado(k)}
                     style={on ? { color: m.color, background: hexA(m.color, 0.16), borderColor: hexA(m.color, 0.5), fontWeight: 700 } : undefined}>
-                    {k === 'bloqueada' && <I.lock width={12} height={12} />}
-                    {k === 'terminada' && <I.check width={13} height={13} />}
+                    {k === 'bloqueada' && <I2.lock width={12} height={12} />}
+                    {k === 'terminada' && <I2.check width={13} height={13} />}
                     {ESTADO_SEG[k]}
                   </button>
                 )
@@ -4916,7 +5170,7 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], clientName
                 return (
                   <button key={k} className="btn btn-sm" onClick={() => changeResponsable(k)}
                     style={on ? { color: m.color, background: hexA(m.color, 0.16), borderColor: hexA(m.color, 0.5), fontWeight: 700 } : undefined}>
-                    <I.user width={12} height={12} /> {RESP_LABELS[k]}
+                    <I2.user width={12} height={12} /> {RESP_LABELS[k]}
                   </button>
                 )
               })}
@@ -4941,7 +5195,7 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], clientName
 
           {/* Bloqueo */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '13px 14px', borderRadius: 12, border: '1px solid ' + hexA(TASK_ESTADOS.bloqueada.color, 0.28), background: hexA(TASK_ESTADOS.bloqueada.color, 0.06) }}>
-            <span className="label" style={{ display: 'flex', alignItems: 'center', gap: 7, color: TASK_ESTADOS.bloqueada.color }}><I.lock width={12} height={12} /> Bloqueo</span>
+            <span className="label" style={{ display: 'flex', alignItems: 'center', gap: 7, color: TASK_ESTADOS.bloqueada.color }}><I2.lock width={12} height={12} /> Bloqueo</span>
             <Field label="Detalle del bloqueo"><textarea className="input" rows={2} value={bl.detalle || ''} onChange={(e) => editBloqueo({ detalle: e.target.value })} placeholder="Qué lo traba." style={{ resize: 'vertical' }} /></Field>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <Field label="Bloqueada desde"><input className="input mono" type="date" value={dateVal(bl.desde)} onChange={(e) => editBloqueo({ desde: e.target.value })} /></Field>
@@ -4954,8 +5208,8 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], clientName
           {/* Evidencia */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              <span className="label" style={{ display: 'flex', alignItems: 'center', gap: 7 }}><I.paperclip width={12} height={12} /> Evidencia</span>
-              <button className="btn btn-sm" onClick={addEv}><I.plus width={13} height={13} /> Agregar</button>
+              <span className="label" style={{ display: 'flex', alignItems: 'center', gap: 7 }}><I2.paperclip width={12} height={12} /> Evidencia</span>
+              <button className="btn btn-sm" onClick={addEv}><I2.plus width={13} height={13} /> Agregar</button>
             </div>
             {evRows.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>Sin evidencia cargada. Sumá links a código, PRs, staging, videos o documentos.</div>}
             {evRows.map((e, i) => (
@@ -4965,13 +5219,13 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], clientName
                 </select>
                 <input className="input" value={e.label || ''} onChange={(ev) => setEv(i, { label: ev.target.value })} placeholder="Etiqueta" style={{ flex: '1 1 30%', minWidth: 0, padding: '8px 10px', fontSize: 13 }} />
                 <input className="input mono" value={e.url || ''} onChange={(ev) => setEv(i, { url: ev.target.value })} placeholder="https://…" style={{ flex: '1 1 45%', minWidth: 0, padding: '8px 10px', fontSize: 12.5 }} />
-                <button className="btn btn-sm btn-ghost" onClick={() => delEv(i)} title="Quitar" style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}><I.x width={13} height={13} /></button>
+                <button className="btn btn-sm btn-ghost" onClick={() => delEv(i)} title="Quitar" style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}><I2.x width={13} height={13} /></button>
               </div>
             ))}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 2 }}>
-            <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button>
+            <button className="btn btn-accent" onClick={onClose}><I2.check width={15} height={15} /> Listo</button>
           </div>
         </div>
       )}
@@ -4979,11 +5233,11 @@ function PlanTaskDetailModal({ open, onClose, task, weekN, team = [], clientName
   )
 }
 
-/* Sección "Avance del plan": tablero vivo (barra dual Insights/RDEX + chips) +
-   acordeón de TODAS las semanas del plan asociado. Tachar tareas o editar su estado
-   dispara el sync plan→sprint (idempotente, plano). */
-function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate, markProgress }) {
-  const { logActivity, data } = useApp()
+/* Sección "Avance del plan": tablero vivo (% + chips) + acordeón de TODAS las
+   semanas del plan asociado. Tachar tareas o editar su estado marca "último avance"
+   del proyecto, que es lo que alimenta el indicador de las tarjetas. */
+function PlanProgress({ linkedPlan, patchPlan, onAssociate, markProgress }) {
+  const { data } = useApp()
   const team = (data && data.team) || []
   // Notas del cliente dejadas desde el link público (se agrupan por semana abajo).
   const { notes: clientNotes, markRead, remove: removeNote } = useClientNotes(linkedPlan?.slug)
@@ -4991,16 +5245,19 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
 
   if (!linkedPlan) {
     return (
-      <section style={{ marginBottom: 26 }}>
-        <h2 style={{ fontSize: 19, marginBottom: 12 }}>Avance del plan</h2>
-        <div className="surface" style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <section className="pd-sec">
+        <div className="pd-h"><h2>Avance del plan</h2><span className="sub">todavía sin plan asociado</span></div>
+        <div className="pd-panel lift" style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <span style={{ display: 'grid', placeItems: 'center', width: 40, height: 40, borderRadius: 13, flex: 'none', background: 'var(--bg-elevated)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--text-faint)' }}>
+            <I2.calendar width={19} height={19} />
+          </span>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 5 }}>Asociá un plan para trackear el avance del cliente</div>
+            <div style={{ fontSize: 14, fontWeight: 650, marginBottom: 5 }}>Asociá un plan para trackear el avance</div>
             <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.55 }}>
               Vinculá un plan del Planificador y vas a poder tachar tareas semana a semana. El cliente ve el avance en vivo en su link público.
             </div>
           </div>
-          <button className="btn btn-accent" onClick={onAssociate}><I.calendar width={15} height={15} /> Asociar un plan</button>
+          <button className="pd-cta" onClick={onAssociate} style={{ flex: 'none' }}>Asociar un plan <i><I2.arrowRight width={13} height={13} /></i></button>
         </div>
       </section>
     )
@@ -5027,38 +5284,19 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
   }
   const totalUnread = clientNotes.filter((n) => !n.read).length
 
-  // Sincroniza el sprint apareado con una semana según su avance (idempotente, plano).
-  // Extraído de onToggleTask para reusarlo desde el editor de detalle (Estado→Terminada).
-  const syncSprintForWeek = (weekN, updatedPlan) => {
-    const w = (updatedPlan.weeks || []).find((x) => x.n === weekN)
-    if (!w) return
-    const prg = weekProgress(w)
-    const sp = sprintForWeek(project.sprints, weekN)
-    if (!sp) return
-    const st = normSprint(sp.status)
-    if (prg.total > 0 && prg.done === prg.total && st !== 'terminado') {
-      patchSprint(sp.id, { status: 'terminado' })
-      if (logActivity) logActivity({ type: 'sprint-done', text: `terminó el sprint "${sp.name}" de ${project.name}` })
-    } else if (prg.done < prg.total && st === 'terminado') {
-      patchSprint(sp.id, { status: 'en proceso' })
-    }
-  }
-
-  // Tachar/destachar una tarea → guarda el plan (síncrono) y sincroniza el sprint apareado.
+  // Tachar/destachar una tarea → guarda el plan (síncrono) y marca "último avance".
   const onToggleTask = (weekN, taskIndex) => {
     const updated = patchPlan(linkedPlan.id, (p) => ({
       ...p,
       weeks: (p.weeks || []).map((w) => (w.n === weekN ? toggleTaskDone(w, taskIndex) : w)),
     }))
     if (!updated) return
-    if (markProgress) markProgress()   // tachar una tarea del roadmap = "último avance" hoy
-    syncSprintForWeek(weekN, updated)
+    if (markProgress) markProgress()   // tachar una tarea del plan = "último avance" hoy
   }
 
   // Edita UNA tarea (por id) dentro de su semana, normalizando el resultado. Si el
-  // cambio toca `done` (ej: Estado→Terminada por Insights) preserva el sync semana↔
-  // sprint y marca "último avance", igual que el check. El resto de los campos
-  // operativos (responsables, riesgo, evidencia…) no tocan el sprint.
+  // cambio toca `done` (ej: Estado→Terminada) marca "último avance", igual que el
+  // check. El resto de los campos operativos (responsables, riesgo, evidencia…) no.
   const editTask = (weekN, taskId, mutate) => {
     let before = null
     const updated = patchPlan(linkedPlan.id, (p) => ({
@@ -5080,7 +5318,6 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
     const after = w && (w.tasks || []).find((t) => t && t.id === taskId)
     if (after && !!before.done !== !!after.done) {
       if (markProgress) markProgress()
-      syncSprintForWeek(weekN, updated)
     }
   }
 
@@ -5101,28 +5338,21 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
   }
 
   return (
-    <section style={{ marginBottom: 26 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
-          <h2 style={{ fontSize: 19 }}>Avance del plan</h2>
-          <span style={{ fontSize: 12.5, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkedPlan.title || 'Plan'}</span>
-          {totalUnread > 0 && (
-            <span className="tag" title={`${totalUnread} nota${totalUnread === 1 ? '' : 's'} del cliente sin leer`}
-              style={{ color: 'var(--accent)', background: 'var(--accent-soft)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <I.comment width={11} height={11} /> {totalUnread} sin leer
-            </span>
-          )}
-        </div>
-        {linkedPlan.publishedUrl && (
-          <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ color: 'var(--accent)' }}>
-            <I.ext width={14} height={14} /> Ver link del cliente
-          </a>
+    <section className="pd-sec">
+      <div className="pd-h">
+        <h2>Avance del plan</h2>
+        <span className="sub">{linkedPlan.title || 'Plan'}</span>
+        {totalUnread > 0 && (
+          <span className="tag" title={`${totalUnread} nota${totalUnread === 1 ? '' : 's'} del cliente sin leer`}
+            style={{ color: 'var(--accent)', background: 'var(--accent-soft)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <I2.comment width={11} height={11} /> {totalUnread} sin leer
+          </span>
         )}
       </div>
 
       {/* TABLERO DE AVANCE — % terminado + chips de control. Una tarea está
           terminada o no: sin paso de aceptación del cliente de por medio. */}
-      <div className="surface" style={{ padding: '16px 18px', marginBottom: 14 }}>
+      <div className="pd-panel lift" style={{ padding: '16px 18px', marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 13 }}>
           <span style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 600 }}>Tablero de avance</span>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.1 }}>
@@ -5144,23 +5374,23 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
             <span className="tag" style={{ color: 'var(--text-dim)', background: 'var(--bg-elevated)' }}>{summary.pendiente} pendiente{summary.pendiente === 1 ? '' : 's'}</span>
           )}
           {summary.bloqueada > 0 && (
-            <span className="tag" style={{ color: 'var(--red)', background: 'var(--red-soft)', borderColor: hexA(TASK_ESTADOS.bloqueada.color, 0.4) }}><I.lock width={11} height={11} /> {summary.bloqueada} bloqueada{summary.bloqueada === 1 ? '' : 's'}</span>
+            <span className="tag" style={{ color: 'var(--red)', background: 'var(--red-soft)', borderColor: hexA(TASK_ESTADOS.bloqueada.color, 0.4) }}><I2.lock width={11} height={11} /> {summary.bloqueada} bloqueada{summary.bloqueada === 1 ? '' : 's'}</span>
           )}
           {summary.riesgoAlto > 0 && (
-            <span className="tag" style={{ color: 'var(--yellow)', background: 'var(--yellow-soft)' }}><I.alert width={11} height={11} /> {summary.riesgoAlto} riesgo alto</span>
+            <span className="tag" style={{ color: 'var(--yellow)', background: 'var(--yellow-soft)' }}><I2.alert width={11} height={11} /> {summary.riesgoAlto} riesgo alto</span>
           )}
           {summary.nextFecha && (
-            <span className="tag" style={{ color: 'var(--text-dim)', background: 'var(--bg-elevated)' }}><I.calendar width={11} height={11} /> Próx. fecha: {fmtDate(summary.nextFecha)}</span>
+            <span className="tag" style={{ color: 'var(--text-dim)', background: 'var(--bg-elevated)' }}><I2.calendar width={11} height={11} /> Próx. fecha: {fmtDate(summary.nextFecha)}</span>
           )}
         </div>
       </div>
 
       {/* LO QUE NECESITAMOS DEL CLIENTE — todo lo que depende de su lado y frena el avance. */}
       {pendingCliente.length > 0 && (
-        <div className="surface" style={{ padding: '15px 17px', marginBottom: 14, borderColor: hexA(CLIENTE_COLOR, 0.35), background: hexA(CLIENTE_COLOR, 0.06) }}>
+        <div style={{ padding: '15px 17px', marginBottom: 14, borderRadius: 16, background: hexA(CLIENTE_COLOR, 0.07), boxShadow: `inset 0 0 0 1px ${hexA(CLIENTE_COLOR, 0.3)}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 11 }}>
             <span style={{ width: 26, height: 26, borderRadius: 8, background: hexA(CLIENTE_COLOR, 0.18), display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-              <I.user width={15} height={15} style={{ color: CLIENTE_COLOR }} />
+              <I2.user width={15} height={15} style={{ color: CLIENTE_COLOR }} />
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 700, color: CLIENTE_COLOR }}>Lo que necesitamos de {clientLabel}</div>
@@ -5183,10 +5413,13 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
 
       <div>
         {weeks.length === 0 && (
-          <div className="surface" style={{ padding: 16, color: 'var(--text-faint)', fontSize: 13 }}>Este plan todavía no tiene semanas.</div>
+          <div className="pd-hollow">
+            <strong style={{ color: 'var(--text-dim)', fontSize: 13 }}>El plan todavía no tiene semanas</strong>
+            Cargalas desde el Planificador y el avance empieza a contar acá.
+          </div>
         )}
         {weeks.map((w) => (
-          <PlanWeekRow key={w.n} plan={linkedPlan} week={w} sprint={sprintForWeek(project.sprints, w.n)} onToggleTask={onToggleTask}
+          <PlanWeekRow key={w.n} plan={linkedPlan} week={w} onToggleTask={onToggleTask}
             onOpenDetail={openTaskDetail}
             notes={notesByWeek[w.n] || []} onReadNote={markRead} onDeleteNote={removeNote} />
         ))}
@@ -5199,7 +5432,7 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
       {generalNotes.length > 0 && (
         <div style={{ marginTop: 16 }}>
           <div className="label" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 7 }}>
-            <I.comment width={14} height={14} /> Notas generales del cliente ({generalNotes.length})
+            <I2.comment width={14} height={14} /> Notas generales del cliente ({generalNotes.length})
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {generalNotes.map((n) => (
@@ -5212,15 +5445,319 @@ function PlanProgress({ project, linkedPlan, patchPlan, patchSprint, onAssociate
   )
 }
 
+/* ============================================================================
+   15b · CICLO DE VIDA DEL PROYECTO — fases 1·2·3 + cobro de mantenimiento
+   El cambio de fase SIEMPRE lo confirma una persona: sella una fecha que
+   después factura. El sistema sugiere, no ejecuta.
+============================================================================ */
+const PHASE_ICON = { 1: I2.phase1, 2: I2.phase2, 3: I2.phase3 }
+
+function PhaseConfirmModal({ open, to, project, onClose, onConfirm }) {
+  const target = to || 1
+  const meta = phaseMeta(target)
+  const lc = normalizeLifecycle(project)
+  const back = target < lc.phase
+  const today = fmtDate(new Date().toISOString())
+  return (
+    <Modal open={open} onClose={onClose} width={480}
+      title={back ? `Volver a ${meta.label}` : `Pasar a ${meta.label}`} sub={project?.name}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="pd-note" style={{ background: back ? 'var(--yellow-soft)' : 'var(--accent-soft)' }}>
+          <span className="ic" style={{ background: 'var(--card)', color: back ? 'var(--yellow)' : 'var(--accent)' }}>
+            {back ? <I2.alert width={15} height={15} /> : <I2.check width={15} height={15} />}
+          </span>
+          <div>
+            {back
+              ? <>Volver atrás <b>borra las fechas de las fases siguientes</b>. Si el proyecto ya estaba en mantenimiento, deja de contar el cobro.</>
+              : <>Se va a guardar <b>hoy, {today}</b>, como el día en que arranca {meta.label.toLowerCase()}. De esa fecha sale el contador{target === 3 ? ' y el aviso de cobro' : ''}.</>}
+          </div>
+        </div>
+        {target === 3 && (
+          <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>
+            Si todavía no cargaste el día de cobro, se toma el de hoy (hasta el 28). Después lo cambiás en Editar proyecto.
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button className="btn" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" onClick={() => onConfirm(target)} autoFocus>
+            <I2.check width={15} height={15} /> {back ? 'Volver a ' : 'Pasar a '}{meta.label}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* Previsualización REAL del mail de aviso (el mismo HTML que se manda).
+   No hay envío todavía y el copy no lo disimula: se copia y se manda a mano. */
+function MaintenanceMailModal({ open, onClose, project, client, dueAt, amount, replyTo, sentAt, onMarkSent, onUndo }) {
+  const [copied, setCopied] = useState('')
+  const [copyErr, setCopyErr] = useState('')
+  const dueKey = dueAt ? dueAt.getTime() : 0
+  const mail = useMemo(() => {
+    if (!open || !dueAt) return null
+    try {
+      return buildMaintenanceNotice({
+        clientName: (client && (client.name || client.company)) || 'Hola',
+        companyName: (client && client.company) || '',
+        projectName: project.name,
+        amount: amount == null ? 0 : Number(amount),
+        currency: 'USD',
+        dueDate: dueAt,
+        projectUrl: project.productionUrl || null,
+        replyTo: replyTo || '',
+      })
+    } catch (e) { return null }
+  }, [open, dueKey, project.name, project.productionUrl, amount, replyTo, client])
+
+  // Copiar NO sella el aviso: sellarlo lo hace el botón "Marcar como enviado", y
+  // nada más. Copiar el HTML para mirarlo no es haberlo mandado, y sellar de más
+  // hace desaparecer el recordatorio de ese ciclo sin que salga un solo mail.
+  // Y si el portapapeles falla (contexto inseguro, permiso denegado) se ve: antes
+  // el botón no hacía nada y el usuario creía tener el texto copiado.
+  const copy = async (what, value) => {
+    try { await navigator.clipboard.writeText(value) }
+    catch (e) { setCopyErr('No se pudo copiar (el navegador bloquea el portapapeles fuera de HTTPS). Seleccioná el texto a mano y copialo con Ctrl+C.'); return }
+    setCopyErr('')
+    setCopied(what); setTimeout(() => setCopied((c) => (c === what ? '' : c)), 2400)
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} width={640} title="Aviso de cobro" sub={project.name}>
+      {!mail ? (
+        <div className="pd-hollow">
+          <strong style={{ color: 'var(--text-dim)', fontSize: 13 }}>Todavía no se puede armar el mail</strong>
+          Falta el día de cobro del proyecto. Cargalo en Editar proyecto y el aviso se arma solo.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+          <div className="pd-note" style={{ background: 'var(--bg-elevated)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <span className="ic" style={{ background: 'var(--card)', color: 'var(--text-faint)' }}><I2.mail width={15} height={15} /></span>
+            <div>
+              El envío es a mano: <b>Insights OS todavía no manda mails</b>. Copiá el contenido y mandalo desde tu correo.
+              {sentAt && <> Ya quedó anotado que este mes avisaste (<span className="mono">{fmtDate(sentAt)}</span>).</>}
+            </div>
+          </div>
+
+          <div className="pd-panel" style={{ padding: '11px 13px', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="pd-eyebrow" style={{ marginBottom: 4 }}>Asunto</div>
+              <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.4 }}>{mail.subject}</div>
+            </div>
+            <button className="pd-btn" onClick={() => copy('subject', mail.subject)} style={{ flex: 'none' }}>
+              <I2.copy width={13} height={13} /> {copied === 'subject' ? 'Copiado' : 'Copiar'}
+            </button>
+          </div>
+
+          <div style={{ padding: 1, background: 'var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+            <iframe title="Previsualización del mail" srcDoc={mail.html} sandbox=""
+              style={{ display: 'block', width: '100%', height: 'min(48vh, 400px)', border: 'none', borderRadius: 13, background: '#FFFFFF' }} />
+          </div>
+
+          {copyErr && (
+            <div role="alert" style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8, lineHeight: 1.5 }}>
+              {copyErr}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+            <button className="pd-btn" onClick={() => copy('text', mail.text)}>
+              <I2.copy width={13} height={13} /> {copied === 'text' ? 'Copiado' : 'Copiar el texto'}
+            </button>
+            <button className="pd-btn" onClick={() => copy('html', mail.html)}>
+              <I2.copy width={13} height={13} /> {copied === 'html' ? 'Copiado' : 'Copiar el HTML'}
+            </button>
+            <span style={{ flex: 1 }} />
+            {sentAt
+              ? <button className="pd-btn" onClick={onUndo}><I2.refresh width={13} height={13} /> Deshacer el aviso</button>
+              : <button className="pd-cta" onClick={() => { if (onMarkSent) onMarkSent() }}>
+                  Marcar como enviado <i><I2.check width={13} height={13} /></i>
+                </button>}
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+function LifecyclePanel({ project, client, planProgress, patch, onEdit, logActivity, replyTo }) {
+  const [confirmTo, setConfirmTo] = useState(null)
+  const [mailOpen, setMailOpen] = useState(false)
+  // Si cambia el proyecto, ningún modal puede quedar abierto encima de otro:
+  // el aviso de cobro de un proyecto sobre la fase 1 de otro no significa nada.
+  useEffect(() => { setMailOpen(false); setConfirmTo(null) }, [project.id])
+  const lc = normalizeLifecycle(project)
+  const info = phaseInfo(project)
+  // Se le pasa el desglose entero ({ pct, total }), no el %: sin plan con tareas
+  // reales no hay sugerencia de pasar a la prueba (ver suggestedTransition).
+  const sug = suggestedTransition(project, planProgress)
+  const notice = billingNotice(project)
+  const next = lc.phase < 3 ? lc.phase + 1 : null
+  const stampOf = (n) => (n === 1 ? lc.startedAt : n === 2 ? lc.phase2At : lc.phase3At)
+  const clientLabel = (client && (client.name || client.company)) || 'el cliente'
+  // Aviso vigente = ya se mandó el de este ciclo (billingNotice lo descarta solo).
+  const sentThisCycle = !!lc.lastNoticeSentAt && !notice.shouldNotify && notice.daysUntil != null && notice.daysUntil <= 7
+
+  const apply = (to) => {
+    patch((p) => ({ ...p, lifecycle: advancePhase(p, to) }))
+    if (logActivity) logActivity({ type: 'phase', text: `pasó ${project.name} a ${phaseMeta(to).label}` })
+    setConfirmTo(null)
+  }
+  const markSent = () => patch((p) => ({ ...p, lifecycle: markNoticeSent(p) }))
+  const undoSent = () => patch((p) => ({ ...p, lifecycle: { ...normalizeLifecycle(p), lastNoticeSentAt: null } }))
+
+  return (
+    <section className="pd-sec">
+      <div className="pd-h">
+        <h2>Ciclo de vida</h2>
+        <span className="sub">Desarrollo → prueba gratis → mantenimiento</span>
+        <span style={{ flex: 1 }} />
+        {next && (
+          <button className="pd-cta quiet" onClick={() => setConfirmTo(next)}>
+            Pasar a {phaseMeta(next).label} <i><I2.arrowRight width={13} height={13} /></i>
+          </button>
+        )}
+      </div>
+
+      <div className="pd-panel lift" style={{ padding: '16px 18px 18px' }}>
+        <div className="pd-phases">
+          {PHASES.map((ph) => {
+            const done = ph.phase < lc.phase
+            const cur = ph.phase === lc.phase
+            const Ico = PHASE_ICON[ph.phase]
+            const col = `var(${ph.colorVar})`
+            const stamp = stampOf(ph.phase)
+            return (
+              <button key={ph.phase} type="button" className="pd-ph" disabled={cur}
+                aria-current={cur ? 'step' : undefined}
+                onClick={() => setConfirmTo(ph.phase)}
+                title={cur ? 'Fase actual' : done ? `Volver a ${ph.label}` : `Pasar a ${ph.label}`}>
+                <span className="bar">
+                  <span style={{ background: col, opacity: done ? 0.4 : 1, transform: `scaleX(${done || cur ? 1 : 0})` }} />
+                </span>
+                <span className="nm" style={{ color: cur ? 'var(--text)' : 'var(--text-dim)' }}>
+                  <Ico width={14} height={14} style={{ color: done || cur ? col : 'var(--text-faint)', flex: 'none' }} />
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{ph.label}</span>
+                  {done && <I2.check width={12} height={12} style={{ color: 'var(--green)', flex: 'none' }} />}
+                </span>
+                <span className="dt">{stamp ? fmtDate(stamp) : 'sin fecha'}</span>
+                <span className="ct" style={{ color: cur ? 'var(--text)' : 'var(--text-dim)' }}>
+                  {cur ? info.countdownLabel : done ? 'Cumplida' : 'Pendiente'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {sug && (
+          <div className="pd-note" style={{ background: 'var(--accent-soft)', marginTop: 16 }}>
+            <span className="ic" style={{ background: 'var(--card)', color: 'var(--accent)' }}><I2.sparkle width={15} height={15} /></span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <b>Parece que toca cambiar de fase.</b> {sug.reason} Nada se mueve hasta que lo confirmes.
+            </div>
+            <button className="pd-cta" style={{ flex: 'none' }} onClick={() => setConfirmTo(sug.to)}>
+              Pasar a {phaseMeta(sug.to).label} <i><I2.arrowRight width={13} height={13} /></i>
+            </button>
+          </div>
+        )}
+
+        {lc.phase === 3 && (
+          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="pd-mini">
+              {lc.maintenanceAmount != null
+                ? <div><span className="k">Mantenimiento</span><span className="v">{money(lc.maintenanceAmount)}<span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-faint)' }}> /mes</span></span></div>
+                : <button type="button" onClick={onEdit} title="Cargar el monto"><span className="k">Mantenimiento</span><span className="v" style={{ color: 'var(--text-faint)' }}>Definir</span></button>}
+              {lc.billingDay
+                ? <div><span className="k">Día de cobro</span><span className="v">{lc.billingDay} de cada mes</span></div>
+                : <button type="button" onClick={onEdit} title="Cargar el día de cobro"><span className="k">Día de cobro</span><span className="v" style={{ color: 'var(--text-faint)' }}>Definir</span></button>}
+              <div>
+                <span className="k">Próximo cobro</span>
+                <span className="v" style={{ color: notice.dueAt ? 'var(--blue)' : 'var(--text-faint)' }}>{notice.dueAt ? fmtDate(notice.dueAt) : '—'}</span>
+              </div>
+            </div>
+
+            {notice.shouldNotify ? (
+              <div className="pd-note" style={{ background: 'var(--yellow-soft)' }}>
+                <span className="ic" style={{ background: 'var(--card)', color: 'var(--yellow)' }}><I2.bell width={15} height={15} /></span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <b>Falta avisarle el cobro a {clientLabel}.</b>{' '}
+                  {notice.daysUntil === 0 ? 'Se cobra hoy' : `Se cobra en ${notice.daysUntil} ${notice.daysUntil === 1 ? 'día' : 'días'}`} ({fmtDate(notice.dueAt)}).
+                  El mail ya está escrito, pero se manda a mano.
+                </div>
+                <button className="pd-cta" style={{ flex: 'none' }} onClick={() => setMailOpen(true)}>
+                  Ver el mail <i><I2.mail width={13} height={13} /></i>
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12, color: 'var(--text-faint)' }}>
+                <span style={{ flex: 1, minWidth: 160, lineHeight: 1.5 }}>
+                  {sentThisCycle
+                    ? <>Ya avisaste este cobro el <span className="mono">{fmtDate(lc.lastNoticeSentAt)}</span>.</>
+                    : notice.dueAt
+                      ? <>Cuando falten 7 días para el cobro te avisamos acá para mandar el mail.</>
+                      : <>Cargá el día de cobro para que aparezca el aviso.</>}
+                </span>
+                <button className="pd-btn" onClick={() => setMailOpen(true)} disabled={!notice.dueAt}
+                  style={!notice.dueAt ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>
+                  <I2.mail width={13} height={13} /> Ver el mail
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <PhaseConfirmModal open={confirmTo != null} to={confirmTo} project={project}
+        onClose={() => setConfirmTo(null)} onConfirm={apply} />
+      <MaintenanceMailModal open={mailOpen} onClose={() => setMailOpen(false)} project={project} client={client}
+        dueAt={notice.dueAt} amount={lc.maintenanceAmount} replyTo={replyTo}
+        sentAt={sentThisCycle ? lc.lastNoticeSentAt : null} onMarkSent={markSent} onUndo={undoSent} />
+    </section>
+  )
+}
+
+/* Chip de enlace externo. Sin URL no se disfraza de enlace: se ve hueco,
+   punteado, dice qué falta y su click lleva a cargarlo. Nada de botones muertos. */
+function ExtLink({ Ico, label, url, empty = 'sin cargar', onEmpty, tone }) {
+  if (!url) {
+    return (
+      <button type="button" className="pd-lnk empty" onClick={onEmpty} title={`Cargar el enlace de ${label}`}>
+        <Ico width={14} height={14} />{label}
+        <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.85 }}>· {empty}</span>
+        <I2.plus width={12} height={12} />
+      </button>
+    )
+  }
+  return (
+    <a className="pd-lnk" href={url} target="_blank" rel="noreferrer" title={`Abrir ${label} en otra pestaña`}
+      style={tone ? { color: tone } : undefined}>
+      <Ico width={14} height={14} />{label}
+      <span className="go"><I2.ext width={12} height={12} /></span>
+    </a>
+  )
+}
+
+/* Botón de panel interno (abre un modal). Lleva su contador cuando hay algo
+   cargado, para no tener que abrirlo solo para ver si está vacío.
+   El relleno de color se reserva para lo que PIDE algo (cuentas incompletas):
+   si todos los chips gritan, ninguno se escucha. */
+function PanelBtn({ Ico, label, onClick, count, tone, dot, title }) {
+  return (
+    <button type="button" className="pd-btn" onClick={onClick} title={title || label} data-tone={tone || undefined}>
+      <Ico width={14} height={14} />{label}
+      {dot ? <span className="pd-dotmark" style={{ background: dot }} /> : null}
+      {count ? <span className="n">{count}</span> : null}
+    </button>
+  )
+}
+
 function ProjectDetail({ projectId, onBack }) {
-  const { data, logActivity, plans, patchPlan, createTask, patchTask, projectStore } = useApp()
+  const { data, myId, logActivity, plans, patchPlan, createTask, patchTask, projectStore } = useApp()
   const project = data.projects.find((p) => p.id === projectId)
   const client = data.clients.find((c) => c.id === project?.clientId)
-  const gh = useGithubCommit(project?.githubRepo)
   const [kpiModal, setKpiModal] = useState(null)
   const [kickoffOpen, setKickoffOpen] = useState(true)
   const [editKickoff, setEditKickoff] = useState(false)
-  const [openSprintId, setOpenSprintId] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
   const [pendingPrompt, setPendingPrompt] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
@@ -5241,26 +5778,21 @@ function ProjectDetail({ projectId, onBack }) {
       : { type: 'plan-unlink', text: `desasoció el plan de ${project.name}` })
   }
   const setPlanUrl = (url) => { if (project.planId) patchPlan(project.planId, (pl) => ({ ...pl, publishedUrl: url })) }
-  const saveProject = (draft) => patch((p) => ({ ...draft, chats: p.chats }))
-  const patchSprint = (sid, fields) => patch((p) => ({ ...p, sprints: p.sprints.map((s) => s.id === sid ? { ...s, ...fields } : s) }))
-  // Igual que patchSprint pero, si el estado entra/sale de "terminado", sincroniza la
-  // semana apareada del plan (mismo criterio que SprintBoard). Lo usa el modal de detalle.
-  const patchSprintSynced = (sid, fields) => {
-    const prev = project.sprints.find((s) => s.id === sid)
-    patchSprint(sid, fields)
-    if (fields.status) {
-      const nextDone = normSprint(fields.status) === 'terminado'
-      const prevDone = normSprint(prev && prev.status) === 'terminado'
-      // terminar un sprint desde el modal de detalle también marca "último avance"
-      if (nextDone && !prevDone) patch((p) => ({ ...p, lastProgressAt: new Date().toISOString() }))
-      if (linkedPlan && patchPlan && nextDone !== prevDone) {
-        const idx = project.sprints.findIndex((s) => s.id === sid)
-        const weekN = (project.sprints[idx] && project.sprints[idx].week) || (idx + 1)
-        patchPlan(linkedPlan.id, (p) => ({ ...p, weeks: (p.weeks || []).map((w) => w.n === weekN ? setWeekAllDone(w, nextDone) : w) }))
-      }
-    }
-  }
-  const openSprint = project.sprints.find((s) => s.id === openSprintId)
+  // Guardar el modal MERGEA sobre el proyecto vivo, no lo reemplaza: el draft es un
+  // snapshot del momento en que se abrió el modal y mientras tanto el proyecto pudo
+  // cambiar por otro lado (otra pestaña, realtime, pasar de fase, marcar el aviso de
+  // cobro como enviado). Escribir el snapshot entero hacía retroceder lifecycle.phase,
+  // reponía lastNoticeSentAt en null y borraba activity/avances/clientTasks nuevos.
+  const saveProject = (draft) => patch((p) => {
+    const out = { ...p }
+    for (const k of PROJECT_FORM_FIELDS) out[k] = draft[k]
+    const live = normalizeLifecycle(p)          // fase y sellos: del proyecto ACTUAL
+    const edited = normalizeLifecycle(draft)    // datos del cobro: del formulario
+    const lifecycle = { ...live }
+    for (const k of PROJECT_FORM_LIFECYCLE_FIELDS) lifecycle[k] = edited[k]
+    out.lifecycle = lifecycle
+    return out
+  })
   // tareas del equipo (vienen de la sección Tareas, filtradas por proyecto) y tareas/dependencias del cliente
   const userOf = (id) => (data.team || []).find((u) => u.id === id)
   const teamTasks = (data.tasks || []).filter((t) => t.projectId === projectId)
@@ -5271,128 +5803,231 @@ function ProjectDetail({ projectId, onBack }) {
   const toggleClient = (id) => patch((p) => ({ ...p, clientTasks: (p.clientTasks || []).map((c) => (c.id === id ? { ...c, done: !c.done } : c)) }))
   const delClient = (id) => patch((p) => ({ ...p, clientTasks: (p.clientTasks || []).filter((c) => c.id !== id) }))
 
-  const sprintProgress = calcProgress(project)
-  const sprintsTotal = project.sprints.length
-  const sprintsDone = project.sprints.filter((s) => normSprint(s.status) === 'terminado').length
-  const sprintsProg = project.sprints.filter((s) => normSprint(s.status) === 'en proceso').length
-  const kpiDetails = {}
+  // Avance del proyecto = TODAS las tareas del plan asociado (equipo + cliente).
+  const prog = progressBreakdown(project, linkedPlan)
+  const planWeeks = linkedPlan ? [...(linkedPlan.weeks || [])].sort((a, b) => (a.n || 0) - (b.n || 0)) : []
+  // Sin plan asociado no hay detalle que abrir: las tarjetas llevan a asociar uno.
+  const openKpi = () => (linkedPlan ? setKpiModal('plan') : setPlanOpen(true))
+  const kpiSub = linkedPlan ? 'ver detalle' : 'asociar un plan'
+
+  // Enlaces externos: el "Plan público" y "Progreso" solo existen si el plan
+  // está publicado. Su estado vacío ya lo cubre el panel "Plan", así que no se
+  // muestran huecos duplicados.
+  const testingUrl = project.testingUrl || project.productionUrl || ''
+  const planUrl = (linkedPlan && linkedPlan.publishedUrl) || ''
+  let planDashUrl = ''
+  if (planUrl) { try { const u = new URL(planUrl); planDashUrl = `${u.origin}/dashboard${u.pathname}` } catch (e) { planDashUrl = '' } }
+  const scopeN = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0)
+  const accounts = project.accounts || []
+  const accDone = accounts.filter((a) => a.done).length
+  const vaultN = (project.vault || []).length
+  const adv = lastAdvanceInfo(project)
+  const me = (data.team || []).find((u) => u.id === myId)
 
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {/* LEFT 70% */}
-      <div className="scroll-y" style={{ flex: '1 1 70%', padding: '24px 30px 60px', overflowY: 'auto' }}>
-        <button className="btn btn-sm btn-ghost" onClick={onBack} style={{ marginBottom: 16, transform: 'scaleX(-1)' }}><I.chevR width={15} height={15} /></button>
+    <div className="pd-shell">
+      {/* ── COLUMNA PRINCIPAL ────────────────────────────────────────────── */}
+      <div className="pd-main scroll-y">
+        <button className="pd-back" onClick={onBack}>
+          <I2.chevR width={14} height={14} style={{ transform: 'scaleX(-1)' }} /> Proyectos
+        </button>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-          <h1 style={{ fontSize: 30 }}>{project.name}</h1>
-          <PriorityMenu value={project.priority} onChange={(v) => patch((p) => ({ ...p, priority: v }))} size={18} />
-          <StatusMenu status={project.status} onChange={(s) => { patch((p) => ({ ...p, status: s })); if (s === 'pending') setPendingPrompt(true) }} />
-          {project.status === 'pending' && (project.expectedStartDate
-            ? <span onClick={() => setPendingPrompt(true)} style={{ cursor: 'pointer' }}><PendingDateChip date={project.expectedStartDate} /></span>
-            : <button className="tag click" onClick={() => setPendingPrompt(true)} style={{ color: 'var(--blue)', background: 'transparent', borderColor: 'var(--blue)' }}><I.calendar width={12} height={12} /> Definir ingreso</button>)}
-          <button className="btn btn-sm" onClick={() => setEditOpen(true)} style={{ marginLeft: 'auto' }}><I.pencil width={14} height={14} /> Editar proyecto</button>
-        </div>
-        <div style={{ color: 'var(--text-dim)', marginBottom: 14, fontSize: 14 }}>{client?.company} · {client?.name} · {project.stack}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
-          <TeamAvatars assignments={project.assignments} team={data.team} onChange={(assignments) => patch((p) => ({ ...p, assignments }))} size={32} ring="var(--bg)" />
-          <ProjectTags tags={project.tags} onChange={(tags) => patch((p) => ({ ...p, tags }))} />
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 26 }}>
-          <a href={project.testingUrl || project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm btn-accent" onClick={(e) => { if (!(project.testingUrl || project.productionUrl)) e.preventDefault() }}><I.ext width={14} height={14} /> Testing</a>
-          <a href={project.productionUrl || undefined} target="_blank" rel="noreferrer" className="btn btn-sm" onClick={(e) => { if (!project.productionUrl) e.preventDefault() }}><I.rocket width={14} height={14} /> Producción</a>
-          <button className="btn btn-sm" onClick={() => setScopeOpen(true)}><I.pdf width={14} height={14} /> Alcance{(() => { const n = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0); return n ? ` · ${n}` : '' })()}</button>
-          <button className="btn btn-sm" onClick={() => setDriveOpen(true)} title="Carpeta de Drive compartida con el cliente" style={{ color: project.driveUrl ? 'var(--accent)' : undefined }}><I.folder width={14} height={14} /> Drive</button>
-          {(() => { const acc = project.accounts || []; const done = acc.filter((a) => a.done).length; const col = acc.length ? (done === acc.length ? 'var(--green)' : 'var(--accent)') : undefined; return (
-            <button className="btn btn-sm" onClick={() => setAccountsOpen(true)} title="Cuentas y accesos que necesita el proyecto (Supabase, GitHub, Vercel…)" style={{ color: col }}><I.key width={14} height={14} /> Cuentas{acc.length ? ` · ${done}/${acc.length}` : ''}</button>
-          ) })()}
-          {(() => { const n = (project.vault || []).length; return (
-            <button className="btn btn-sm" onClick={() => setVaultOpen(true)} title="Datos y credenciales del cliente (correos, contraseñas, dominios, hosting…)" style={{ color: n ? 'var(--accent)' : undefined }}><I.lock width={14} height={14} /> Datos{n ? ` · ${n}` : ''}</button>
-          ) })()}
-          <button className="btn btn-sm" onClick={() => setShareOpen(true)} title="Compartir vista con el cliente (link + contraseña)" style={{ color: project.shareEnabled ? 'var(--green)' : undefined }}><I.eye width={14} height={14} /> Compartir</button>
-          {linkedPlan && linkedPlan.publishedUrl
-            ? <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-sm" title="Abrir el plan publicado" style={{ color: 'var(--accent)' }}><I.calendar width={14} height={14} /> Plan</a>
-            : <button className="btn btn-sm" onClick={() => setPlanOpen(true)} title="Plan de ejecución del proyecto" style={{ color: linkedPlan ? 'var(--accent)' : undefined }}><I.calendar width={14} height={14} /> Plan</button>}
+        {/* IDENTIDAD — nombre, quién es el cliente, estado y la única acción
+            destacada del encabezado. */}
+        <div style={{ marginTop: 14, display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h1 className="pd-title">{project.name}</h1>
+              <PriorityMenu value={project.priority} onChange={(v) => patch((p) => ({ ...p, priority: v }))} size={18} />
+            </div>
+            <div className="pd-meta">
+              {project.kind === 'interno' ? '◆ Interno · Insights' : (client?.company || 'Sin cliente')}
+              {client?.name && <><i>·</i>{client.name}</>}
+              {project.stack && <><i>·</i>{project.stack}</>}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <StatusMenu status={project.status} onChange={(s) => { patch((p) => ({ ...p, status: s })); if (s === 'pending') setPendingPrompt(true) }} />
+            {project.status === 'pending' && (project.expectedStartDate
+              ? <span onClick={() => setPendingPrompt(true)} style={{ cursor: 'pointer' }}><PendingDateChip date={project.expectedStartDate} /></span>
+              : <button className="tag click" onClick={() => setPendingPrompt(true)} style={{ color: 'var(--blue)', background: 'transparent', borderColor: 'var(--blue)' }}><I2.calendar width={12} height={12} /> Definir ingreso</button>)}
+            <button className="pd-cta" onClick={() => setEditOpen(true)}>
+              Editar proyecto <i><I2.pencil width={13} height={13} /></i>
+            </button>
+          </div>
         </div>
 
-        {/* KPI GRID — solo sprints */}
-        <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 30 }}>
-          <KpiCard label="Sprints totales" value={sprintsTotal} sub="ver detalle" onClick={() => setKpiModal('progress')} />
-          <KpiCard label="Sprints terminados" value={sprintsDone} tone="var(--green)" sub="ver detalle" onClick={() => setKpiModal('progress')} />
-          <KpiCard label="Sprints en proceso" value={sprintsProg} tone="var(--accent)" sub="ver detalle" onClick={() => setKpiModal('progress')} />
-          <KpiCard label="% Avance" value={`${sprintProgress}%`} tone={pctColor(sprintProgress)} sub="por sprints" onClick={() => setKpiModal('progress')} />
+        {/* EQUIPO + ETIQUETAS */}
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="pd-eyebrow">Equipo</span>
+            <TeamAvatars assignments={project.assignments} team={data.team} onChange={(assignments) => patch((p) => ({ ...p, assignments }))} size={30} ring="var(--bg)" />
+          </div>
+          <span className="hide-mobile" style={{ width: 1, height: 20, background: 'var(--border)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <span className="pd-eyebrow">Etiquetas</span>
+            <ProjectTags tags={project.tags} onChange={(tags) => patch((p) => ({ ...p, tags }))} />
+          </div>
+        </div>
+
+        {/* CONSOLA DE ACCIONES — dos grupos, no nueve botones iguales:
+            arriba lo que SALE de la app, abajo lo que abre un panel acá adentro. */}
+        <div className="pd-panel pd-console" style={{ marginTop: 18 }}>
+          <span className="pd-eyebrow">Enlaces</span>
+          <div className="pd-row">
+            <ExtLink Ico={I2.ext} label="Testing" url={testingUrl} onEmpty={() => setEditOpen(true)} />
+            <ExtLink Ico={I2.rocket} label="Producción" url={project.productionUrl} onEmpty={() => setEditOpen(true)} />
+            <ExtLink Ico={I2.folder} label="Drive" url={project.driveUrl} onEmpty={() => setDriveOpen(true)} />
+            {planUrl && <ExtLink Ico={I2.calendar} label="Plan público" url={planUrl} />}
+            {planDashUrl && <ExtLink Ico={I2.gantt} label="Progreso" url={planDashUrl} />}
+          </div>
+
+          <div className="pd-rule" />
+
+          <span className="pd-eyebrow">Paneles</span>
+          <div className="pd-row">
+            <PanelBtn Ico={I2.pdf} label="Alcance" count={scopeN}
+              onClick={() => setScopeOpen(true)} title="Propuesta, alcance firmado y links de venta" />
+            <PanelBtn Ico={I2.key} label="Cuentas" count={accounts.length ? `${accDone}/${accounts.length}` : 0}
+              tone={accounts.length && accDone < accounts.length ? 'accent' : undefined}
+              onClick={() => setAccountsOpen(true)}
+              title={accounts.length ? `${accDone} de ${accounts.length} cuentas listas` : 'Cuentas y accesos que necesita el proyecto (Supabase, GitHub, Vercel…)'} />
+            <PanelBtn Ico={I2.lock} label="Datos" count={vaultN}
+              onClick={() => setVaultOpen(true)} title="Datos y credenciales del cliente (correos, contraseñas, dominios, hosting…)" />
+            <PanelBtn Ico={I2.eye} label="Compartir" dot={project.shareEnabled ? 'var(--green)' : undefined}
+              onClick={() => setShareOpen(true)}
+              title={project.shareEnabled ? 'El cliente tiene acceso a la vista compartida' : 'Compartir la vista con el cliente (link + contraseña)'} />
+            <PanelBtn Ico={I2.calendar} label="Plan"
+              onClick={() => setPlanOpen(true)} title={linkedPlan ? 'Plan asociado — cambiar o publicar' : 'Asociar un plan de ejecución'} />
+          </div>
+        </div>
+
+        {/* TIRA DE STATS — las 4 métricas del plan + el último avance, que en el
+            detalle sí se usa (abre el registro de avance). Un solo bloque:
+            antes eran cuatro cajas sueltas compitiendo con su propio marco. */}
+        <motion.div variants={stagger} initial="hidden" animate="show" className="pd-stats" style={{ marginTop: 18, marginBottom: 26 }}>
+          <motion.button variants={rise} className="pd-stat" onClick={openKpi}>
+            <span className="k">Tareas del plan</span><span className="v">{prog.total}</span><span className="s">{kpiSub}</span>
+          </motion.button>
+          <motion.button variants={rise} className="pd-stat" onClick={openKpi}>
+            <span className="k">Terminadas</span><span className="v" style={{ color: 'var(--green)' }}>{prog.done}</span><span className="s">{kpiSub}</span>
+          </motion.button>
+          <motion.button variants={rise} className="pd-stat" onClick={openKpi}>
+            <span className="k">Pendientes del cliente</span><span className="v" style={{ color: RESPONSABLES.cliente.color }}>{prog.pendingCliente}</span><span className="s">{kpiSub}</span>
+          </motion.button>
+          <motion.button variants={rise} className="pd-stat" onClick={openKpi}>
+            <span className="k">% Avance</span><span className="v" style={{ color: progressColor(prog.pct) }}>{prog.pct}%</span><span className="s">{kpiSub}</span>
+          </motion.button>
+          <motion.button variants={rise} className="pd-stat" onClick={openKpi} title="Última vez que se tocó una tarea del plan">
+            <span className="k">Último avance</span>
+            <span className="v" style={{ fontSize: 17, color: adv.none ? 'var(--text-faint)' : adv.stale ? 'var(--yellow)' : 'var(--text)' }}>{adv.text}</span>
+            <span className="s">{adv.stale ? 'hace más de una semana' : kpiSub}</span>
+          </motion.button>
         </motion.div>
 
-        {/* AVANCE DEL ROADMAP (plan) — va ARRIBA de los sprints: acordeón de semanas,
-            tachado + % en vivo para el cliente. Tachar una tarea marca "último avance". */}
-        <PlanProgress project={project} linkedPlan={linkedPlan} patchPlan={patchPlan} patchSprint={patchSprint} onAssociate={() => setPlanOpen(true)} markProgress={() => patch((p) => ({ ...p, lastProgressAt: new Date().toISOString() }))} />
+        {/* CICLO DE VIDA — en qué fase está y cómo se mueve */}
+        <LifecyclePanel project={project} client={client} planProgress={prog} patch={patch}
+          onEdit={() => setEditOpen(true)} logActivity={logActivity} replyTo={me?.email || ''} />
 
-        {/* SPRINTS — tabla (drag para reordenar) o kanban */}
-        <SprintBoard project={project} patch={patch} onOpenSprint={(id) => setOpenSprintId(id)} linkedPlan={linkedPlan} patchPlan={patchPlan} />
+        {/* AVANCE DEL PLAN — acordeón de semanas, tachado + % en vivo para el
+            cliente. Tachar una tarea marca "último avance" del proyecto. */}
+        <PlanProgress linkedPlan={linkedPlan} patchPlan={patchPlan} onAssociate={() => setPlanOpen(true)} markProgress={() => patch((p) => ({ ...p, lastProgressAt: new Date().toISOString() }))} />
 
         {/* TAREAS DEL EQUIPO (sincronizadas con Tareas) + DEL CLIENTE (dependencias) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 26 }}>
-          <div>
-            <div className="label" style={{ marginBottom: 10 }}>Tareas del equipo <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-faint)' }}>· sincronizadas con la sección Tareas</span></div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {teamTasks.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Sin tareas del equipo. Agregá una acá o asignale este proyecto a una tarea en la sección Tareas.</div>}
-              {teamTasks.map((t) => (
-                <div key={t.id} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {t.assigneeId ? <Avatar user={userOf(t.assigneeId)} size={22} ring="var(--card)" /> : <Avatar empty size={22} ring="var(--card)" />}
-                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, textDecoration: t.status === 'terminado' ? 'line-through' : 'none', color: t.status === 'terminado' ? 'var(--text-faint)' : 'var(--text)' }}>{t.name}</span>
-                  <select className="input" value={t.status || 'pendiente'} onChange={(e) => setTeamStatus(t.id, e.target.value)} style={{ width: 'auto', padding: '5px 8px', fontSize: 12 }}>{TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
-                </div>
-              ))}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 16, marginBottom: 26 }}>
+          <section>
+            <div className="pd-h">
+              <h2>Tareas del equipo</h2>
+              <span className="sub">sincronizadas con la sección Tareas</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {teamTasks.length === 0
+                ? <div className="pd-hollow">
+                    <strong style={{ color: 'var(--text-dim)', fontSize: 13 }}>Todavía no hay tareas del equipo</strong>
+                    Agregá una acá abajo, o asignale este proyecto a una tarea desde la sección Tareas.
+                  </div>
+                : <div className="pd-list">
+                    {teamTasks.map((t) => (
+                      <div key={t.id} className="pd-item">
+                        {t.assigneeId ? <Avatar user={userOf(t.assigneeId)} size={22} ring="var(--card)" /> : <Avatar empty size={22} ring="var(--card)" />}
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, lineHeight: 1.4, textDecoration: t.status === 'terminado' ? 'line-through' : 'none', color: t.status === 'terminado' ? 'var(--text-faint)' : 'var(--text)' }}>{t.name}</span>
+                        <select className="input" aria-label={`Estado de ${t.name}`} value={t.status || 'pendiente'} onChange={(e) => setTeamStatus(t.id, e.target.value)} style={{ width: 'auto', flex: 'none', padding: '5px 8px', fontSize: 12 }}>{TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
+                      </div>
+                    ))}
+                  </div>}
               <AddTaskInput onAdd={addTeamTask} />
             </div>
-          </div>
-          <div>
-            <div className="label" style={{ marginBottom: 10 }}>Tareas del cliente <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-faint)' }}>· dependencias por hacer</span></div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {clientTasks.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Sin dependencias del cliente.</div>}
-              {clientTasks.map((c) => (
-                <div key={c.id} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button onClick={() => toggleClient(c.id)} title="Marcar" style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (c.done ? 'var(--green)' : 'var(--border-strong)'), background: c.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{c.done && <I.check width={13} height={13} style={{ color: '#fff' }} />}</button>
-                  <span style={{ flex: 1, fontSize: 13.5, textDecoration: c.done ? 'line-through' : 'none', color: c.done ? 'var(--text-faint)' : 'var(--text)' }}>{c.text}</span>
-                  <button className="btn btn-sm btn-ghost" onClick={() => delClient(c.id)} style={{ padding: 4, color: 'var(--text-faint)' }}><I.x width={13} height={13} /></button>
-                </div>
-              ))}
+          </section>
+          <section>
+            <div className="pd-h">
+              <h2>Tareas del cliente</h2>
+              <span className="sub">dependencias que frenan el avance</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {clientTasks.length === 0
+                ? <div className="pd-hollow">
+                    <strong style={{ color: 'var(--text-dim)', fontSize: 13 }}>No dependemos de nada del cliente</strong>
+                    Anotá acá lo que tenga que mandar o aprobar para que no se pierda en el chat.
+                  </div>
+                : <div className="pd-list">
+                    {clientTasks.map((c) => (
+                      <div key={c.id} className="pd-item">
+                        <button onClick={() => toggleClient(c.id)} aria-pressed={!!c.done} title={c.done ? 'Marcar como pendiente' : 'Marcar como hecha'}
+                          style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, border: '1.5px solid ' + (c.done ? 'var(--green)' : 'var(--border-strong)'), background: c.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center' }}>
+                          {c.done && <I2.check width={13} height={13} style={{ color: '#fff' }} />}
+                        </button>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, lineHeight: 1.4, textDecoration: c.done ? 'line-through' : 'none', color: c.done ? 'var(--text-faint)' : 'var(--text)' }}>{c.text}</span>
+                        <button className="btn btn-sm btn-ghost" onClick={() => delClient(c.id)} title="Eliminar" style={{ padding: 4, flex: 'none', color: 'var(--text-faint)' }}><I2.x width={13} height={13} /></button>
+                      </div>
+                    ))}
+                  </div>}
               <AddTaskInput onAdd={addClientTask} />
             </div>
-          </div>
+          </section>
         </div>
       </div>
 
-      {/* RIGHT 30% — REGISTRO DE ACTIVIDAD (calls · notas · looms) */}
+      {/* ── RAIL DERECHO — REGISTRO DE ACTIVIDAD (calls · notas · looms) ──── */}
       <ActivityRegistry project={project} patch={patch} />
 
-      {/* KPI MODAL */}
-      <Modal open={!!kpiModal} onClose={() => setKpiModal(null)} title="Avance por sprints" width={640}>
-        {kpiModal === 'progress' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <Progress value={sprintProgress} showLabel height={12} />
-            {project.sprints.map((s) => (
-              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 14 }}>{s.name}</span><Badge tone={sprintMeta(s.status).tone}>{sprintMeta(s.status).label}</Badge>
-              </div>
-            ))}
+      {/* KPI MODAL — el detalle de las 4 tarjetas: las tareas del plan, por semana */}
+      <Modal open={kpiModal === 'plan'} onClose={() => setKpiModal(null)} title="Avance del plan" sub={linkedPlan?.title || ''} width={640}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Progress value={prog.pct} showLabel height={12} color={progressColor(prog.pct)} />
+          <div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+            {prog.done}/{prog.total} tareas · equipo {prog.equipoDone}/{prog.equipoTotal} · cliente {prog.clienteDone}/{prog.clienteTotal}
           </div>
-        )}
-        {kpiModal && kpiDetails[kpiModal] && (
-          <table>
-            <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>{['Origen', 'Detalle', 'Valor / estado'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
-            <tbody>{kpiDetails[kpiModal].rows.map((r, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '9px 10px', color: 'var(--text-faint)', fontSize: 13 }}>{r[0]}</td>
-                <td style={{ padding: '9px 10px', fontSize: 13.5 }}>{r[1]}</td>
-                <td style={{ padding: '9px 10px' }}>{['completado', 'en progreso', 'pendiente'].includes(r[2]) ? <Badge tone={statusTone(r[2])}>{r[2]}</Badge> : <span className="mono" style={{ fontSize: 13 }}>{r[2]}</span>}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
+          {planWeeks.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>El plan todavía no tiene semanas cargadas.</div>}
+          {planWeeks.map((w) => {
+            const wp = weekProgress(w)
+            const tasks = Array.isArray(w.tasks) ? w.tasks : []
+            return (
+              <div key={w.n}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, marginBottom: 6 }}>
+                  <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>SEM {String(w.n).padStart(2, '0')}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.title || 'Sin título'}</span>
+                  <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{wp.done}/{wp.total}</span>
+                </div>
+                {tasks.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-faint)', paddingLeft: 2 }}>Sin tareas.</div>}
+                {tasks.map((t, i) => {
+                  const done = taskDone(t)
+                  return (
+                    <div key={(t && t.id) || i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0 4px 2px', fontSize: 13.5 }}>
+                      <span style={{ color: done ? 'var(--green)' : 'var(--text-faint)', flexShrink: 0 }}>{done ? '✓' : '·'}</span>
+                      <span style={{ flex: 1, minWidth: 0, lineHeight: 1.45, textDecoration: done ? 'line-through' : 'none', color: done ? 'var(--text-faint)' : 'var(--text)' }}>
+                        {taskText(t) || <span style={{ fontStyle: 'italic', color: 'var(--text-faint)' }}>Tarea sin texto</span>}
+                      </span>
+                      {taskResponsable(t) === 'cliente' && <span className="tag" style={{ color: RESPONSABLES.cliente.color, background: hexA(RESPONSABLES.cliente.color, 0.14), flexShrink: 0 }}>cliente</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
       </Modal>
 
       <EditProjectModal open={editOpen} project={project} clients={data.clients} onClose={() => setEditOpen(false)} onSave={saveProject} onDelete={(id) => { projectStore.remove(id); onBack() }} />
-      <SprintDetailModal open={!!openSprint} sprint={openSprint} team={data.team} defaultId={project.assignments?.dev?.userId || null} onClose={() => setOpenSprintId(null)} onPatch={(fields) => patchSprintSynced(openSprintId, fields)} />
       <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
       <AccountsModal open={accountsOpen} project={project} onClose={() => setAccountsOpen(false)} patch={patch} />
@@ -5402,8 +6037,8 @@ function ProjectDetail({ projectId, onBack }) {
           <Field label="Enlace de Google Drive (compartido con el cliente)">
             <input className="input" value={project.driveUrl || ''} onChange={(e) => patch((p) => ({ ...p, driveUrl: e.target.value }))} placeholder="https://drive.google.com/…" autoFocus />
           </Field>
-          {project.driveUrl && <a href={project.driveUrl} target="_blank" rel="noreferrer" className="btn btn-accent" style={{ justifyContent: 'center' }}><I.ext width={14} height={14} /> Abrir Drive</a>}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={() => setDriveOpen(false)}><I.check width={15} height={15} /> Listo</button></div>
+          {project.driveUrl && <a href={project.driveUrl} target="_blank" rel="noreferrer" className="btn btn-accent" style={{ justifyContent: 'center' }}><I2.ext width={14} height={14} /> Abrir Drive</a>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={() => setDriveOpen(false)}><I2.check width={15} height={15} /> Listo</button></div>
         </div>
       </Modal>
       <ShareModal open={shareOpen} project={project} onClose={() => setShareOpen(false)} patch={patch} />
@@ -5429,13 +6064,13 @@ function ProjectDetail({ projectId, onBack }) {
                 </Field>
               )}
               {linkedPlan.publishedUrl
-                ? <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-accent" style={{ justifyContent: 'center' }}><I.ext width={14} height={14} /> Abrir plan</a>
+                ? <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-accent" style={{ justifyContent: 'center' }}><I2.ext width={14} height={14} /> Abrir plan</a>
                 : <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Este plan todavía no está publicado. Tocá "Publicar" en el Planificador — el enlace va a aparecer acá solo, no hace falta pegarlo a mano.</div>}
             </>
           ) : (
             <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Asociá un plan del Planificador para abrirlo desde acá. Publicalo con el botón "Publicar" del Planificador y el enlace va a quedar vinculado automáticamente.</div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={() => setPlanOpen(false)}><I.check width={15} height={15} /> Listo</button></div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-accent" onClick={() => setPlanOpen(false)}><I2.check width={15} height={15} /> Listo</button></div>
         </div>
       </Modal>
     </div>
@@ -5446,9 +6081,9 @@ function ProjectDetail({ projectId, onBack }) {
    16 · REGISTRO DE ACTIVIDAD DEL PROYECTO (calls · notas · looms)
 ============================================================================ */
 const ACTIVITY_TYPES = [
-  { key: 'llamada', label: 'Llamada', color: '#38BDF8', icon: I.phone },
-  { key: 'nota', label: 'Nota', color: '#F59E0B', icon: I.comment },
-  { key: 'loom', label: 'Loom', color: '#A855F7', icon: I.ext },
+  { key: 'llamada', label: 'Llamada', color: '#38BDF8', icon: I2.phone },
+  { key: 'nota', label: 'Nota', color: '#F59E0B', icon: I2.comment },
+  { key: 'loom', label: 'Loom', color: '#A855F7', icon: I2.ext },
 ]
 const actTypeMeta = (t) => ACTIVITY_TYPES.find((x) => x.key === t) || ACTIVITY_TYPES[0]
 
@@ -5487,60 +6122,121 @@ function ActivityRegistry({ project, patch }) {
   }
   const del = (id) => patch((p) => ({ ...p, activity: (p.activity || []).filter((x) => x.id !== id) }))
 
+  const ready = type === 'nota' ? (!!note.trim() || photos.length > 0) : !!link.trim()
+  const publicCount = entries.filter((e) => e.type !== 'nota' || e.visibility !== 'private').length
+
   return (
-    <div style={{ flex: '0 0 34%', minWidth: 300, maxWidth: 460, borderLeft: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ padding: '18px 18px 14px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3 }}><I.phone width={16} height={16} style={{ color: 'var(--accent)' }} /><strong style={{ fontSize: 15 }}>Registro de actividad</strong></div>
-        <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>Calls, notas y looms del proyecto</div>
+    <div className="pd-rail">
+      <div style={{ padding: '16px 16px 13px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <span style={{ display: 'grid', placeItems: 'center', width: 26, height: 26, borderRadius: 9, flex: 'none', background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+            <I2.pulse width={15} height={15} />
+          </span>
+          <strong style={{ fontSize: 14.5, letterSpacing: '-0.015em' }}>Registro de actividad</strong>
+          {entries.length > 0 && <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-faint)' }}>{entries.length}</span>}
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 5, lineHeight: 1.5 }}>
+          Calls, notas y looms del proyecto.{entries.length > 0 && <> El cliente ve {publicCount} de {entries.length}.</>}
+        </div>
       </div>
 
-      <div style={{ padding: 14, borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+      {/* COMPOSITOR — el formulario y el historial son dos cosas distintas y se
+          ven distintas: el compositor va sobre el fondo elevado, cada entrada
+          es una tarjeta. */}
+      <div style={{ padding: 13, borderBottom: '1px solid var(--border)' }}>
+        <div className="pj-seg" role="tablist" aria-label="Tipo de registro" style={{ width: '100%', marginBottom: 10 }}>
           {ACTIVITY_TYPES.map((t) => (
-            <button key={t.key} onClick={() => setType(t.key)} className="tag" style={{ cursor: 'pointer', flex: 1, justifyContent: 'center', color: type === t.key ? '#fff' : t.color, background: type === t.key ? t.color : t.color + '1f', borderColor: 'transparent' }}><t.icon width={12} height={12} /> {t.label}</button>
+            <button key={t.key} role="tab" aria-selected={type === t.key} onClick={() => setType(t.key)}
+              style={{ flex: 1, justifyContent: 'center', color: type === t.key ? t.color : undefined }}>
+              <t.icon width={13} height={13} /> {t.label}
+            </button>
           ))}
         </div>
+
         {type === 'nota' ? (
           <>
-            <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Escribí una nota importante…" style={{ resize: 'none' }} />
-            {photos.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>{photos.map((s, i) => <div key={i} style={{ position: 'relative' }}><img src={s} alt="" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 7, border: '1px solid var(--border)' }} /><button onClick={() => setPhotos((a) => a.filter((_, j) => j !== i))} style={{ position: 'absolute', top: -6, right: -6, width: 17, height: 17, borderRadius: 99, background: 'var(--red)', color: '#fff', display: 'grid', placeItems: 'center' }}><I.x width={10} height={10} /></button></div>)}</div>}
+            <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} aria-label="Nota"
+              placeholder="Qué pasó, qué se definió, qué hay que recordar…" style={{ resize: 'none', fontSize: 13.5 }} />
+            {photos.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                {photos.map((s, i) => (
+                  <div key={i} style={{ position: 'relative' }}>
+                    <img src={s} alt="" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 9, border: '1px solid var(--border)' }} />
+                    <button onClick={() => setPhotos((a) => a.filter((_, j) => j !== i))} title="Quitar la foto"
+                      style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 99, background: 'var(--red)', color: '#fff', display: 'grid', placeItems: 'center' }}>
+                      <I2.x width={10} height={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         ) : (
-          <input className="input mono" value={link} onChange={(e) => setLink(e.target.value)} placeholder={type === 'loom' ? 'https://loom.com/share/…' : 'https://fathom.video/… (link de la call)'} style={{ fontSize: 12.5 }} />
+          <input className="input mono" value={link} onChange={(e) => setLink(e.target.value)} type="url" aria-label="Enlace"
+            placeholder={type === 'loom' ? 'https://loom.com/share/…' : 'https://fathom.video/…'} style={{ fontSize: 12.5 }} />
         )}
         <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} style={{ display: 'none' }} />
+
         {type === 'nota' && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            <button onClick={() => setPriv(false)} className="tag" style={{ cursor: 'pointer', flex: 1, justifyContent: 'center', color: !priv ? 'var(--green)' : 'var(--text-faint)', background: !priv ? 'var(--green-soft)' : 'var(--bg-elevated)', borderColor: !priv ? 'transparent' : 'var(--border)' }}><I.eye width={12} height={12} /> Pública (cliente)</button>
-            <button onClick={() => setPriv(true)} className="tag" style={{ cursor: 'pointer', flex: 1, justifyContent: 'center', color: priv ? 'var(--accent)' : 'var(--text-faint)', background: priv ? 'var(--accent-soft)' : 'var(--bg-elevated)', borderColor: priv ? 'transparent' : 'var(--border)' }}><I.eyeOff width={12} height={12} /> Privada (equipo)</button>
+          <div className="pj-seg" role="group" aria-label="Quién ve esta nota" style={{ width: '100%', marginTop: 8 }}>
+            <button aria-pressed={!priv} onClick={() => setPriv(false)} style={{ flex: 1, justifyContent: 'center', color: !priv ? 'var(--green)' : undefined }}>
+              <I2.eye width={12} height={12} /> La ve el cliente
+            </button>
+            <button aria-pressed={priv} onClick={() => setPriv(true)} style={{ flex: 1, justifyContent: 'center', color: priv ? 'var(--accent)' : undefined }}>
+              <I2.eyeOff width={12} height={12} /> Solo el equipo
+            </button>
           </div>
         )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-          <input type="date" className="input mono" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 'auto', padding: '6px 8px', fontSize: 12 }} />
-          {type === 'nota' && <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()} title="Adjuntar foto" style={{ padding: '6px 9px' }}><I.paperclip width={14} height={14} /></button>}
-          <button className="btn btn-sm btn-accent" onClick={add} style={{ marginLeft: 'auto' }}><I.check width={14} height={14} /> Registrar</button>
+          <input type="date" className="input mono" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Fecha del registro"
+            style={{ width: 'auto', padding: '6px 8px', fontSize: 12 }} />
+          {type === 'nota' && (
+            <button className="pd-btn" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()} title="Adjuntar una foto"
+              style={{ padding: '0 9px', ...(busy ? { opacity: 0.5, cursor: 'progress' } : null) }}>
+              <I2.paperclip width={14} height={14} />{busy ? ' Subiendo…' : ''}
+            </button>
+          )}
+          <button className="pd-cta" onClick={add} disabled={!ready} style={{ marginLeft: 'auto', ...(ready ? null : { opacity: 0.42, cursor: 'not-allowed' }) }}>
+            Registrar <i><I2.check width={13} height={13} /></i>
+          </button>
         </div>
       </div>
 
-      <div className="scroll-y" style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {entries.length === 0 && <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--text-faint)' }}>Sin registros todavía. Dejá una call, nota o loom arriba.</div>}
-        {entries.map((en) => { const m = actTypeMeta(en.type); const u = userOf(en.authorId); return (
-          <div key={en.id} className="surface" style={{ padding: 11, background: 'var(--card)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: (en.note || (en.photos || []).length || en.link) ? 7 : 0 }}>
-              <span className="tag" style={{ color: m.color, background: m.color + '1f', borderColor: 'transparent' }}><m.icon width={11} height={11} /> {m.label}</span>
-              {en.type === 'nota' && en.visibility === 'private' && <span className="tag" title="Solo el equipo la ve" style={{ color: 'var(--accent)', background: 'var(--accent-soft)', borderColor: 'transparent' }}><I.eyeOff width={11} height={11} /> Privada</span>}
-              {en.fromCalls && <span className="tag" style={{ color: 'var(--text-faint)', background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>desde Calls</span>}
-              <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fmtDate(en.date)}</span>
-              {!en.fromCalls && <button className="btn btn-sm btn-ghost" onClick={() => del(en.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I.x width={12} height={12} /></button>}
-            </div>
-            {en.note && <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--text-dim)' }}>{en.note}</div>}
-            {(en.photos || []).length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>{en.photos.map((s, i) => <a key={i} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 7, border: '1px solid var(--border)' }} /></a>)}</div>}
-            {en.link && <a href={en.link} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ marginTop: 8, color: m.color }}><I.ext width={13} height={13} /> Abrir {en.type === 'loom' ? 'Loom' : 'call'}</a>}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 11, color: 'var(--text-faint)' }}>
-              {u ? <Avatar user={u} size={18} ring="var(--card)" /> : null}<span>{u ? u.name : (en.authorName || 'Alguien')}</span>
-            </div>
+      {/* HISTORIAL — la barrita de la izquierda dice de un vistazo quién lo ve:
+          verde = el cliente, naranja = solo el equipo. */}
+      <div className="pd-rail-list scroll-y">
+        {entries.length === 0 ? (
+          <div className="pd-empty">
+            <span className="ic"><I2.comment width={21} height={21} /></span>
+            <span className="t">Todavía no hay nada anotado</span>
+            <span className="d">Cada call, nota o loom que dejes acá queda con fecha y autor. Las notas públicas también las ve el cliente en su link.</span>
           </div>
-        )})}
+        ) : entries.map((en) => {
+          const m = actTypeMeta(en.type)
+          const u = userOf(en.authorId)
+          const isPriv = en.type === 'nota' && en.visibility === 'private'
+          const hasBody = !!(en.note || (en.photos || []).length || en.link)
+          return (
+            <div key={en.id} className={`pd-entry${isPriv ? ' priv' : ''}`}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: hasBody ? 8 : 0 }}>
+                <span className="tag" style={{ color: m.color, background: m.color + '1f', borderColor: 'transparent' }}><m.icon width={11} height={11} /> {m.label}</span>
+                {isPriv
+                  ? <span className="tag" title="El cliente no la ve" style={{ color: 'var(--accent)', background: 'var(--accent-soft)', borderColor: 'transparent' }}><I2.eyeOff width={11} height={11} /> Solo el equipo</span>
+                  : <span className="tag" title="El cliente la ve en su link" style={{ color: 'var(--green)', background: 'var(--green-soft)', borderColor: 'transparent' }}><I2.eye width={11} height={11} /> Cliente</span>}
+                {en.fromCalls && <span className="tag" style={{ color: 'var(--text-faint)', background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>desde Calls</span>}
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginLeft: 'auto', flex: 'none' }}>{fmtDate(en.date)}</span>
+                {!en.fromCalls && <button className="btn btn-sm btn-ghost" onClick={() => del(en.id)} title="Eliminar el registro" style={{ padding: 3, flex: 'none', color: 'var(--text-faint)' }}><I2.x width={12} height={12} /></button>}
+              </div>
+              {en.note && <div style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: 'var(--text-dim)' }}>{en.note}</div>}
+              {(en.photos || []).length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>{en.photos.map((s, i) => <a key={i} href={s} target="_blank" rel="noreferrer"><img src={s} alt="Adjunto" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 9, border: '1px solid var(--border)' }} /></a>)}</div>}
+              {en.link && <a href={en.link} target="_blank" rel="noreferrer" className="pd-lnk" style={{ marginTop: 9 }}><I2.ext width={13} height={13} /> Abrir {en.type === 'loom' ? 'el Loom' : 'la call'}<span className="go"><I2.arrowRight width={12} height={12} /></span></a>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 9, fontSize: 11, color: 'var(--text-faint)' }}>
+                {u ? <Avatar user={u} size={18} ring="var(--card)" /> : null}<span>{u ? u.name : (en.authorName || 'Alguien')}</span>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -5549,8 +6245,24 @@ function ActivityRegistry({ project, patch }) {
 /* ============================================================================
    16b · PROJECT AI CHAT (deprecado — el asistente ahora vive en el menú)
 ============================================================================ */
-function buildSystemPrompt(project, client) {
-  const sprintTxt = project.sprints.map((s) => `  - ${s.name} [${s.status}] módulos: ${s.modules.map((m) => `${m.name}(${m.status})`).join(', ')}`).join('\n')
+/* Resumen compacto del plan para los prompts de IA: una línea por semana con su
+   título, el avance (terminadas/total) y las tareas, marcando las terminadas. */
+function planPromptText(plan, indent = '  ') {
+  if (!plan) return `${indent}(sin plan asociado)`
+  const weeks = [...(plan.weeks || [])].sort((a, b) => (a.n || 0) - (b.n || 0))
+  if (!weeks.length) return `${indent}(el plan no tiene semanas cargadas)`
+  return weeks.map((w) => {
+    const prg = weekProgress(w)
+    const tasks = (Array.isArray(w.tasks) ? w.tasks : [])
+      .map((t) => `${taskText(t)}${taskDone(t) ? ' ✓' : ''}${taskResponsable(t) === 'cliente' ? ' (cliente)' : ''}`)
+      .filter((x) => x.trim())
+      .join(' · ')
+    return `${indent}- Sem ${w.n} · ${w.title || 'sin título'} [${prg.done}/${prg.total}]${tasks ? `: ${tasks}` : ''}`
+  }).join('\n')
+}
+
+function buildSystemPrompt(project, client, plan) {
+  const prog = progressBreakdown(project, plan)
   const pa = project.pendingAgency.map((p) => `  - [${p.priority}] ${p.title}: ${p.description}`).join('\n') || '  (ninguno)'
   const pc = project.pendingClient.map((p) => `  - [${p.priority}] ${p.title}: ${p.description}`).join('\n') || '  (ninguno)'
   return `Sos el asistente IA del proyecto "${project.name}" de Insights Software para el cliente ${client?.company} (${client?.name}).
@@ -5559,10 +6271,10 @@ KICK-OFF:
 ${project.kickoff}
 
 STACK: ${project.stack}
-AVANCE: ${calcProgress(project)}% · ${moduleCounts(project).delivered}/${moduleCounts(project).total} módulos entregados
+AVANCE: ${prog.pct}% · ${prog.done}/${prog.total} tareas del plan (equipo ${prog.equipoDone}/${prog.equipoTotal} · cliente ${prog.clienteDone}/${prog.clienteTotal})
 
-SPRINTS:
-${sprintTxt}
+PLAN (${plan?.title || 'sin plan'}) — semanas y tareas:
+${planPromptText(plan)}
 
 PENDIENTE AGENCIA:
 ${pa}
@@ -5580,6 +6292,8 @@ INSTRUCCIONES:
 }
 
 function ProjectChat({ project, client, patch }) {
+  const { plans } = useApp()
+  const linkedPlan = (plans || []).find((pl) => pl.id === project.planId) || null
   const [activeChatId, setActiveChatId] = useState(project.chats[0]?.id || null)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -5592,7 +6306,7 @@ function ProjectChat({ project, client, patch }) {
 
   const newChat = () => {
     const id = uid()
-    patch((p) => ({ ...p, chats: [{ id, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }, ...p.chats] }))
+    patch((p) => ({ ...p, chats: [{ id, date: NOW().toISOString(), title: 'Nueva conversación', messages: [] }, ...p.chats] }))
     setActiveChatId(id); setShowHistory(false)
   }
 
@@ -5600,14 +6314,14 @@ function ProjectChat({ project, client, patch }) {
     const text = input.trim()
     if (!text || sending) return
     let chatId = activeChatId
-    if (!chatId) { chatId = uid(); patch((p) => ({ ...p, chats: [{ id: chatId, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }, ...p.chats] })); setActiveChatId(chatId) }
+    if (!chatId) { chatId = uid(); patch((p) => ({ ...p, chats: [{ id: chatId, date: NOW().toISOString(), title: 'Nueva conversación', messages: [] }, ...p.chats] })); setActiveChatId(chatId) }
     const userMsg = { role: 'user', content: text, timestamp: Date.now() }
     patch((p) => ({ ...p, chats: p.chats.map((c) => c.id === chatId ? { ...c, messages: [...c.messages, userMsg], title: c.messages.length === 0 ? (text.length > 38 ? text.slice(0, 38) + '…' : text) : c.title } : c) }))
     setInput(''); setSending(true); setError(null)
 
     const history = [...(project.chats.find((c) => c.id === chatId)?.messages || []), userMsg]
     try {
-      const reply = await anthropicChat({ system: buildSystemPrompt(project, client), messages: history })
+      const reply = await anthropicChat({ system: buildSystemPrompt(project, client, linkedPlan), messages: history })
       patch((p) => ({ ...p, chats: p.chats.map((c) => c.id === chatId ? { ...c, messages: [...c.messages, { role: 'assistant', content: reply, timestamp: Date.now() }] } : c) }))
     } catch (e) {
       if (e.message === 'NO_KEY') setError('Configurá tu Anthropic API key en ⚙ Ajustes para usar el chat.')
@@ -5618,10 +6332,10 @@ function ProjectChat({ project, client, patch }) {
   return (
     <div style={{ flex: '0 0 360px', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg-elevated)', minWidth: 320 }}>
       <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><I.spark width={17} height={17} style={{ color: 'var(--accent)' }} /><strong style={{ fontFamily: 'Bricolage Grotesque', fontSize: 15 }}>Asistente del proyecto</strong></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><I2.spark width={17} height={17} style={{ color: 'var(--accent)' }} /><strong style={{ fontFamily: 'Bricolage Grotesque', fontSize: 15 }}>Asistente del proyecto</strong></div>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button className="btn btn-sm btn-ghost" onClick={() => setShowHistory((v) => !v)} title="Historial"><I.clock width={15} height={15} /></button>
-          <button className="btn btn-sm btn-ghost" onClick={newChat} title="Nuevo chat"><I.plus width={15} height={15} /></button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setShowHistory((v) => !v)} title="Historial"><I2.clock width={15} height={15} /></button>
+          <button className="btn btn-sm btn-ghost" onClick={newChat} title="Nuevo chat"><I2.plus width={15} height={15} /></button>
         </div>
       </div>
 
@@ -5644,7 +6358,7 @@ function ProjectChat({ project, client, patch }) {
       <div ref={scrollRef} className="scroll-y" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {(!activeChat || activeChat.messages.length === 0) && (
           <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-faint)', maxWidth: 260 }}>
-            <I.spark width={28} height={28} style={{ color: 'var(--accent)', marginBottom: 12 }} />
+            <I2.spark width={28} height={28} style={{ color: 'var(--accent)', marginBottom: 12 }} />
             <div style={{ fontSize: 14, lineHeight: 1.6 }}>Preguntá sobre <strong>{project.name}</strong> o pegá una transcripción de call para que la resuma y extraiga action items.</div>
           </div>
         )}
@@ -5668,7 +6382,7 @@ function ProjectChat({ project, client, patch }) {
           <textarea className="input" rows={2} value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             placeholder="Pegá una transcripción, preguntá sobre el proyecto…" style={{ resize: 'none', paddingRight: 44 }} />
-          <button onClick={send} disabled={sending || !input.trim()} className="btn-accent" style={{ position: 'absolute', right: 8, bottom: 8, width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', opacity: input.trim() ? 1 : 0.5 }}><I.send width={15} height={15} /></button>
+          <button onClick={send} disabled={sending || !input.trim()} className="btn-accent" style={{ position: 'absolute', right: 8, bottom: 8, width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', opacity: input.trim() ? 1 : 0.5 }}><I2.send width={15} height={15} /></button>
         </div>
         <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 6, textAlign: 'center' }} className="mono">{CHAT_MODEL} · Enter envía · Shift+Enter salto</div>
       </div>
@@ -5679,18 +6393,20 @@ function ProjectChat({ project, client, patch }) {
 /* ============================================================================
    16b · IA ASSISTANT — chat global sobre todos los proyectos y reuniones
 ============================================================================ */
-function buildGlobalSystemPrompt(data) {
+function buildGlobalSystemPrompt(data, plans) {
   const clientName = (id) => data.clients.find((c) => c.id === id)?.company || '—'
+  const planById = new Map((plans || []).map((pl) => [pl.id, pl]))
   const projects = (data.projects || []).map((p) => {
-    const sprints = (p.sprints || []).map((s) => `    · ${s.name} [${sprintMeta(s.status).label}] est. ${fmtDate(s.estimatedDate)}${s.description ? ` — ${s.description}` : ''}${(s.comments || []).length ? ` (comentarios: ${s.comments.map((c) => c.text).join(' | ')})` : ''}`).join('\n')
+    const plan = p.planId ? planById.get(p.planId) || null : null
+    const prog = progressBreakdown(p, plan)
     const pa = (p.pendingAgency || []).map((x) => `${x.title} [${x.priority}]`).join('; ') || 'ninguno'
     const pc = (p.pendingClient || []).map((x) => `${x.title} [${x.priority}]`).join('; ') || 'ninguno'
     const risks = (p.risks || []).map((r) => `${r.description} (${r.severity})`).join('; ') || 'ninguno'
-    return `### ${p.name} — ${clientName(p.clientId)} · estado ${projStatusMeta(p.status).label} · avance ${calcProgress(p)}%
+    return `### ${p.name} — ${clientName(p.clientId)} · estado ${projStatusMeta(p.status).label} · avance ${prog.pct}% (${prog.done}/${prog.total} tareas, cliente ${prog.clienteDone}/${prog.clienteTotal})
 Stack: ${p.stack || '—'}
 Kick-off: ${p.kickoff || '—'}
-Sprints:
-${sprints || '    (sin sprints)'}
+Plan (${plan?.title || 'sin plan asociado'}):
+${planPromptText(plan, '    ')}
 Pendiente agencia: ${pa}
 Pendiente cliente: ${pc}
 Riesgos: ${risks}`
@@ -5699,7 +6415,7 @@ Riesgos: ${risks}`
   Resumen: ${c.summary}
   Transcript: ${c.transcript || '(sin transcript)'}`).join('\n\n') || '(sin reuniones cargadas)'
   const team = (data.team || []).map((u) => u.name).join(', ')
-  return `Sos el asistente IA de Insights Software, una agencia de desarrollo de software. Tenés acceso COMPLETO a todos los proyectos, sus sprints, pendientes, riesgos y a las reuniones (calls) con transcripciones. Respondé SIEMPRE en español, de forma concisa, clara y accionable. Usá viñetas y datos concretos (estados, %, fechas). Si te preguntan por avances, basate en los sprints (terminado/en proceso/pendiente) y el % de avance. Si te preguntan por reuniones, usá los resúmenes y transcripts. Si falta información, decilo explícitamente.
+  return `Sos el asistente IA de Insights Software, una agencia de desarrollo de software. Tenés acceso COMPLETO a todos los proyectos, sus planes (semanas y tareas), pendientes, riesgos y a las reuniones (calls) con transcripciones. Respondé SIEMPRE en español, de forma concisa, clara y accionable. Usá viñetas y datos concretos (estados, %, fechas). Si te preguntan por avances, basate en las tareas del plan (las marcadas con ✓ están terminadas) y el % de avance. Las tareas marcadas "(cliente)" dependen del cliente, no del equipo. Si te preguntan por reuniones, usá los resúmenes y transcripts. Si falta información, decilo explícitamente.
 
 EQUIPO: ${team || '—'}
 
@@ -5718,7 +6434,7 @@ const ASSISTANT_SUGGESTIONS = [
 ]
 
 function AssistantView() {
-  const { data, chatStore } = useApp()
+  const { data, chatStore, plans } = useApp()
   const chats = data.assistantChats || []
   const [activeId, setActiveId] = useState(chats[0]?.id || null)
   const [input, setInput] = useState('')
@@ -5730,19 +6446,19 @@ function AssistantView() {
   // Las conversaciones se guardan por fila (chatStore): create + patch por id.
   useEffect(() => { scrollRef.current?.scrollTo({ top: 1e9, behavior: 'smooth' }) }, [active?.messages.length, sending])
 
-  const newChat = () => { const id = uid(); chatStore.create({ id, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }); setActiveId(id) }
+  const newChat = () => { const id = uid(); chatStore.create({ id, date: NOW().toISOString(), title: 'Nueva conversación', messages: [] }); setActiveId(id) }
 
   const sendText = async (text) => {
     text = (text || '').trim()
     if (!text || sending) return
     let chatId = activeId
-    if (!chatId) { chatId = uid(); chatStore.create({ id: chatId, date: NOW.toISOString(), title: 'Nueva conversación', messages: [] }); setActiveId(chatId) }
+    if (!chatId) { chatId = uid(); chatStore.create({ id: chatId, date: NOW().toISOString(), title: 'Nueva conversación', messages: [] }); setActiveId(chatId) }
     const prev = (chatStore.items.find((c) => c.id === chatId)?.messages) || []
     const userMsg = { role: 'user', content: text, timestamp: Date.now() }
     chatStore.patch(chatId, (c) => ({ ...c, messages: [...c.messages, userMsg], title: c.messages.length === 0 ? (text.length > 42 ? text.slice(0, 42) + '…' : text) : c.title }))
     setInput(''); setSending(true); setError(null)
     try {
-      const reply = await anthropicChat({ system: buildGlobalSystemPrompt(data), messages: [...prev, userMsg] })
+      const reply = await anthropicChat({ system: buildGlobalSystemPrompt(data, plans), messages: [...prev, userMsg] })
       chatStore.patch(chatId, (c) => ({ ...c, messages: [...c.messages, { role: 'assistant', content: reply, timestamp: Date.now() }] }))
     } catch (e) {
       if (e.message === 'NO_KEY') setError('Configurá tu Anthropic API key en ⚙ Ajustes para usar el asistente.')
@@ -5755,7 +6471,7 @@ function AssistantView() {
       {/* conversations */}
       <div style={{ width: 250, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg-elevated)' }}>
         <div style={{ padding: 14 }}>
-          <button className="btn btn-accent" onClick={newChat} style={{ width: '100%', justifyContent: 'center' }}><I.plus width={15} height={15} /> Nueva conversación</button>
+          <button className="btn btn-accent" onClick={newChat} style={{ width: '100%', justifyContent: 'center' }}><I2.plus width={15} height={15} /> Nueva conversación</button>
         </div>
         <div className="scroll-y" style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px' }}>
           {chats.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-faint)', padding: 10 }}>Sin conversaciones aún.</div>}
@@ -5774,9 +6490,9 @@ function AssistantView() {
           <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
             {(!active || active.messages.length === 0) && (
               <div style={{ marginTop: '8vh', textAlign: 'center' }}>
-                <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', margin: '0 auto 16px' }}><I.spark width={26} height={26} /></div>
+                <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', margin: '0 auto 16px' }}><I2.spark width={26} height={26} /></div>
                 <h1 style={{ fontSize: 26, marginBottom: 8 }}>Asistente IA de Insights</h1>
-                <div style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>Preguntá sobre el avance de los proyectos, los sprints, los pendientes<br />y lo que se habló en las reuniones.</div>
+                <div style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>Preguntá sobre el avance de los proyectos, sus planes, los pendientes<br />y lo que se habló en las reuniones.</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxWidth: 560, margin: '0 auto' }}>
                   {ASSISTANT_SUGGESTIONS.map((s) => (
                     <button key={s} className="surface surface-hover click" onClick={() => sendText(s)} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.4 }}>{s}</button>
@@ -5786,7 +6502,7 @@ function AssistantView() {
             )}
             {active?.messages.map((m, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'grid', placeItems: 'center', background: m.role === 'user' ? 'var(--border-strong)' : 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, fontFamily: 'Bricolage Grotesque' }}>{m.role === 'user' ? 'Vos' : <I.spark width={15} height={15} />}</div>
+                <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'grid', placeItems: 'center', background: m.role === 'user' ? 'var(--border-strong)' : 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, fontFamily: 'Bricolage Grotesque' }}>{m.role === 'user' ? 'Vos' : <I2.spark width={15} height={15} />}</div>
                 <div style={{ flex: 1, minWidth: 0, fontSize: 14.5, lineHeight: 1.65, whiteSpace: 'pre-wrap', paddingTop: 3, color: m.role === 'user' ? 'var(--text)' : 'var(--text-dim)' }}>{m.content}</div>
               </motion.div>
             ))}
@@ -5799,7 +6515,7 @@ function AssistantView() {
             <textarea className="input" rows={2} value={input} onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(input) } }}
               placeholder="Preguntá sobre los proyectos, avances, reuniones…" style={{ resize: 'none', paddingRight: 48 }} />
-            <button onClick={() => sendText(input)} disabled={sending || !input.trim()} className="btn-accent" style={{ position: 'absolute', right: 8, bottom: 8, width: 32, height: 32, borderRadius: 8, display: 'grid', placeItems: 'center', opacity: input.trim() ? 1 : 0.5 }}><I.send width={15} height={15} /></button>
+            <button onClick={() => sendText(input)} disabled={sending || !input.trim()} className="btn-accent" style={{ position: 'absolute', right: 8, bottom: 8, width: 32, height: 32, borderRadius: 8, display: 'grid', placeItems: 'center', opacity: input.trim() ? 1 : 0.5 }}><I2.send width={15} height={15} /></button>
           </div>
           <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 8, textAlign: 'center' }} className="mono">{CHAT_MODEL} · lee proyectos + reuniones · Enter envía</div>
         </div>
@@ -5823,9 +6539,9 @@ function DueDate({ value, onChange }) {
     <span style={{ position: 'relative', display: 'inline-flex' }} onClick={(e) => e.stopPropagation()}>
       <button onClick={openCal} className="tag" title={iso ? 'Cambiar fecha límite' : 'Poner fecha límite'}
         style={{ cursor: 'pointer', background: 'var(--bg-elevated)', borderColor: overdue ? 'var(--red)' : 'var(--border)', color: iso ? (overdue ? 'var(--red)' : 'var(--text)') : 'var(--text-faint)' }}>
-        <I.calendar width={13} height={13} />{iso ? fmtDate(value) : 'Fecha límite'}{overdue ? ' ⚠' : ''}
+        <I2.calendar width={13} height={13} />{iso ? fmtDate(value) : 'Fecha límite'}{overdue ? ' ⚠' : ''}
       </button>
-      {iso && <button onClick={(e) => { e.stopPropagation(); onChange('') }} title="Quitar fecha" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 3, color: 'var(--text-faint)', background: 'transparent' }}><I.x width={12} height={12} /></button>}
+      {iso && <button onClick={(e) => { e.stopPropagation(); onChange('') }} title="Quitar fecha" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 3, color: 'var(--text-faint)', background: 'transparent' }}><I2.x width={12} height={12} /></button>}
       <input ref={ref} type="date" value={iso} onChange={(e) => onChange(e.target.value ? dateInputISO(e.target.value) : '')}
         style={{ position: 'absolute', left: 0, bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: 'none' }} />
     </span>
@@ -5861,7 +6577,7 @@ function TaskDetailModal({ open, task, team, projects, onClose, onPatch, onDelet
         </div>
         <Field label="¿De qué es esta tarea?">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn-sm" onClick={() => onPatch({ scope: 'cliente' })} style={{ flex: '1 1 140px', justifyContent: 'center', background: taskScope(task) === 'cliente' ? 'var(--accent-soft)' : 'transparent', color: taskScope(task) === 'cliente' ? 'var(--accent)' : 'var(--text-dim)', borderColor: taskScope(task) === 'cliente' ? 'var(--accent-line)' : 'var(--border)' }}><I.folder width={14} height={14} /> Proyecto de cliente</button>
+            <button type="button" className="btn btn-sm" onClick={() => onPatch({ scope: 'cliente' })} style={{ flex: '1 1 140px', justifyContent: 'center', background: taskScope(task) === 'cliente' ? 'var(--accent-soft)' : 'transparent', color: taskScope(task) === 'cliente' ? 'var(--accent)' : 'var(--text-dim)', borderColor: taskScope(task) === 'cliente' ? 'var(--accent-line)' : 'var(--border)' }}><I2.folder width={14} height={14} /> Proyecto de cliente</button>
             <button type="button" className="btn btn-sm" onClick={() => onPatch({ scope: 'interno', projectId: '' })} style={{ flex: '1 1 140px', justifyContent: 'center', background: taskScope(task) === 'interno' ? 'var(--accent-soft)' : 'transparent', color: taskScope(task) === 'interno' ? 'var(--accent)' : 'var(--text-dim)', borderColor: taskScope(task) === 'interno' ? 'var(--accent-line)' : 'var(--border)' }}><span style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 12 }}>I</span> Interno (Insights)</button>
           </div>
         </Field>
@@ -5880,8 +6596,8 @@ function TaskDetailModal({ open, task, team, projects, onClose, onPatch, onDelet
           onDelete={(id) => onPatch({ comments: (task.comments || []).filter((x) => x.id !== id) })} />
 
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <button className="btn" onClick={() => { onDelete(task.id); onClose() }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I.trash width={15} height={15} /> Eliminar tarea</button>
-          <button className="btn btn-accent" onClick={onClose}><I.check width={15} height={15} /> Listo</button>
+          <button className="btn" onClick={() => { onDelete(task.id); onClose() }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I2.trash width={15} height={15} /> Eliminar tarea</button>
+          <button className="btn btn-accent" onClick={onClose}><I2.check width={15} height={15} /> Listo</button>
         </div>
       </div>
     </Modal>
@@ -5910,7 +6626,7 @@ function TasksView() {
 
   const PrioFlag = ({ p, withLabel }) => {
     const m = taskPrioMeta(p)
-    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: m.color, fontSize: 13, fontWeight: 600 }} title={`Prioridad: ${m.label}`}><I.flag width={15} height={15} />{withLabel && m.label}</span>
+    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: m.color, fontSize: 13, fontWeight: 600 }} title={`Prioridad: ${m.label}`}><I2.flag width={15} height={15} />{withLabel && m.label}</span>
   }
   const Assignee = ({ id, size = 26 }) => {
     const u = userOf(id)
@@ -5955,10 +6671,10 @@ function TasksView() {
         <div><div className="label" style={{ marginBottom: 6 }}>Equipo</div><h1 style={{ fontSize: 32 }}>Tareas</h1></div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <div className="surface" style={{ display: 'flex', padding: 3, borderRadius: 10 }}>
-            <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} title="Tabla" style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I.table width={15} height={15} /></button>
-            <button className="btn btn-sm btn-ghost" onClick={() => setView('kanban')} title="Kanban" style={{ background: view === 'kanban' ? 'var(--card-hover)' : 'transparent', color: view === 'kanban' ? 'var(--accent)' : 'var(--text-dim)' }}><I.kanban width={15} height={15} /></button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setView('table')} title="Tabla" style={{ background: view === 'table' ? 'var(--card-hover)' : 'transparent', color: view === 'table' ? 'var(--accent)' : 'var(--text-dim)' }}><I2.table width={15} height={15} /></button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setView('kanban')} title="Kanban" style={{ background: view === 'kanban' ? 'var(--card-hover)' : 'transparent', color: view === 'kanban' ? 'var(--accent)' : 'var(--text-dim)' }}><I2.kanban width={15} height={15} /></button>
           </div>
-          <button className="btn btn-accent" onClick={addTask}><I.plus width={15} height={15} /> Agregar tarea</button>
+          <button className="btn btn-accent" onClick={addTask}><I2.plus width={15} height={15} /> Agregar tarea</button>
         </div>
       </div>
 
@@ -6003,7 +6719,7 @@ function TasksView() {
                 return (
                 <tr key={t.id} className="row-hover click" onClick={() => setOpenId(t.id)} style={{ borderBottom: '1px solid var(--border)', opacity: t.status === 'terminado' ? 0.6 : 1 }}>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Assignee id={t.assigneeId} /></td>
-                  <td style={{ padding: '12px 16px', fontWeight: 600, textDecoration: t.status === 'terminado' ? 'line-through' : 'none' }}>{t.name}{(t.comments || []).length > 0 && <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I.comment width={11} height={11} />{t.comments.length}</span>}</td>
+                  <td style={{ padding: '12px 16px', fontWeight: 600, textDecoration: t.status === 'terminado' ? 'line-through' : 'none' }}>{t.name}{(t.comments || []).length > 0 && <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--text-faint)' }}><I2.comment width={11} height={11} />{t.comments.length}</span>}</td>
                   <td style={{ padding: '12px 16px' }}><ScopeTag t={t} /></td>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><PrioFlag p={t.priority} withLabel /></td>
                   <td style={{ padding: '8px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}><DueDate value={t.dueDate} onChange={(v) => updateTask(t.id, { dueDate: v })} /></td>
@@ -6012,7 +6728,7 @@ function TasksView() {
                       {TASK_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                     </select>
                   </td>
-                  <td style={{ padding: '12px 16px 12px 0', width: 44 }}><button className="btn btn-sm btn-ghost" title="Eliminar" onClick={(e) => { e.stopPropagation(); if (window.confirm('¿Eliminar esta tarea?')) delTask(t.id) }} style={{ padding: 6, color: 'var(--text-faint)' }}><I.x width={15} height={15} /></button></td>
+                  <td style={{ padding: '12px 16px 12px 0', width: 44 }}><button className="btn btn-sm btn-ghost" title="Eliminar" onClick={(e) => { e.stopPropagation(); if (window.confirm('¿Eliminar esta tarea?')) delTask(t.id) }} style={{ padding: 6, color: 'var(--text-faint)' }}><I2.x width={15} height={15} /></button></td>
                 </tr>
               )})}
             </tbody>
@@ -6098,7 +6814,7 @@ function TeamManager({ open, onClose }) {
               <select className="input" value={u.role || ''} onChange={(e) => update(u.id, { role: e.target.value })} title="Rango (define en qué filtro de Proyectos aparece)" style={{ flex: '0 0 88px', padding: '6px 9px', fontSize: 12.5 }}>
                 {TEAM_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
               </select>
-              <button className="btn btn-sm btn-ghost" onClick={() => remove(u.id)} title="Quitar del equipo" style={{ padding: 6, color: 'var(--text-faint)' }}><I.trash width={14} height={14} /></button>
+              <button className="btn btn-sm btn-ghost" onClick={() => remove(u.id)} title="Quitar del equipo" style={{ padding: 6, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
             </div>
           ))}
         </div>
@@ -6111,7 +6827,7 @@ function TeamManager({ open, onClose }) {
             <select className="input" value={role} onChange={(e) => setRole(e.target.value)} title="Rango" style={{ flex: '0 0 88px' }}>
               {TEAM_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
             </select>
-            <button className="btn btn-accent" onClick={add}><I.plus width={15} height={15} /> Agregar</button>
+            <button className="btn btn-accent" onClick={add}><I2.plus width={15} height={15} /> Agregar</button>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 9 }}>
             El <strong>email</strong> tiene que coincidir con el usuario de Supabase para que la persona se reconozca sola al iniciar sesión. Agregar un miembro acá <strong>no</strong> crea su login: eso se hace aparte en Supabase → Authentication.
@@ -6122,9 +6838,11 @@ function TeamManager({ open, onClose }) {
   )
 }
 
-function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
+/* Mi perfil. El disparador ya no es un botón flotante tapando la esquina: vive
+   en el pie del sidebar, junto al nombre, que es donde se busca. */
+function UserProfile({ session, myId, setMyId, onLogout, open, onClose }) {
   const { data, teamStore } = useApp()
-  const [open, setOpen] = useState(false)
+  const setOpen = (v) => { if (!v && onClose) onClose() }
   const [teamOpen, setTeamOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
@@ -6140,41 +6858,33 @@ function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
     e.target.value = ''
   }
   const email = session?.user?.email || ''
-  const Placeholder = ({ size, icon = 22 }) => <div style={{ width: size, height: size, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '2px dashed var(--border-strong)', color: 'var(--text-faint)' }}><I.users width={icon} height={icon} /></div>
+  const Placeholder = ({ size, icon = 22 }) => <div style={{ width: size, height: size, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '2px dashed var(--border-strong)', color: 'var(--text-faint)' }}><I2.users width={icon} height={icon} /></div>
 
   return (
     <>
-      {!hidden && (
-        <motion.button initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ scale: 1.06 }}
-          onClick={() => setOpen(true)} title="Mi perfil"
-          style={{ position: 'fixed', right: 22, bottom: 22, zIndex: 50, padding: 0, borderRadius: '50%', boxShadow: 'var(--shadow)', background: 'var(--card)' }}>
-          {me ? <Avatar user={me} size={48} ring="var(--bg)" /> : <Placeholder size={48} icon={18} />}
-        </motion.button>
-      )}
-
       <Modal open={open} onClose={() => setOpen(false)} title="Mi perfil" sub={email || undefined} width={420}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'center', textAlign: 'center' }}>
           {me ? <Avatar user={me} size={96} ring="var(--card)" /> : <Placeholder size={96} />}
           <input ref={fileRef} type="file" accept="image/*" onChange={onPick} style={{ display: 'none' }} />
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-accent" disabled={!me || busy} onClick={() => fileRef.current && fileRef.current.click()}><I.pencil width={14} height={14} /> {busy ? 'Procesando…' : me && me.photo ? 'Cambiar foto' : 'Subir foto'}</button>
-            {me && me.photo && <button className="btn btn-ghost" onClick={() => updateMember(me.id, { photo: '' })} style={{ color: 'var(--text-dim)' }}><I.x width={14} height={14} /> Quitar</button>}
+            <button className="btn btn-accent" disabled={!me || busy} onClick={() => fileRef.current && fileRef.current.click()}><I2.pencil width={14} height={14} /> {busy ? 'Procesando…' : me && me.photo ? 'Cambiar foto' : 'Subir foto'}</button>
+            {me && me.photo && <button className="btn btn-ghost" onClick={() => updateMember(me.id, { photo: '' })} style={{ color: 'var(--text-dim)' }}><I2.x width={14} height={14} /> Quitar</button>}
           </div>
 
           <div style={{ width: '100%', textAlign: 'left' }}>
-            <Field label="Sos:">
-              <select className="input" value={myId || ''} onChange={(e) => setMyId(e.target.value)}>
+            <Field label="¿Quién sos?">
+              <select className="input" value={myId || ''} onChange={(e) => setMyId(e.target.value)} aria-label="Elegí quién sos dentro del equipo">
                 <option value="">— Elegí tu nombre —</option>
                 {team.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
-            <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 7 }}>{me ? 'Tu foto se ve abajo a la derecha y en las tarjetas donde estés asignado.' : 'Elegí tu nombre para poder subir tu foto.'}</div>
-            <button className="btn" onClick={() => { setOpen(false); setTeamOpen(true) }} style={{ width: '100%', marginTop: 12, justifyContent: 'center' }}><I.users width={15} height={15} /> Gestionar equipo</button>
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 7 }}>{me ? 'Con esto sabemos qué proyectos son tuyos y a quién atribuir cada avance. Tu foto se ve en el menú y en las tarjetas donde estés asignado.' : 'Elegí tu nombre para ver tus proyectos y poder subir tu foto.'}</div>
+            <button className="btn" onClick={() => { setOpen(false); setTeamOpen(true) }} style={{ width: '100%', marginTop: 12, justifyContent: 'center' }}><I2.users width={15} height={15} /> Gestionar equipo</button>
           </div>
 
           <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-            {cloudEnabled && onLogout ? <button className="btn" onClick={onLogout} style={{ color: 'var(--red)' }}><I.ext width={14} height={14} /> Cerrar sesión</button> : <span />}
-            <button className="btn btn-accent" onClick={() => setOpen(false)}><I.check width={15} height={15} /> Listo</button>
+            {cloudEnabled && onLogout ? <button className="btn" onClick={onLogout} style={{ color: 'var(--red)' }}><I2.ext width={14} height={14} /> Cerrar sesión</button> : <span />}
+            <button className="btn btn-accent" onClick={() => setOpen(false)}><I2.check width={15} height={15} /> Listo</button>
           </div>
         </div>
       </Modal>
@@ -6183,19 +6893,21 @@ function UserProfile({ session, myId, setMyId, onLogout, hidden }) {
   )
 }
 
-function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClose, email }) {
+function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClose, email, onProfile }) {
+  const { data, myId } = useApp()
+  const me = (data.team || []).find((u) => u.id === myId) || null
   const items = [
-    { key: 'projects', label: 'Projects', icon: I.folder },
-    { key: 'tasks', label: 'Tareas', icon: I.tasks },
-    { key: 'clients', label: 'Clients', icon: I.users },
-    { key: 'calls', label: 'Calls', icon: I.phone },
-    { key: 'sops', label: 'SOP', icon: I.doc },
+    { key: 'projects', label: 'Projects', icon: I2.folder },
+    { key: 'tasks', label: 'Tareas', icon: I2.tasks },
+    { key: 'clients', label: 'Clients', icon: I2.users },
+    { key: 'calls', label: 'Calls', icon: I2.phone },
+    { key: 'sops', label: 'SOP', icon: I2.doc },
   ]
   const tools = [
-    { key: 'planner', label: 'Planificador', icon: I.calendar },
-    { key: 'bot', label: 'Bot', icon: I.whatsapp },
-    { key: 'editor', label: 'Editor', icon: I.film },
-    { key: 'carousel', label: 'Carrusel', icon: I.layers, external: true, href: 'https://carrusel-generator-production.up.railway.app/dashboard/carousels?cg_token=bik8zveoSvtBR2CgPA5I_p9YFoPmyZyn' },
+    { key: 'planner', label: 'Planificador', icon: I2.calendar },
+    { key: 'bot', label: 'Bot', icon: I2.whatsapp },
+    { key: 'editor', label: 'Editor', icon: I2.film },
+    { key: 'carousel', label: 'Carrusel', icon: I2.layers, external: true, href: 'https://carrusel-generator-production.up.railway.app/dashboard/carousels?cg_token=bik8zveoSvtBR2CgPA5I_p9YFoPmyZyn' },
   ]
   const toolsActive = tools.some((t) => route.view === t.key)
   const [hovered, setHovered] = useState(false)
@@ -6217,63 +6929,55 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     go(t.key)
   }
 
+  const cls = () => `sb-i${mini ? ' mini' : ''}`
+  const Cap = () => <div style={{ height: 1, background: 'var(--border)', margin: '10px 6px 6px' }} />
+
   const inner = (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '18px 16px', height: 64 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--accent)', display: 'grid', placeItems: 'center', flexShrink: 0, fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: 17 }}>I</div>
-        {!mini && <div style={{ minWidth: 0 }}><div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 15, lineHeight: 1 }}>Insights</div><div style={{ fontSize: 10.5, color: 'var(--text-faint)', letterSpacing: '.04em' }}>SOFTWARE · OS</div></div>}
-        {mobile && <button onClick={onClose} className="btn btn-sm btn-ghost" title="Cerrar" style={{ marginLeft: 'auto', padding: 6 }}><I.x width={16} height={16} /></button>}
+      <div className="sb-brand">
+        <div className="sb-mark" aria-hidden="true">I</div>
+        {!mini && <div className="sb-wm"><b>Insights</b><span>SOFTWARE · OS</span></div>}
+        {mobile
+          ? <button onClick={onClose} className="sb-pin" title="Cerrar menú" aria-label="Cerrar menú"><I2.x width={16} height={16} /></button>
+          : !mini && (
+            /* Reemplaza al viejo botón "Colapsar" del pie: acá se fija o se suelta
+               el sidebar, en el mismo lugar donde ya estás mirando la marca. */
+            <button className="sb-pin" data-on={collapsed ? '0' : '1'} onClick={() => setCollapsed(!collapsed)}
+              aria-pressed={!collapsed}
+              title={collapsed ? 'Fijar el menú abierto' : 'Soltar: vuelve a modo compacto y se abre al pasar el mouse'}
+              aria-label={collapsed ? 'Fijar el menú abierto' : 'Soltar el menú: modo compacto'}>
+              <I2.panelLeft width={16} height={16} style={{ transform: collapsed ? 'scaleX(-1)' : 'none' }} />
+            </button>
+          )}
       </div>
       <hr className="divider" />
-      <nav style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 3, flex: 1 }}>
+
+      <nav className="sb-nav" aria-label="Navegación principal">
         {items.map((it) => {
           const active = route.view === it.key || (route.view === 'project' && it.key === 'projects')
-          const rowStyle = { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-soft)' : 'transparent', fontWeight: 600, fontSize: 14, position: 'relative' }
-          if (it.external) {
-            return (
-              <a key={it.key} href={it.href} target="_blank" rel="noopener noreferrer" title={mini ? it.label : ''}
-                className="row-hover" style={{ ...rowStyle, textDecoration: 'none' }}>
-                <it.icon width={18} height={18} style={{ flexShrink: 0 }} />
-                {!mini && <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>{it.label}<I.ext width={12} height={12} style={{ opacity: .5, flexShrink: 0 }} /></span>}
-              </a>
-            )
-          }
           return (
-            <button key={it.key} onClick={() => go(it.key)} title={mini ? it.label : ''}
-              className="row-hover" style={rowStyle}>
-              {active && <span style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 9, background: 'var(--accent)' }} />}
-              <it.icon width={18} height={18} style={{ flexShrink: 0 }} />
-              {!mini && it.label}
+            <button key={it.key} onClick={() => go(it.key)} title={mini ? it.label : undefined}
+              className={cls()} data-on={active ? '1' : '0'} aria-current={active ? 'page' : undefined}>
+              {active && <span className="rail" aria-hidden="true" />}
+              <it.icon width={18} height={18} />
+              {!mini && <span className="lbl">{it.label}</span>}
             </button>
           )
         })}
 
-        {/* Tools — grupo que se desliza hacia abajo (hover en desktop, tap en mobile) */}
+        <Cap>Herramientas</Cap>
+
+        {/* Tools — grupo que se despliega (hover en desktop, tap en mobile) */}
         <div
           onMouseEnter={!mobile ? openTools : undefined}
           onMouseLeave={!mobile ? scheduleCloseTools : undefined}
         >
-          <button
-            onClick={toggleTools}
-            title={mini ? 'Tools' : ''}
-            className="row-hover"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, width: '100%',
-              color: toolsActive || toolsOpen ? 'var(--accent)' : 'var(--text-dim)',
-              background: toolsActive ? 'var(--accent-soft)' : (toolsOpen ? 'var(--bg-elevated)' : 'transparent'),
-              fontWeight: 600, fontSize: 14, position: 'relative',
-            }}
-          >
-            {toolsActive && <span style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 9, background: 'var(--accent)' }} />}
-            <I.grid width={18} height={18} style={{ flexShrink: 0 }} />
-            {!mini && <span style={{ flex: 1, textAlign: 'left' }}>Tools</span>}
-            {!mini && (
-              <I.chevR width={14} height={14} style={{
-                flexShrink: 0, opacity: .55,
-                transform: toolsOpen ? 'rotate(90deg)' : 'none',
-                transition: 'transform .22s cubic-bezier(.16,1,.3,1)',
-              }} />
-            )}
+          <button onClick={toggleTools} title={mini ? 'Tools' : undefined}
+            className={cls()} data-on={toolsActive ? '1' : '0'} aria-expanded={toolsOpen}>
+            {toolsActive && <span className="rail" aria-hidden="true" />}
+            <I2.grid width={18} height={18} />
+            {!mini && <span className="lbl">Tools</span>}
+            {!mini && <I2.chevR className="cd" width={13} height={13} />}
           </button>
 
           <AnimatePresence initial={false}>
@@ -6282,26 +6986,26 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: .26, ease: [.16, 1, .3, 1] }}
+                transition={{ duration: .26, ease: [.32, .72, 0, 1] }}
                 style={{ overflow: 'hidden' }}
               >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 3, paddingLeft: mini ? 0 : 14 }}>
+                <div className={`sb-sub${mini ? ' mini' : ''}`}>
                   {tools.map((t, idx) => {
                     const active = route.view === t.key
                     return (
                       <motion.button
                         key={t.key}
-                        initial={{ opacity: 0, y: -6 }}
+                        initial={{ opacity: 0, y: -5 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.03, duration: .18, ease: [.16, 1, .3, 1] }}
+                        transition={{ delay: idx * 0.035, duration: .2, ease: [.32, .72, 0, 1] }}
                         onClick={() => goTool(t)}
-                        title={mini ? t.label : ''}
-                        className="row-hover"
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderRadius: 10, color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-soft)' : 'transparent', fontWeight: 600, fontSize: 13.5 }}
+                        title={mini ? t.label : undefined}
+                        className={`${cls()} sm`} data-on={active ? '1' : '0'}
+                        aria-current={active ? 'page' : undefined}
                       >
-                        <t.icon width={16} height={16} style={{ flexShrink: 0 }} />
-                        {!mini && <span style={{ flex: 1, textAlign: 'left' }}>{t.label}</span>}
-                        {!mini && t.external && <I.ext width={11} height={11} style={{ opacity: .5, flexShrink: 0 }} />}
+                        <t.icon width={16} height={16} />
+                        {!mini && <span className="lbl">{t.label}</span>}
+                        {!mini && t.external && <I2.ext width={11} height={11} style={{ opacity: .5, flexShrink: 0 }} />}
                       </motion.button>
                     )
                   })}
@@ -6311,14 +7015,25 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
           </AnimatePresence>
         </div>
       </nav>
-      {!mobile && (
-        <>
-          <hr className="divider" />
-          <button onClick={() => setCollapsed(!mini)} title={mini ? 'Fijar abierto' : 'Colapsar'} className="row-hover" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', color: 'var(--text-faint)', fontSize: 13 }}>
-            <I.panelLeft width={17} height={17} style={{ transform: mini ? 'scaleX(-1)' : 'none' }} />{!mini && 'Colapsar'}
-          </button>
-        </>
-      )}
+
+      <div className="sb-foot">
+        <button className="sb-u" onClick={() => { if (onProfile) onProfile(); if (mobile && onClose) onClose() }}
+          title={mini ? (me ? me.name : 'Tu perfil') : undefined}
+          aria-label={me ? `Tu perfil · ${me.name}` : 'Elegí quién sos'}
+          style={mini ? { justifyContent: 'center' } : undefined}>
+          {me
+            ? <Avatar user={me} size={30} ring="var(--bg-elevated)" />
+            : <span style={{ width: 30, height: 30, borderRadius: '50%', flex: 'none', display: 'grid', placeItems: 'center', background: 'var(--card)', boxShadow: 'inset 0 0 0 1.5px var(--border-strong)', color: 'var(--text-faint)' }}><I2.user width={15} height={15} /></span>}
+          {!mini && (
+            <>
+              <span className="tx">
+                <span className="nm">{me ? me.name : 'Elegí quién sos'}</span>
+              </span>
+              <I2.gear width={14} height={14} />
+            </>
+          )}
+        </button>
+      </div>
     </>
   )
 
@@ -6326,7 +7041,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     return createPortal(
       <>
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)', zIndex: 150, opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none', transition: 'opacity .25s ease' }} />
-        <aside style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 236, zIndex: 151, borderRight: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: 'var(--shadow)', transform: open ? 'translateX(0)' : 'translateX(-260px)', transition: 'transform .28s cubic-bezier(.16,1,.3,1)' }}>
+        <aside className="sb" style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 250, zIndex: 151, boxShadow: 'var(--shadow-lift)', transform: open ? 'translateX(0)' : 'translateX(-280px)', transition: 'transform .28s cubic-bezier(.32,.72,0,1)' }}>
           {inner}
         </aside>
       </>,
@@ -6340,10 +7055,15 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     <div style={{ display: 'contents' }} onMouseLeave={() => setHovered(false)}>
       {collapsed && !hovered && (
         <div onMouseEnter={() => setHovered(true)}
-          style={{ position: 'fixed', top: 0, bottom: 0, left: 64, width: 16, zIndex: 55 }} />
+          style={{ position: 'fixed', top: 0, bottom: 0, left: 64, width: 8, zIndex: 55 }} />
       )}
-      <motion.aside onMouseEnter={() => setHovered(true)} animate={{ width: mini ? 64 : 232 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-        style={{ flexShrink: 0, borderRight: '1px solid var(--border)', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* onFocus/onBlur además del hover: tabulando, el sidebar colapsado se quedaba
+          icon-only y no se leía a dónde llevaba cada ítem. onBlur solo colapsa cuando
+          el foco sale del aside entero (no al saltar de un ítem al siguiente). */}
+      <motion.aside className="sb" onMouseEnter={() => setHovered(true)}
+        onFocus={() => setHovered(true)}
+        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setHovered(false) }}
+        animate={{ width: mini ? 64 : 236 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }}>
         {inner}
       </motion.aside>
     </div>
@@ -6383,9 +7103,9 @@ function SyncBadge({ sync }) {
   }
   const s = map[sync] || map.local
   return (
-    <span title={cloudEnabled ? 'Estado de sincronización con Supabase' : 'Sin Supabase configurado — guardando solo en este navegador'}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-dim)', padding: '0 4px' }}>
-      <span style={{ width: 7, height: 7, borderRadius: 99, background: s.c, animation: sync === 'saving' || sync === 'loading' ? 'pulse 1s infinite' : 'none' }} />
+    <span className="hd-sys" role="status" aria-live="polite"
+      title={cloudEnabled ? 'Estado de sincronización con Supabase' : 'Sin Supabase configurado — guardando solo en este navegador'}>
+      <span className="dot" style={{ background: s.c, animation: sync === 'saving' || sync === 'loading' ? 'pulse 1s infinite' : 'none' }} />
       {s.t}
     </span>
   )
@@ -6403,7 +7123,7 @@ function NotificationCenter() {
   const userOf = (id) => team.find((u) => u.id === id)
   const unread = activity.filter((a) => a.date > lastSeen).length
   const mentionsForMe = activity.filter((a) => a.targetId === myId && a.date > lastSeen).length
-  const ICONS = { 'call-add': I.phone, 'sprint-add': I.rocket, 'sprint-done': I.check, 'task-add': I.tasks, 'task-done': I.check, 'project-add': I.folder, comment: I.comment, avance: I.folder, comm: I.phone, mention: I.at, reply: I.comment, react: I.comment }
+  const ICONS = { 'call-add': I2.phone, 'task-add': I2.tasks, 'task-done': I2.check, 'project-add': I2.folder, 'plan-link': I2.calendar, 'plan-unlink': I2.calendar, comment: I2.comment, avance: I2.folder, comm: I2.phone, mention: I2.at, reply: I2.comment, react: I2.comment }
   const toggle = (e) => {
     e.stopPropagation()
     if (!open && btnRef.current) {
@@ -6415,22 +7135,23 @@ function NotificationCenter() {
   }
   return (
     <span style={{ display: 'inline-block', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-      <button ref={btnRef} className="btn btn-sm" onClick={toggle} title="Notificaciones" style={{ padding: 8, position: 'relative' }}>
-        <I.bell width={16} height={16} />
-        {unread > 0 && <span title={mentionsForMe > 0 ? `${mentionsForMe} mención${mentionsForMe > 1 ? 'es' : ''} para vos` : undefined} style={{ position: 'absolute', top: 2, right: 2, minWidth: 15, height: 15, padding: '0 3px', borderRadius: 99, background: mentionsForMe > 0 ? 'var(--accent)' : 'var(--red)', color: '#fff', fontSize: 9.5, fontWeight: 700, display: 'grid', placeItems: 'center', border: '1.5px solid var(--bg-elevated)' }}>{mentionsForMe > 0 ? '@' : (unread > 9 ? '9+' : unread)}</span>}
+      <button ref={btnRef} className="hd-ib" onClick={toggle} title="Notificaciones" aria-haspopup="dialog" aria-expanded={open}
+        aria-label={unread > 0 ? `Notificaciones · ${unread} sin leer${mentionsForMe > 0 ? `, ${mentionsForMe} para vos` : ''}` : 'Notificaciones · nada nuevo'}>
+        <I2.bell width={16} height={16} />
+        {unread > 0 && <span className="hd-badge" aria-hidden="true" title={mentionsForMe > 0 ? `${mentionsForMe} mención${mentionsForMe > 1 ? 'es' : ''} para vos` : undefined} style={{ background: mentionsForMe > 0 ? 'var(--accent)' : 'var(--red)' }}>{mentionsForMe > 0 ? '@' : (unread > 9 ? '9+' : unread)}</span>}
       </button>
       {open && pos && createPortal(
         <>
           <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
           <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 201, width: 340, maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow)' }}>
             <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <I.bell width={15} height={15} style={{ color: 'var(--accent)' }} /><strong style={{ fontSize: 14 }}>Actividad</strong>
+              <I2.bell width={15} height={15} style={{ color: 'var(--accent)' }} /><strong style={{ fontSize: 14 }}>Actividad</strong>
               <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 'auto' }}>{activity.length}</span>
             </div>
             <div className="scroll-y" style={{ overflowY: 'auto', padding: 8 }}>
               {activity.length === 0 && <div style={{ padding: 18, textAlign: 'center', fontSize: 13, color: 'var(--text-faint)' }}>Sin actividad todavía.</div>}
               {activity.map((a) => {
-                const u = userOf(a.actorId); const Ico = ICONS[a.type] || I.spark
+                const u = userOf(a.actorId); const Ico = ICONS[a.type] || I2.spark
                 const mine = !!a.targetId && a.targetId === myId
                 const body = a.type === 'mention'
                   ? (mine ? <span style={{ color: 'var(--text-dim)' }}>te mencionó {a.text}</span>
@@ -6438,7 +7159,7 @@ function NotificationCenter() {
                   : <span style={{ color: 'var(--text-dim)' }}>{a.text}</span>
                 return (
                   <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '9px 8px', borderRadius: 9, background: mine ? 'var(--accent-soft, var(--bg-elevated))' : 'transparent', border: mine ? '1px solid var(--accent-line)' : '1px solid transparent' }} className="row-hover">
-                    {u ? <Avatar user={u} size={28} ring="var(--card)" badge={a.type === 'mention' ? <span style={{ position: 'absolute', bottom: -2, right: -2, width: 15, height: 15, borderRadius: 99, background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', border: '1.5px solid var(--card)' }}><I.at width={9} height={9} /></span> : null} /> : <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-faint)', flexShrink: 0 }}><Ico width={14} height={14} /></div>}
+                    {u ? <Avatar user={u} size={28} ring="var(--card)" badge={a.type === 'mention' ? <span style={{ position: 'absolute', bottom: -2, right: -2, width: 15, height: 15, borderRadius: 99, background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', border: '1.5px solid var(--card)' }}><I2.at width={9} height={9} /></span> : null} /> : <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-faint)', flexShrink: 0 }}><Ico width={14} height={14} /></div>}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, lineHeight: 1.45 }}><strong>{u ? u.name : 'Alguien'}</strong> {body}{mine && <span className="tag" style={{ marginLeft: 6, color: 'var(--accent)', background: 'transparent', borderColor: 'var(--accent-line)', fontSize: 10 }}>para vos</span>}</div>
                       <div className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2 }}>{fmtRelative(a.date)}</div>
@@ -6484,37 +7205,66 @@ async function hardRefresh() {
   try { if ('serviceWorker' in navigator) { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map((r) => r.unregister())) } } catch (e) { /* ignore */ }
   window.location.reload()
 }
-function UpdateButton({ mobile }) {
+/* Chip de versión y botón de actualizar son la MISMA pieza en dos estados: en
+   reposo dice qué versión estás corriendo, y cuando hay deploy nuevo se enciende
+   y te invita a recargar. Ancho estable para que la barra no se reacomode. */
+function UpdateButton() {
   const ready = useAppUpdate()
   const [busy, setBusy] = useState(false)
   const go = async () => { setBusy(true); await hardRefresh() }
   return (
-    <button className="btn btn-sm" onClick={go} disabled={busy}
-      title={ready ? `Hay una versión nueva. Tocá para actualizar (recarga + limpia caché). Actual: v${APP_VERSION}` : `App v${APP_VERSION} · recargar y limpiar caché (F5 forzado)`}
-      style={ready ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)', fontWeight: 700 } : { padding: mobile ? 8 : undefined }}>
-      <I.refresh width={15} height={15} style={busy ? { animation: 'spin 1s linear infinite' } : {}} />
-      {ready ? <span>Actualizar</span> : <span className="hide-mobile mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>v{APP_VERSION}</span>}
+    <button className="hd-ver" data-new={ready ? '1' : '0'} onClick={go} disabled={busy}
+      aria-label={ready ? `Actualizar a la versión nueva (estás en la ${APP_VERSION})` : `Versión ${APP_VERSION} · recargar y limpiar caché`}
+      title={ready ? `Hay una versión nueva. Tocá para actualizar (recarga + limpia caché). Actual: v${APP_VERSION}` : `App v${APP_VERSION} · recargar y limpiar caché (F5 forzado)`}>
+      <I2.refresh width={14} height={14} style={busy ? { animation: 'spin 1s linear infinite' } : {}} />
+      <span aria-hidden="true">{ready ? 'Actualizar' : `v${APP_VERSION}`}</span>
     </button>
   )
 }
 
+/* Barra superior. Antes convivían cuatro tratamientos de botón distintos en 300px
+   de ancho. Ahora hay dos grupos con peso propio y una sola forma de botón:
+   · SISTEMA (izq. del bloque derecho): estado de sync + versión. Informan, no son tuyos.
+   · USUARIO: notificaciones, ajustes, tema y salir. Todos icon-buttons de 32px. */
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', project: 'Projects / Detalle' }[route.view]
+  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
+  const dark = theme === 'dark'
   return (
-    <header style={{ height: 64, flexShrink: 0, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: mobile ? '0 12px' : '0 24px', background: 'var(--bg-elevated)', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-dim)', fontSize: 13, minWidth: 0 }}>
-        {mobile && <button onClick={onMenu} className="btn btn-sm btn-ghost" title="Menú" style={{ padding: 7 }}><I.menu width={18} height={18} /></button>}
-        <span className="mono hide-mobile" style={{ color: 'var(--text-faint)' }}>insights-os</span><I.chevR width={14} height={14} className="hide-mobile" style={{ color: 'var(--text-faint)' }} /><strong style={{ color: 'var(--text)' }}>{crumb}</strong>
+    <header className="hd">
+      <div className="hd-crumb">
+        {mobile && <button onClick={onMenu} className="hd-ib" title="Menú" aria-label="Abrir menú"><I2.menu width={18} height={18} /></button>}
+        <span className="rt hide-mobile">insights-os</span>
+        <I2.chevR width={13} height={13} className="hide-mobile" style={{ flex: 'none', opacity: .6 }} />
+        <strong>{crumb}</strong>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span className="hide-mobile"><SyncBadge sync={sync} /></span>
-        <UpdateButton mobile={mobile} />
-        <NotificationCenter />
-        <button className="btn btn-sm btn-ghost" onClick={onSettings} title="Ajustes & API keys">⚙ <span className="hide-mobile" style={{ marginLeft: 2 }}>Ajustes</span></button>
-        <button className="btn btn-sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Cambiar tema" style={{ padding: 8 }}>
-          {theme === 'dark' ? <I.sun width={16} height={16} /> : <I.moon width={16} height={16} />}
-        </button>
-        {cloudEnabled && onLogout && <button className="btn btn-sm btn-ghost" onClick={onLogout} title="Cerrar sesión" style={{ padding: 8 }}><I.ext width={16} height={16} /></button>}
+
+      <div className="hd-right">
+        <span className="hd-grp sys hide-mobile">
+          <SyncBadge sync={sync} />
+          <UpdateButton />
+        </span>
+
+        <span className="hd-grp">
+          <NotificationCenter />
+          <button className="hd-lbl" onClick={onSettings} title="Ajustes & API keys" aria-label="Ajustes e integraciones">
+            <I2.gear width={16} height={16} /><span>Ajustes</span>
+          </button>
+          <button className="hd-ib hd-theme" onClick={() => setTheme(dark ? 'light' : 'dark')}
+            title={dark ? 'Pasar a tema claro' : 'Pasar a tema oscuro'}
+            aria-label={dark ? 'Pasar a tema claro' : 'Pasar a tema oscuro'}>
+            <span>
+              <motion.span key={theme} initial={{ opacity: 0, rotate: -70, scale: .7 }} animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                transition={{ duration: .3, ease: [.32, .72, 0, 1] }} style={{ display: 'grid', placeItems: 'center' }}>
+                {dark ? <I2.sun width={16} height={16} /> : <I2.moon width={16} height={16} />}
+              </motion.span>
+            </span>
+          </button>
+          {cloudEnabled && onLogout && (
+            <button className="hd-ib danger" onClick={onLogout} title="Cerrar sesión" aria-label="Cerrar sesión">
+              <I2.ext width={16} height={16} />
+            </button>
+          )}
+        </span>
       </div>
     </header>
   )
@@ -6530,9 +7280,9 @@ function Settings({ open, onClose, onManageTeam }) {
         <div>
           <div className="label" style={{ marginBottom: 8 }}>Sistema · usuarios de la plataforma</div>
           <div className="surface" style={{ padding: 14, background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', flexShrink: 0 }}><I.users width={19} height={19} /></div>
+            <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', flexShrink: 0 }}><I2.users width={19} height={19} /></div>
             <div style={{ flex: 1, minWidth: 160 }}><div style={{ fontWeight: 700, fontSize: 14 }}>Equipo y accesos</div><div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.45 }}>Agregá o quitá personas que aparecen en asignaciones, comentarios y @menciones.</div></div>
-            <button className="btn btn-accent" onClick={() => onManageTeam && onManageTeam()}><I.plus width={15} height={15} /> Gestionar usuarios</button>
+            <button className="btn btn-accent" onClick={() => onManageTeam && onManageTeam()}><I2.plus width={15} height={15} /> Gestionar usuarios</button>
           </div>
         </div>
         <hr className="divider" />
@@ -6544,7 +7294,7 @@ function Settings({ open, onClose, onManageTeam }) {
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={save}><I.check width={15} height={15} /> Guardar</button>
+          <button className="btn btn-accent" onClick={save}><I2.check width={15} height={15} /> Guardar</button>
         </div>
       </div>
     </Modal>
@@ -6593,7 +7343,7 @@ function Login() {
               <input className="input" type={showPw ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" style={{ paddingRight: 40 }} />
               <button type="button" onClick={() => setShowPw((v) => !v)} title={showPw ? 'Ocultar contraseña' : 'Ver contraseña'}
                 style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 6, display: 'flex', color: 'var(--text-faint)', background: 'transparent' }}>
-                {showPw ? <I.eyeOff width={17} height={17} /> : <I.eye width={17} height={17} />}
+                {showPw ? <I2.eyeOff width={17} height={17} /> : <I2.eye width={17} height={17} />}
               </button>
             </div>
           </Field>
@@ -6685,6 +7435,7 @@ function AppShell({ session, onLogout }) {
   const [collapsed, setCollapsed] = useState(true)
   const [settings, setSettings] = useState(false)
   const [teamOpen, setTeamOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [myId, setMyId] = useState(() => localStorage.getItem('my_team_id') || '')
   const isMobile = useIsMobile()
   const [navOpen, setNavOpen] = useState(false)
@@ -6760,9 +7511,9 @@ function AppShell({ session, onLogout }) {
   if (route.view === 'editor') editorEverOpenedRef.current = true
 
   return (
-    <AppCtx.Provider value={{ data: dataView, logActivity, supabase, botComms, ...planStore, ...taskStore, ...collectionStores }}>
+    <AppCtx.Provider value={{ data: dataView, myId, logActivity, supabase, botComms, ...planStore, ...taskStore, ...collectionStores }}>
       <div className="app-shell">
-        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} />
+        <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} onProfile={() => setProfileOpen(true)} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
           <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} mobile={isMobile} onMenu={() => setNavOpen(true)} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
@@ -6788,7 +7539,7 @@ function AppShell({ session, onLogout }) {
         </div>
         <Settings open={settings} onClose={() => setSettings(false)} onManageTeam={() => { setSettings(false); setTeamOpen(true) }} />
         <TeamManager open={teamOpen} onClose={() => setTeamOpen(false)} />
-        <UserProfile session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} hidden={route.view === 'project'} />
+        <UserProfile session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} open={profileOpen} onClose={() => setProfileOpen(false)} />
         <PmStartupAlert open={!pmAlertSeen && pmProjects.length > 0} projects={pmProjects} clients={clientStore.items} onClose={() => setPmAlertSeen(true)} onOpenProject={openProject} />
       </div>
     </AppCtx.Provider>
@@ -6838,6 +7589,12 @@ function ClientView({ shareId }) {
   const p = payload
   const stat = (label, value, color) => <div className="surface" style={{ padding: '14px 16px', flex: 1, minWidth: 130 }}><div className="label" style={{ marginBottom: 6 }}>{label}</div><div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'Bricolage Grotesque', color: color || 'var(--text)' }}>{value}</div></div>
   const actMeta = (t) => ACTIVITY_TYPES.find((x) => x.key === t) || ACTIVITY_TYPES[0]
+  // El payload lo arma la Edge Function `project-share` (supabase/functions/project-share),
+  // que ya manda el plan y sus KPIs. Igual se contempla el payload sin avance —un
+  // proyecto sin plan asociado—: en ese caso no mostramos ni tarjetas ni tabla vacía,
+  // se salta la sección entera.
+  const kpis = p.kpis && Number(p.kpis.total) > 0 ? p.kpis : null
+  const planWeeks = [...(Array.isArray(p.plan?.weeks) ? p.plan.weeks : [])].sort((a, b) => (a.n || 0) - (b.n || 0))
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '30px 22px 70px' }}>
@@ -6848,32 +7605,45 @@ function ClientView({ shareId }) {
         <h1 style={{ fontSize: 30 }}>{p.name}</h1>
         <div style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 22 }}>{p.client}{p.stack ? ` · ${p.stack}` : ''}</div>
 
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
-          {stat('Sprints totales', p.kpis.total)}
-          {stat('Terminados', p.kpis.done, 'var(--green)')}
-          {stat('En proceso', p.kpis.inProc, 'var(--accent)')}
-          {stat('% Avance', p.kpis.progress + '%', pctColor(p.kpis.progress))}
-        </div>
+        {kpis && (
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
+            {stat('Tareas totales', kpis.total)}
+            {stat('Terminadas', kpis.done, 'var(--green)')}
+            {stat('En curso', kpis.inProc, 'var(--accent)')}
+            {stat('% Avance', (kpis.progress || 0) + '%', progressColor(kpis.progress || 0))}
+          </div>
+        )}
 
-        <h2 style={{ fontSize: 19, marginBottom: 12 }}>Sprints</h2>
-        <div className="surface tbl" style={{ overflow: 'auto', marginBottom: 28 }}>
-          <table>
-            <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>{['#', 'Nombre', 'Semana', 'Asignado', 'Estado', 'Estimada'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}</tr></thead>
-            <tbody>
-              {(p.sprints || []).map((s, i) => { const m = sprintMeta(s.status); const inProc = s.status === 'en proceso'; return (
-                <tr key={s.id || i} style={{ borderBottom: '1px solid var(--border)', borderLeft: inProc ? '3px solid var(--accent)' : '3px solid transparent', background: inProc ? 'var(--accent-soft)' : 'transparent', opacity: s.status === 'terminado' ? 0.6 : 1 }}>
-                  <td style={{ padding: '11px 14px' }} className="mono">{i + 1}</td>
-                  <td style={{ padding: '11px 14px', fontWeight: 600, fontSize: 13.5 }}>{s.name}</td>
-                  <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text-dim)' }}>Sem {s.week || (i + 1)}</td>
-                  <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text-dim)' }}>{(s.assignees || []).join(', ') || '—'}</td>
-                  <td style={{ padding: '11px 14px' }}><span className="tag" style={{ color: `var(--${m.tone === 'neutral' ? 'text-dim' : m.tone === 'accent' ? 'accent' : m.tone})`, background: m.tone === 'neutral' ? 'var(--bg-elevated)' : `var(--${m.tone}-soft)`, borderColor: 'transparent' }}>{m.label}</span></td>
-                  <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--text-dim)' }} className="mono">{s.date ? fmtDate(s.date) : '—'}</td>
-                </tr>
-              )})}
-              {(p.sprints || []).length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>Sin sprints todavía.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        {planWeeks.length > 0 && (
+          <>
+            <h2 style={{ fontSize: 19, marginBottom: 12 }}>Avance por semana</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 28 }}>
+              {planWeeks.map((w) => {
+                const wp = weekProgress(w)
+                const complete = wp.total > 0 && wp.done === wp.total
+                const tasks = Array.isArray(w.tasks) ? w.tasks : []
+                return (
+                  <div key={w.n} className="surface" style={{ padding: '13px 15px', borderColor: complete ? 'var(--green-soft)' : 'var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, marginBottom: tasks.length ? 8 : 0 }}>
+                      <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: complete ? 'var(--green)' : 'var(--text-dim)' }}>SEM {String(w.n).padStart(2, '0')}</span>
+                      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, minWidth: 0 }}>{w.title || 'Sin título'}</span>
+                      <span className="mono" style={{ fontSize: 11.5, color: complete ? 'var(--green)' : 'var(--text-faint)' }}>{wp.done}/{wp.total}</span>
+                    </div>
+                    {tasks.map((t, i) => {
+                      const done = taskDone(t)
+                      return (
+                        <div key={(t && t.id) || i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '3px 0', fontSize: 13.5 }}>
+                          <span style={{ color: done ? 'var(--green)' : 'var(--text-faint)', flexShrink: 0 }}>{done ? '✓' : '·'}</span>
+                          <span style={{ flex: 1, minWidth: 0, lineHeight: 1.45, textDecoration: done ? 'line-through' : 'none', color: done ? 'var(--text-faint)' : 'var(--text)' }}>{taskText(t)}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 16, marginBottom: 28 }}>
           <div>
@@ -6887,7 +7657,7 @@ function ClientView({ shareId }) {
             <h2 style={{ fontSize: 17, marginBottom: 10 }}>Tareas del cliente</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {(p.clientTasks || []).length === 0 && <div className="surface" style={{ padding: 13, color: 'var(--text-faint)', fontSize: 13 }}>—</div>}
-              {(p.clientTasks || []).map((c, i) => <div key={i} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5 }}><span style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px solid ' + (c.done ? 'var(--green)' : 'var(--border-strong)'), background: c.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{c.done && <I.check width={12} height={12} style={{ color: '#fff' }} />}</span><span style={{ textDecoration: c.done ? 'line-through' : 'none', color: c.done ? 'var(--text-faint)' : 'var(--text)' }}>{c.text}</span></div>)}
+              {(p.clientTasks || []).map((c, i) => <div key={i} className="surface" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5 }}><span style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px solid ' + (c.done ? 'var(--green)' : 'var(--border-strong)'), background: c.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{c.done && <I2.check width={12} height={12} style={{ color: '#fff' }} />}</span><span style={{ textDecoration: c.done ? 'line-through' : 'none', color: c.done ? 'var(--text-faint)' : 'var(--text)' }}>{c.text}</span></div>)}
             </div>
           </div>
         </div>
@@ -6903,7 +7673,7 @@ function ClientView({ shareId }) {
               </div>
               {en.note && <div style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--text-dim)' }}>{en.note}</div>}
               {(en.photos || []).length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>{en.photos.map((s, j) => <a key={j} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></a>)}</div>}
-              {en.link && <a href={en.link} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ marginTop: 8, color: m.color }}><I.ext width={13} height={13} /> Abrir {en.type === 'loom' ? 'Loom' : 'call'}</a>}
+              {en.link && <a href={en.link} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ marginTop: 8, color: m.color }}><I2.ext width={13} height={13} /> Abrir {en.type === 'loom' ? 'Loom' : 'call'}</a>}
               {en.author && <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>{en.author}</div>}
             </div>
           )})}
@@ -6952,3 +7722,4 @@ export default function InsightsApp() {
   if (cloudEnabled && !session) return <Login />
   return <AppShell session={session} onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
 }
+
