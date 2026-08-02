@@ -543,7 +543,11 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 
 /* --- sidebar --- */
 .sb{flex:none;display:flex;flex-direction:column;overflow:hidden;
-  border-right:1px solid var(--border);background:var(--bg-elevated)}
+  border-right:1px solid var(--border);background:var(--bg-elevated);
+  transition:box-shadow .3s var(--e)}
+/* al desplegarse por hover el menú se monta ENCIMA del contenido (no lo empuja):
+   la sombra es lo que lo despega y deja claro que es una capa temporal. */
+.sb[data-lift="1"]{box-shadow:var(--shadow-lift)}
 .sb-brand{display:flex;align-items:center;gap:11px;height:64px;padding:0 16px;flex:none}
 .sb-mark{width:32px;height:32px;border-radius:9px;flex:none;display:grid;place-items:center;
   background:var(--accent);color:#fff;font-family:'Bricolage Grotesque',serif;font-weight:800;font-size:17px;
@@ -7049,10 +7053,20 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     )
   }
   return (
-    // display:contents = el wrapper no genera caja propia (el aside sigue siendo
-    // hijo flex directo de .app-shell); agrupa aside + zona-anticipo bajo un solo
-    // onMouseLeave para que pasar de una a otra no dispare un cierre a mitad de camino.
+    // display:contents = el wrapper no genera caja propia (el espaciador sigue
+    // siendo hijo flex directo de .app-shell); agrupa aside + zona-anticipo bajo un
+    // solo onMouseLeave para que pasar de una a otra no dispare un cierre a mitad de camino.
     <div style={{ display: 'contents' }} onMouseLeave={() => setHovered(false)}>
+      {/* El aside está FUERA del flujo (position:fixed) y lo que reserva el lugar es
+          este espaciador. Antes el aside animaba su ancho dentro del flex y el área de
+          contenido se achicaba en vivo: a mitad de la animación el grid de proyectos
+          (auto-fill) cambiaba de cantidad de columnas y todas las cards pegaban un
+          salto. Ahora el hover NO toca el ancho del contenido —el menú se superpone—,
+          así que no hay reflow. El único cambio de ancho real es fijar/soltar el menú,
+          que es un click deliberado. */}
+      <motion.div aria-hidden="true" style={{ flex: 'none' }}
+        initial={false} animate={{ width: collapsed ? 64 : 236 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 34 }} />
       {collapsed && !hovered && (
         <div onMouseEnter={() => setHovered(true)}
           style={{ position: 'fixed', top: 0, bottom: 0, left: 64, width: 8, zIndex: 55 }} />
@@ -7063,7 +7077,10 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
       <motion.aside className="sb" onMouseEnter={() => setHovered(true)}
         onFocus={() => setHovered(true)}
         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setHovered(false) }}
-        animate={{ width: mini ? 64 : 236 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }}>
+        style={{ position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 60 }}
+        data-lift={collapsed && hovered ? '1' : '0'}
+        initial={false} animate={{ width: mini ? 64 : 236 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 34 }}>
         {inner}
       </motion.aside>
     </div>
