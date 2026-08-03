@@ -6911,7 +6911,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'planner', label: 'Planificador', icon: I2.calendar },
     { key: 'bot', label: 'Bot', icon: I2.whatsapp },
     { key: 'editor', label: 'Editor', icon: I2.film },
-    { key: 'carousel', label: 'Carrusel', icon: I2.layers, external: true, href: 'https://carrusel-generator-production.up.railway.app/dashboard/carousels?cg_token=bik8zveoSvtBR2CgPA5I_p9YFoPmyZyn' },
+    { key: 'carousel', label: 'Carrusel', icon: I2.layers },
   ]
   const toolsActive = tools.some((t) => route.view === t.key)
   const [hovered, setHovered] = useState(false)
@@ -7103,6 +7103,96 @@ function EditorView() {
         allow="clipboard-write; fullscreen; webgpu"
         style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
       />
+    </div>
+  )
+}
+
+/* ============================================================================
+   CARRUSEL — generador de carruseles embebido (iframe remoto, no same-origin)
+   A diferencia del editor, el carrusel NO se puede servir desde public/: es una
+   app Next.js con API routes (genera el contenido y renderiza las imágenes en el
+   servidor), así que no hay export estático posible y vive en su propio deploy.
+   Por eso el iframe apunta a la URL remota y el acceso va por el token de la
+   query, no por la sesión de esta app.
+   Nada de sandbox: recortaría las cookies de la app remota (queda sin sesión) y
+   bloquearía la descarga de los carruseles generados. Sin sandbox, las descargas
+   del iframe funcionan igual que en una pestaña normal.
+============================================================================ */
+// URL del generador (deploy propio en Railway). El token de acceso NO va acá:
+// Vite inlinea las constantes del módulo en el bundle, y ese bundle lo sirve
+// Render sin pedir login, así que cualquiera podría bajarlo y quedarse con el
+// token. Se lee en runtime desde Supabase (tabla app_secrets, con RLS: solo
+// responde a usuarios con sesión iniciada).
+const CAROUSEL_BASE_URL = 'https://carrusel-generator-production.up.railway.app/dashboard/carousels'
+const CAROUSEL_TOKEN_KEY = 'carousel_generator_token'
+
+/* El token se pide UNA sola vez y queda cacheado en esta promesa (a nivel módulo,
+   no en estado de React) mientras dure la sesión de la pestaña: abrir y cerrar la
+   pestaña Carrusel no vuelve a pegarle a Supabase. Si falla, el cache se limpia
+   para que el botón "Reintentar" pueda volver a pedirlo. */
+let carouselSrcPromise = null
+async function loadCarouselSrc() {
+  if (!supabase) throw { kind: 'config', message: 'Supabase no está configurado en esta build.' }
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw { kind: 'session', message: 'No hay sesión iniciada.' }
+  const { data, error } = await supabase.from('app_secrets').select('value').eq('key', CAROUSEL_TOKEN_KEY).maybeSingle()
+  if (error) throw { kind: error.code === '42501' || error.code === 'PGRST301' ? 'session' : 'network', message: error.message }
+  if (!data?.value) throw { kind: 'missing', message: `No existe la fila "${CAROUSEL_TOKEN_KEY}" en app_secrets.` }
+  return `${CAROUSEL_BASE_URL}?cg_token=${encodeURIComponent(data.value)}`
+}
+function getCarouselSrc() {
+  if (!carouselSrcPromise) carouselSrcPromise = loadCarouselSrc().catch((e) => { carouselSrcPromise = null; throw e })
+  return carouselSrcPromise
+}
+const CAROUSEL_ERR_TEXT = {
+  config: 'Esta versión de la app no está conectada a Supabase, así que no hay de dónde sacar el acceso al generador. Avisale al equipo.',
+  session: 'Parece que se venció tu sesión. Salí y volvé a entrar, y probá de nuevo.',
+  missing: 'Todavía no está cargado el acceso del generador en la base. Avisale al equipo para que lo configure.',
+  network: 'Puede ser un problema de conexión. Esperá unos segundos y probá de nuevo.',
+}
+
+function CarouselView() {
+  const [src, setSrc] = useState('')
+  const [err, setErr] = useState(null)
+  const [attempt, setAttempt] = useState(0)
+
+  /* Solo corre al abrir la pestaña por primera vez y en cada reintento. Una vez
+     que hay src, el iframe ya no se re-monta: la promesa cacheada devuelve
+     siempre la misma URL, así que ni un re-render tira abajo el borrador que el
+     usuario tenga abierto en la app remota. */
+  useEffect(() => {
+    let alive = true
+    setErr(null)
+    getCarouselSrc().then(
+      (url) => { if (alive) setSrc(url) },
+      (e) => { if (alive) setErr(e || { kind: 'network', message: '' }) },
+    )
+    return () => { alive = false }
+  }, [attempt])
+
+  return (
+    <div style={{ height: '100%', width: '100%', background: '#0b0b12' }}>
+      {src ? (
+        <iframe
+          src={src}
+          title="Generador de carruseles"
+          allow="clipboard-write; clipboard-read"
+          style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
+        />
+      ) : err ? (
+        <div style={{ height: '100%', display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center' }} role="alert">
+          <div style={{ maxWidth: 400, display: 'grid', gap: 10, justifyItems: 'center' }}>
+            <div style={{ color: '#FAFAFA', fontSize: 15, fontWeight: 600 }}>No pudimos abrir el generador de carruseles</div>
+            <div style={{ color: '#A1A1A1', fontSize: 13, lineHeight: 1.5 }}>{CAROUSEL_ERR_TEXT[err.kind] || CAROUSEL_ERR_TEXT.network}</div>
+            <button className="btn btn-accent" style={{ marginTop: 4 }} onClick={() => setAttempt((a) => a + 1)}>Reintentar</button>
+            {err.message ? <div style={{ color: '#6B6B6B', fontSize: 11 }}>{err.message}</div> : null}
+          </div>
+        </div>
+      ) : (
+        <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: '#6B6B6B', fontSize: 14 }} role="status" aria-live="polite">
+          Abriendo el generador…
+        </div>
+      )}
     </div>
   )
 }
@@ -7527,6 +7617,13 @@ function AppShell({ session, onLogout }) {
   const editorEverOpenedRef = useRef(route.view === 'editor')
   if (route.view === 'editor') editorEverOpenedRef.current = true
 
+  // Mismo trato para el carrusel: es un iframe remoto (Next.js en su propio
+  // deploy), así que desmontarlo tira abajo el borrador en curso y obliga a
+  // rehacer la carga completa de la app remota. Se monta una sola vez, la
+  // primera vez que se abre la pestaña, y después solo se oculta.
+  const carouselEverOpenedRef = useRef(route.view === 'carousel')
+  if (route.view === 'carousel') carouselEverOpenedRef.current = true
+
   return (
     <AppCtx.Provider value={{ data: dataView, myId, logActivity, supabase, botComms, ...planStore, ...taskStore, ...collectionStores }}>
       <div className="app-shell">
@@ -7535,7 +7632,7 @@ function AppShell({ session, onLogout }) {
           <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} mobile={isMobile} onMenu={() => setNavOpen(true)} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
-              style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' || route.view === 'planner' || route.view === 'editor' || route.view === 'bot' ? 'hidden' : 'auto' }}>
+              style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' || route.view === 'planner' || route.view === 'editor' || route.view === 'carousel' || route.view === 'bot' ? 'hidden' : 'auto' }}>
               {route.view === 'projects' && <Projects onOpenProject={openProject} />}
               {route.view === 'tasks' && <TasksView />}
               {route.view === 'clients' && <Clients />}
@@ -7550,6 +7647,12 @@ function AppShell({ session, onLogout }) {
             {editorEverOpenedRef.current && (
               <div style={{ position: 'absolute', inset: 0, display: route.view === 'editor' ? 'block' : 'none' }}>
                 <EditorView />
+              </div>
+            )}
+            {/* ídem el carrusel: se monta una vez y después solo se oculta (ver carouselEverOpenedRef) */}
+            {carouselEverOpenedRef.current && (
+              <div style={{ position: 'absolute', inset: 0, display: route.view === 'carousel' ? 'block' : 'none' }}>
+                <CarouselView />
               </div>
             )}
           </main>
