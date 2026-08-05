@@ -1860,6 +1860,18 @@ const normalizeSopProcess = (p) => ({ ...p, links: p.links || [], images: p.imag
 const normalizeSopCategory = (c) => c
 const normalizeActivity = (a) => a
 const normalizeChat = (c) => c
+const normalizeVideo = (v) => ({ ...v, services: Array.isArray(v.services) ? v.services : [], note: v.note || '' })
+
+/* Videos explicativos (Loom) de creación de cuentas — biblioteca reutilizable
+   en todos los proyectos. Un mismo video puede cubrir varios servicios a la
+   vez (ej. "GitHub + Supabase" en una sola llamada). */
+function seedVideos() {
+  return [
+    { id: 'vid-github-supabase', title: 'GitHub + Supabase', services: ['GitHub', 'Supabase'], url: 'https://www.loom.com/share/fd1f44d59370479eb5e7544afbd37bc5', note: '', color: '#3ecf8e', createdAt: '2026-08-05T12:00:00.000Z', updatedAt: '2026-08-05T12:00:00.000Z' },
+    { id: 'vid-vercel-dominio', title: 'Vercel + Dominio', services: ['Vercel', 'Dominio propio'], url: 'https://www.loom.com/share/a92384434901440583e23b8f4acc6c52', note: '', color: '#2DD4BF', createdAt: '2026-08-05T12:00:00.000Z', updatedAt: '2026-08-05T12:00:00.000Z' },
+    { id: 'vid-stripe', title: 'Stripe (pagos)', services: ['Stripe'], url: 'https://www.loom.com/share/1d1f199487614f8e8e6bba4dfbddeea8', note: '', color: '#635BFF', createdAt: '2026-08-05T12:00:00.000Z', updatedAt: '2026-08-05T12:00:00.000Z' },
+  ]
+}
 
 /* ============================================================================
    7 · GITHUB INTEGRATION HOOK
@@ -3668,18 +3680,8 @@ function LinkAdder({ onAdd, cta = 'Agregar link' }) {
   )
 }
 
-/* CUENTAS del proyecto: checklist de accesos que hacen falta (Supabase, GitHub, Vercel…) */
-const ACCOUNT_PRESETS = [
-  { label: 'Supabase', color: '#3ecf8e' },
-  { label: 'GitHub', color: '#a3adba' },
-  { label: 'Vercel', color: '#cbd3dd' },
-  { label: 'App Store', color: '#0a84ff' },
-  { label: 'Play Store', color: '#00c853' },
-  { label: 'Twilio', color: '#f22f46' },
-  { label: 'Meta / WhatsApp Business', color: '#25D366' },
-  { label: 'Stripe (gateway de pago)', color: '#635BFF' },
-  { label: 'Dominio propio', color: '#2DD4BF' },
-]
+/* CUENTAS del proyecto: checklist de accesos que hacen falta (Supabase, GitHub, Vercel…).
+   Los presets de alta rápida salen de la biblioteca de Videos (ver Videos()/AccountsModal). */
 
 /* PDF prolijo del checklist de cuentas — mismo estilo visual que el resto de la
    app (banda oscura + acento). jsPDF se carga on-demand (import dinámico), igual
@@ -3743,19 +3745,33 @@ async function exportAccountsPdf(project, accounts) {
   makeAccountsPdfDoc(project, accounts, JsPDF).save('cuentas-' + slug + '.pdf')
 }
 function AccountsModal({ open, project, onClose, patch }) {
+  const { data, myId } = useApp()
   const [draft, setDraft] = useState('')
   if (!project) return <Modal open={open} onClose={onClose} title="Cuentas" />
   const accounts = project.accounts || []
+  const videos = data.videos || []
+  const videoById = (id) => videos.find((v) => v.id === id) || null
+  const teamName = (id) => (data.team || []).find((u) => u.id === id)?.name || ''
   const has = (label) => accounts.some((a) => (a.label || '').trim().toLowerCase() === label.trim().toLowerCase())
-  const add = (label) => {
+  const add = (label, videoId) => {
     const name = (label || '').trim()
     if (!name || has(name)) return
-    patch((p) => ({ ...p, accounts: [...(p.accounts || []), { id: uid(), label: name, done: false }] }))
+    patch((p) => ({ ...p, accounts: [...(p.accounts || []), { id: uid(), label: name, done: false, videoId: videoId || null }] }))
   }
-  const toggle = (id) => patch((p) => ({ ...p, accounts: (p.accounts || []).map((a) => (a.id === id ? { ...a, done: !a.done } : a)) }))
+  const toggle = (id) => patch((p) => ({
+    ...p,
+    accounts: (p.accounts || []).map((a) => {
+      if (a.id !== id) return a
+      const done = !a.done
+      return { ...a, done, doneBy: done ? myId : null, doneAt: done ? new Date().toISOString() : null }
+    }),
+  }))
   const remove = (id) => patch((p) => ({ ...p, accounts: (p.accounts || []).filter((a) => a.id !== id) }))
   const addCustom = () => { add(draft); setDraft('') }
-  const pending = ACCOUNT_PRESETS.filter((pr) => !has(pr.label))
+  // Presets = cada servicio declarado en la biblioteca de Videos (un video puede
+  // aportar varios botones, ej. "GitHub" y "Supabase" desde un mismo Loom).
+  const videoPresets = videos.flatMap((v) => (v.services || []).map((s) => ({ label: s, videoId: v.id, color: v.color || 'var(--accent)' })))
+  const pending = videoPresets.filter((pr) => !has(pr.label))
   const doneCount = accounts.filter((a) => a.done).length
 
   return (
@@ -3768,23 +3784,33 @@ function AccountsModal({ open, project, onClose, patch }) {
         {/* Lista de cuentas cargadas */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {accounts.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Todavía no agregaste cuentas. Sumá las que vas a necesitar con los botones de abajo.</div>}
-          {accounts.map((a) => (
-            <div key={a.id} className="surface surface-hover click" onClick={() => toggle(a.id)} title={a.done ? 'Marcar como no creada' : 'Marcar como creada'} style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-              <span style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (a.done ? 'var(--green)' : 'var(--border-strong)'), background: a.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{a.done && <I2.check width={13} height={13} style={{ color: '#fff' }} />}</span>
-              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, textDecoration: a.done ? 'line-through' : 'none', color: a.done ? 'var(--text-faint)' : 'var(--text)' }}>{a.label}</span>
-              <span style={{ fontSize: 11.5, fontWeight: 600, color: a.done ? 'var(--green)' : 'var(--text-faint)' }}>{a.done ? 'Creada' : 'Falta'}</span>
-              <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); remove(a.id) }} title="Quitar" style={{ padding: 4, color: 'var(--text-faint)' }}><I2.x width={13} height={13} /></button>
-            </div>
-          ))}
+          {accounts.map((a) => {
+            const video = a.videoId ? videoById(a.videoId) : null
+            const doneTitle = a.done ? `Creada por ${teamName(a.doneBy) || 'alguien'} · ${fmtDate(a.doneAt)}` : 'Marcar como creada'
+            return (
+              <div key={a.id} className="surface surface-hover click" onClick={() => toggle(a.id)} title={doneTitle} style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                <span style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (a.done ? 'var(--green)' : 'var(--border-strong)'), background: a.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{a.done && <I2.check width={13} height={13} style={{ color: '#fff' }} />}</span>
+                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, textDecoration: a.done ? 'line-through' : 'none', color: a.done ? 'var(--text-faint)' : 'var(--text)' }}>{a.label}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: a.done ? 'var(--green)' : 'var(--text-faint)' }}>{a.done ? 'Creada' : 'Falta'}</span>
+                {video && (
+                  <>
+                    <a href={video.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="btn btn-sm btn-ghost" title="Ver tutorial" style={{ padding: 4, color: 'var(--text-faint)' }}><I2.film width={13} height={13} /></a>
+                    <CopyBtn value={video.url} title="Copiar link del video" />
+                  </>
+                )}
+                <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); remove(a.id) }} title="Quitar" style={{ padding: 4, color: 'var(--text-faint)' }}><I2.x width={13} height={13} /></button>
+              </div>
+            )
+          })}
         </div>
 
-        {/* Agregado rápido de presets */}
+        {/* Agregado rápido: un botón por servicio de la biblioteca de Videos */}
         {pending.length > 0 && (
           <div>
             <div className="label" style={{ marginBottom: 8 }}>Agregar rápido</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {pending.map((pr) => (
-                <button key={pr.label} className="btn btn-sm" onClick={() => add(pr.label)}>
+                <button key={pr.label} className="btn btn-sm" onClick={() => add(pr.label, pr.videoId)} title="Trae el tutorial de la biblioteca de Videos">
                   <span style={{ width: 8, height: 8, borderRadius: 999, background: pr.color, display: 'inline-block', flexShrink: 0 }} /> {pr.label}
                 </button>
               ))}
@@ -4510,6 +4536,128 @@ function SopCatModal({ cat, cats, onClose, onSave }) {
         </div>
       </div>
     </Modal>
+  )
+}
+
+/* ============================================================================
+   13b · VIDEOS — biblioteca de tutoriales Loom (creación de cuentas)
+   Lista plana de videos explicativos, reutilizable en todos los proyectos.
+   Un video puede cubrir varios servicios a la vez (ej. "GitHub + Supabase" en
+   una sola llamada) — por eso `services` es un array, no un label único. El
+   checklist "Cuentas" de cada proyecto consume esta biblioteca (ver
+   AccountsModal): cada servicio se ofrece como botón de alta rápida y, si el
+   proyecto lo suma, el item queda con `videoId` apuntando acá.
+============================================================================ */
+function VideoCard({ v, onEdit, onDelete }) {
+  const copy = async (e) => {
+    e.stopPropagation()
+    try { if (navigator.clipboard) await navigator.clipboard.writeText(v.url) } catch (e2) { /* ignore */ }
+  }
+  return (
+    <div className="surface" style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 11, background: (v.color || 'var(--accent)') + '22', border: '1px solid ' + (v.color || 'var(--accent-line)'), display: 'grid', placeItems: 'center', color: v.color || 'var(--accent)', flexShrink: 0 }}><I2.film width={19} height={19} /></div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{v.title}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {(v.services || []).map((s) => <span key={s} className="tag" style={{ fontSize: 11 }}>{s}</span>)}
+          </div>
+        </div>
+      </div>
+      {v.note && <div style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 10, lineHeight: 1.5 }}>{v.note}</div>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 14 }}>
+        <a href={v.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="btn btn-sm" style={{ flex: 1, justifyContent: 'center' }}><I2.ext width={13} height={13} /> Ver Loom</a>
+        <button className="btn btn-sm btn-ghost" onClick={copy} title="Copiar link"><I2.copy width={14} height={14} /></button>
+        <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); onEdit(v) }} title="Editar"><I2.pencil width={14} height={14} /></button>
+        <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); onDelete(v) }} title="Eliminar" style={{ color: 'var(--red)' }}><I2.trash width={14} height={14} /></button>
+      </div>
+    </div>
+  )
+}
+
+function VideoEditor({ video, onClose, onSave }) {
+  const [title, setTitle] = useState(video.title || '')
+  const [servicesText, setServicesText] = useState((video.services || []).join(', '))
+  const [url, setUrl] = useState(video.url || '')
+  const [note, setNote] = useState(video.note || '')
+  const [color, setColor] = useState(video.color || TAG_COLORS[0].hex)
+  const canSave = title.trim() && url.trim()
+  const save = () => {
+    if (!canSave) return
+    onSave({ ...video, title: title.trim(), services: servicesText.split(',').map((s) => s.trim()).filter(Boolean), url: url.trim(), note: note.trim(), color })
+  }
+  return (
+    <Modal open onClose={onClose} title={video.id ? 'Editar video' : 'Nuevo video'} sub="Tutorial Loom de creación de cuenta(s)" width={480}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Field label="Título"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ej: GitHub + Supabase" autoFocus /></Field>
+        <Field label="Servicios que cubre (separados por coma)"><input className="input" value={servicesText} onChange={(e) => setServicesText(e.target.value)} placeholder="Ej: GitHub, Supabase" /></Field>
+        <Field label="Link de Loom"><input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.loom.com/share/…" /></Field>
+        <Field label="Nota (opcional)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ej: $100 fee de Apple Store" /></Field>
+        <Field label="Color">
+          <div style={{ display: 'flex', gap: 7 }}>
+            {TAG_COLORS.map((c) => (
+              <button key={c.key} title={c.key} onClick={() => setColor(c.hex)} style={{ width: 22, height: 22, borderRadius: '50%', background: c.hex, border: color === c.hex ? '2px solid var(--text)' : '2px solid transparent', cursor: 'pointer' }} />
+            ))}
+          </div>
+        </Field>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+          <button className="btn" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" onClick={save} disabled={!canSave}><I2.check width={15} height={15} /> Guardar</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function Videos() {
+  const { data, videoStore } = useApp()
+  const videos = data.videos || []
+  const [q, setQ] = useState('')
+  const [editVideo, setEditVideo] = useState(null) // objeto (nuevo o existente) en edición
+
+  const query = q.trim().toLowerCase()
+  const filtered = query
+    ? videos.filter((v) => (v.title + ' ' + (v.services || []).join(' ') + ' ' + (v.note || '')).toLowerCase().includes(query))
+    : videos
+
+  const saveVideo = (v) => {
+    const now = new Date().toISOString()
+    const exists = v.id && videoStore.items.some((x) => x.id === v.id)
+    if (exists) videoStore.patch(v.id, (x) => ({ ...x, ...v, updatedAt: now }))
+    else videoStore.create({ ...v, id: 'vid-' + uid(), createdAt: now, updatedAt: now })
+    setEditVideo(null)
+  }
+  const deleteVideo = (v) => { if (window.confirm(`¿Eliminar el video "${v.title}"?`)) videoStore.remove(v.id) }
+
+  return (
+    <div className="view" style={{ padding: '28px 34px 60px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div>
+          <div className="label" style={{ marginBottom: 6 }}>Biblioteca de tutoriales</div>
+          <h1 style={{ fontSize: 32 }}>Videos explicativos</h1>
+          <div style={{ fontSize: 13.5, color: 'var(--text-dim)', marginTop: 4 }}>Looms de creación de cuentas (GitHub, Supabase, dominio…). Se usan desde el checklist "Cuentas" de cada proyecto.</div>
+        </div>
+        <button className="btn btn-accent" onClick={() => setEditVideo({ id: '', title: '', services: [], url: '', note: '', color: '' })}><I2.plus width={15} height={15} /> Nuevo video</button>
+      </div>
+
+      <div style={{ position: 'relative', maxWidth: 460, marginBottom: 18 }}>
+        <I2.search width={15} height={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)' }} />
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar videos o servicios…" style={{ paddingLeft: 34 }} />
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="surface" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-faint)' }}>
+          <I2.film width={30} height={30} style={{ opacity: .5 }} />
+          <div style={{ marginTop: 10, fontSize: 14 }}>{query ? 'No se encontraron videos.' : 'Todavía no hay videos. Agregá el primero.'}</div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {filtered.map((v) => <VideoCard key={v.id} v={v} onEdit={setEditVideo} onDelete={deleteVideo} />)}
+        </div>
+      )}
+
+      {editVideo && <VideoEditor video={editVideo} onClose={() => setEditVideo(null)} onSave={saveVideo} />}
+    </div>
   )
 }
 
@@ -6906,6 +7054,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'clients', label: 'Clients', icon: I2.users },
     { key: 'calls', label: 'Calls', icon: I2.phone },
     { key: 'sops', label: 'SOP', icon: I2.doc },
+    { key: 'videos', label: 'Videos explicativos', icon: I2.film },
   ]
   const tools = [
     { key: 'planner', label: 'Planificador', icon: I2.calendar },
@@ -7334,7 +7483,7 @@ function UpdateButton() {
    · SISTEMA (izq. del bloque derecho): estado de sync + versión. Informan, no son tuyos.
    · USUARIO: notificaciones, ajustes, tema y salir. Todos icon-buttons de 32px. */
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
+  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', videos: 'Videos explicativos', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
   const dark = theme === 'dark'
   return (
     <header className="hd">
@@ -7514,6 +7663,7 @@ function AppShell({ session, onLogout }) {
   const sopCatStore = useRowCollection({ table: 'sops_categories', normalize: normalizeSopCategory, seed: () => seedSops().categories, cacheKey: 'rc_sopcat_v1' })
   const sopProcStore = useRowCollection({ table: 'sops_processes', normalize: normalizeSopProcess, seed: () => seedSops().processes, cacheKey: 'rc_sopproc_v1' })
   const chatStore = useRowCollection({ table: 'assistant_chats', normalize: normalizeChat, seed: () => [], cacheKey: 'rc_chats_v1' })
+  const videoStore = useRowCollection({ table: 'videos', normalize: normalizeVideo, seed: seedVideos, cacheKey: 'rc_videos_v1' })
 
   // Vista de solo lectura con la forma histórica de `data` — para que TODOS los
   // reads `data.projects`/`data.team`/… sigan funcionando sin tocarlos. Toda
@@ -7528,12 +7678,13 @@ function AppShell({ session, onLogout }) {
     assistantChats: chatStore.items,
     sops,
     tasks: taskStore.tasks,
-  }), [teamStore.items, clientStore.items, projectStore.items, callStore.items, activityStore.items, chatStore.items, sops, taskStore.tasks])
-  const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore }
+    videos: videoStore.items,
+  }), [teamStore.items, clientStore.items, projectStore.items, callStore.items, activityStore.items, chatStore.items, sops, taskStore.tasks, videoStore.items])
+  const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore }
   const botComms = useBotComms()   // proyecto → último mensaje del equipo en WhatsApp (del bot)
 
   // Badge de sync: agregado del estado de todas las tablas.
-  const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore]
+  const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore]
   const anyLoading = !planStore.plansReady || !taskStore.tasksReady || allStores.some((s) => !s.ready)
   const anySaving = allStores.some((s) => s.saving)
   const sync = !cloudEnabled ? 'local' : anyLoading ? 'loading' : anySaving ? 'saving' : 'saved'
@@ -7638,6 +7789,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'clients' && <Clients />}
               {route.view === 'calls' && <Calls />}
               {route.view === 'sops' && <Sops />}
+              {route.view === 'videos' && <Videos />}
               {route.view === 'assistant' && <AssistantView />}
               {route.view === 'planner' && <PlannerView />}
               {route.view === 'bot' && <BotView />}
