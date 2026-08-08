@@ -43,6 +43,7 @@
  * más rápido llega el primer token a la pantalla.
  */
 
+import { stageMeta, projectStage } from '../lib/stages.js'
 import {
   newPlan,
   normalizeStages,
@@ -895,8 +896,7 @@ export function projectContextGroups(project, ctx) {
   const ficha = lines([
     `Proyecto: ${str(project.name)}`,
     client ? `Cliente: ${str(client.company) || str(client.name)}` : null,
-    str(project.status) ? `Estado: ${str(project.status)}` : null,
-    str(project.stack) ? `Stack actual: ${str(project.stack)}` : null,
+    `Etapa: ${stageMeta(projectStage(project)).label}`,
     str(project.productionUrl) ? `Producción: ${str(project.productionUrl)}` : null,
     str(project.testingUrl) ? `Testing: ${str(project.testingUrl)}` : null,
     str(project.githubRepo) ? `Repo: ${str(project.githubRepo)}` : null,
@@ -907,7 +907,7 @@ export function projectContextGroups(project, ctx) {
     pm || dev ? `Equipo asignado: ${[pm && 'PM ' + pm, dev && 'Dev ' + dev].filter(Boolean).join(' · ')}` : null,
     str(project.kickoff) ? `\nDescripción del proyecto:\n${cut(str(project.kickoff), 4000)}` : null,
   ])
-  push('ficha', 'Ficha del proyecto', str(project.stack) || 'Datos generales', ficha)
+  push('ficha', 'Ficha del proyecto', stageMeta(projectStage(project)).label, ficha)
 
   // ── sprints ────────────────────────────────────────────────────────────────
   const sprints = arr(project.sprints)

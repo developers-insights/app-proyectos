@@ -57,12 +57,12 @@ Deno.serve(async (req) => {
     }
     const projId = 'p-' + rid()
     const project = {
-      id: projId, clientId, name: projectName, status: 'active', priority: 'normal',
+      id: projId, clientId, name: projectName, stage: 'desarrollo', priority: 'normal',
       assignments: { pm: nacho ? { userId: nacho.id, roleLabel: 'Project Manager' } : null, dev: dev ? { userId: dev.id, roleLabel: 'Developer' } : null },
       tags: [{ id: rid(), text: 'Nuevo proyecto', color: '#22C55E' }],
       sprints: [], avances: [], comms: [], scopeFiles: [], salesLinks: [], scopeNotes: [], risks: [], pendingAgency: [], pendingClient: [], chats: [], activity: [], clientTasks: [],
       createdAt: now, updatedAt: now,
-      testingUrl: '', whatsappUrl: '', productionUrl: '', driveUrl: '', totalAmount: 0, paidAmount: 0, lastDeployDate: null, githubRepo: '', kickoff: String(b.businessDescription || '').trim(), stack: '',
+      testingUrl: '', whatsappUrl: '', productionUrl: '', driveUrl: '', totalAmount: 0, paidAmount: 0, lastDeployDate: null, githubRepo: '', kickoff: String(b.businessDescription || '').trim(),
       cardActions: { scope: true, testing: true, whatsapp: true },
     }
     const act = { id: rid(), date: now, actorId: nacho?.id || '', type: 'project-add', text: `entró un proyecto nuevo por onboarding: "${projectName}" (${company || 'cliente'})`, updatedAt: now }

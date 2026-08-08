@@ -21,9 +21,11 @@ import OnboardingV2 from './OnboardingV2'
 import { uid, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
 import { I2 } from './ui/icons2.jsx'
 import {
-  PHASES, phaseInfo, phaseMeta, normalizeLifecycle, advancePhase,
-  suggestedTransition, billingNotice, markNoticeSent,
+  phaseInfo, normalizeLifecycle, billingNotice, markNoticeSent,
 } from './lib/lifecycle.js'
+import {
+  PROJECT_STAGES, STAGE_GROUPS, stageMeta, projectStage, applyStage, stageIsRegression, isPaidStage,
+} from './lib/stages.js'
 import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
 import { isDev, canSeeAllToggle, visibleProjects } from './lib/visibility.js'
 import {
@@ -68,12 +70,20 @@ const THEMES = {
     '--accent-line': 'rgba(249,115,22,0.32)',
     '--green': '#34D399',
     '--green-soft': 'rgba(52,211,153,0.14)',
+    '--green-line': 'rgba(52,211,153,0.34)',
     '--red': '#F87171',
     '--red-soft': 'rgba(248,113,113,0.14)',
     '--yellow': '#FBBF24',
     '--yellow-soft': 'rgba(251,191,36,0.14)',
+    '--yellow-line': 'rgba(251,191,36,0.36)',
     '--blue': '#60A5FA',
     '--blue-soft': 'rgba(96,165,250,0.14)',
+    '--blue-line': 'rgba(96,165,250,0.34)',
+    /* violeta: el escalón más alto de mantenimiento (Scale). Es el único color
+       que no estaba en la paleta y entra solo para eso, no para decorar. */
+    '--violet': '#A78BFA',
+    '--violet-soft': 'rgba(167,139,250,0.15)',
+    '--violet-line': 'rgba(167,139,250,0.34)',
     '--shadow': '0 1px 0 rgba(255,255,255,0.03), 0 18px 40px -20px rgba(0,0,0,0.8)',
     '--shadow-lift': '0 1px 0 rgba(255,255,255,0.05), 0 30px 56px -26px rgba(0,0,0,0.95)',
     '--track': 'rgba(255,255,255,0.055)',
@@ -94,12 +104,18 @@ const THEMES = {
     '--accent-line': 'rgba(234,106,0,0.28)',
     '--green': '#0E9F6E',
     '--green-soft': 'rgba(14,159,110,0.10)',
+    '--green-line': 'rgba(14,159,110,0.30)',
     '--red': '#DC2626',
     '--red-soft': 'rgba(220,38,38,0.08)',
     '--yellow': '#B45309',
     '--yellow-soft': 'rgba(180,83,9,0.10)',
+    '--yellow-line': 'rgba(180,83,9,0.30)',
     '--blue': '#2563EB',
     '--blue-soft': 'rgba(37,99,235,0.10)',
+    '--blue-line': 'rgba(37,99,235,0.28)',
+    '--violet': '#6D28D9',
+    '--violet-soft': 'rgba(109,40,217,0.10)',
+    '--violet-line': 'rgba(109,40,217,0.28)',
     '--shadow': '0 1px 2px rgba(16,15,12,0.04), 0 12px 30px -18px rgba(16,15,12,0.18)',
     '--shadow-lift': '0 2px 4px rgba(16,15,12,0.05), 0 24px 46px -20px rgba(16,15,12,0.28)',
     '--track': 'rgba(10,10,10,0.075)',
@@ -308,11 +324,10 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
    Dos decisiones mandan acá:
    1) UNA sola superficie (.pd-panel). Antes convivían .surface, cajas con
       borde y cajas con sombra: el marco competía con el dato.
-   2) Los nueve botones iguales se parten en dos grupos con peso distinto:
-      enlaces que SALEN de la app (.pd-lnk, con la flechita adentro de su
-      propio círculo) y paneles internos que abren un modal (.pd-btn, tipo
-      chip). Un enlace sin URL no se disfraza de enlace: se ve hueco y punteado
-      y lo que hace es invitar a cargarlo.
+   2) La consola de acciones vive en el encabezado (.pdh-cluster): dos menús
+      (enlaces que SALEN de la app · paneles que abren un modal), el selector de
+      etapa con el color del estado y la CTA. Un enlace sin URL no se disfraza de
+      enlace: en el menú se ve hueco y su click lleva a cargarlo.
    Mismo ritmo de movimiento que el listado (--e), solo transform/opacity.
 ============================================================================ */
 .pd-shell{display:flex;height:100%;overflow:hidden}
@@ -337,11 +352,8 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pd-meta{font-size:13.5px;color:var(--text-dim);margin-top:7px}
 .pd-meta i{font-style:normal;color:var(--text-faint);padding:0 7px}
 
-/* --- consola de acciones --- */
-.pd-console{display:grid;grid-template-columns:66px 1fr;align-items:center;gap:11px 14px;padding:12px 14px}
-.pd-row{display:flex;gap:7px;flex-wrap:wrap;min-width:0}
-.pd-rule{grid-column:1/-1;height:1px;background:var(--border);margin:1px 0}
-
+/* Enlace externo suelto (registro de calls y Looms): la flechita vive en su
+   propio círculo y se despega al hover — "esto abre otra pestaña". */
 .pd-lnk{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 5px 0 11px;border-radius:10px;
   font-size:12.5px;font-weight:600;color:var(--text);background:var(--bg-elevated);
   box-shadow:inset 0 0 0 1px var(--border);
@@ -351,9 +363,6 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pd-lnk:hover{color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
 .pd-lnk:hover .go{color:var(--accent);background:transparent;transform:translate(1.5px,-1.5px)}
 .pd-lnk:active{transform:scale(.98)}
-.pd-lnk.empty{color:var(--text-faint);background:transparent;
-  box-shadow:inset 0 0 0 1px transparent;outline:1px dashed var(--border-strong);outline-offset:-1px;padding:0 11px}
-.pd-lnk.empty:hover{color:var(--accent);background:var(--accent-soft);outline-color:var(--accent-line)}
 
 .pd-btn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 11px;border-radius:10px;
   font-size:12.5px;font-weight:600;color:var(--text-dim);background:transparent;
@@ -369,7 +378,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pd-btn[data-tone="accent"]{color:var(--text);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
 .pd-btn[data-tone="accent"] .n{color:var(--accent);background:var(--card);box-shadow:none}
 .pd-btn[data-tone="accent"] svg{color:var(--accent)}
-.pd-dotmark{width:6px;height:6px;border-radius:50%;flex:none;margin-left:1px}
+
 
 .pd-cta{display:inline-flex;align-items:center;gap:9px;height:34px;padding:0 5px 0 14px;border-radius:999px;
   background:var(--accent);color:#fff;font-size:13px;font-weight:700;letter-spacing:-.012em;flex:none;
@@ -383,6 +392,101 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pd-cta.quiet i{background:var(--card-hover);color:var(--text-faint)}
 .pd-cta.quiet:hover{filter:none;color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-line)}
 
+/* ============================================================================
+   CLUSTER DEL ENCABEZADO — Enlaces ▾ · Paneles ▾ · Etapa ▾ · Editar proyecto
+   Tres pesos en una sola fila: dos disparadores neutros, un selector que lleva
+   el color del estado (el dato más informativo de la pantalla) y la CTA sólida.
+   La jerarquía la marca un pelo de 1px entre grupos, no una caja por botón.
+============================================================================ */
+.pdh-cluster{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.pdh-sep{width:1px;height:18px;background:var(--border);flex:none;margin:0 1px}
+
+.pd-btn.pdh-trig{position:relative;height:34px}
+.pdh-trig .pdh-ico{display:flex;color:var(--text-faint);transition:color .26s var(--e)}
+.pdh-trig:hover .pdh-ico{color:var(--text-dim)}
+.pdh-chev{flex:none;transition:transform .3s var(--e)}
+/* "abierto" es un estado sostenido, no una animación: aria-expanded manda y
+   reusa el mismo tratamiento que el hover para no inventar un segundo lenguaje. */
+.pd-btn.pdh-trig[aria-expanded="true"]{color:var(--text);background:var(--card-hover);
+  box-shadow:inset 0 0 0 1px var(--border-strong)}
+.pdh-trig[aria-expanded="true"] .pdh-chev{transform:rotate(180deg)}
+/* aviso de "algo pide atención" (cuentas incompletas): un punto, no un badge que
+   grita. Nunca es la única señal — el title del botón lo dice con palabras. */
+.pdh-attn{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:999px;
+  background:var(--accent);box-shadow:0 0 0 2px var(--card)}
+
+/* El texto del selector de etapa NUNCA usa el color de la etapa: amarillo o
+   naranja a 12.5px no llega a AA en claro. El color vive en el punto, en la
+   línea del borde y en un wash de fondo que solo anima opacity. */
+.pdh-stage{--sc:var(--accent);--ss:var(--accent-soft);--sl:var(--accent-line);
+  position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:8px;height:34px;
+  padding:0 11px 0 10px;border-radius:10px;font-size:12.5px;font-weight:700;letter-spacing:-.01em;
+  color:var(--text);background:var(--ss);box-shadow:inset 0 0 0 1px var(--sl);
+  transition:transform .26s var(--e)}
+.pdh-stage::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--sc);
+  opacity:0;transition:opacity .26s var(--e);pointer-events:none}
+.pdh-stage:hover::after{opacity:.07}
+.pdh-stage[aria-expanded="true"]::after{opacity:.11}
+.pdh-stage:active{transform:scale(.98)}
+.pdh-stage[aria-expanded="true"] .pdh-chev{transform:rotate(180deg)}
+.pdh-stage > *{position:relative;z-index:1}
+.pdh-stage .pdh-dot{width:7px;height:7px;border-radius:999px;background:var(--sc);flex:none}
+.pdh-stage .pdh-chev{color:var(--sc)}
+[data-stage="desarrollo"]{--sc:var(--accent);--ss:var(--accent-soft);--sl:var(--accent-line)}
+[data-stage="free"]{--sc:var(--blue);--ss:var(--blue-soft);--sl:var(--blue-line)}
+[data-stage="starter"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
+[data-stage="kaizen"]{--sc:var(--yellow);--ss:var(--yellow-soft);--sl:var(--yellow-line)}
+[data-stage="scale"]{--sc:var(--violet);--ss:var(--violet-soft);--sl:var(--violet-line)}
+
+.pdh-cluster .pd-btn:focus-visible,.pdh-cluster .pd-cta:focus-visible,.pdh-stage:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px}
+
+/* --- contenido de los menús (viven dentro de .surface) --- */
+.pdh-menu{min-width:212px;display:flex;flex-direction:column;gap:1px}
+.pdh-head{padding:7px 9px 5px;font-size:10px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--text-faint)}
+.pdh-menu > [role="group"]{display:flex;flex-direction:column;gap:1px}
+.pdh-menu > [role="group"] + [role="group"] .pdh-head{margin-top:3px;padding-top:8px;
+  border-top:1px solid var(--border)}
+.pdh-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:8px 9px;
+  border-radius:8px;font-size:13px;font-weight:600;color:var(--text)}
+.pdh-item .lb{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pdh-item .ic{display:flex;flex:none;color:var(--text-faint)}
+.pdh-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* la flechita de "abre otra pestaña" aparece al hover: en reposo no compite */
+.pdh-item .go{flex:none;color:var(--text-faint);opacity:0;transform:translate(-2px,2px);
+  transition:opacity .2s var(--e),transform .2s var(--e)}
+.pdh-item:hover .go,.pdh-item:focus-visible .go{opacity:1;transform:none}
+.pdh-item.empty .lb{color:var(--text-faint);font-weight:500}
+.pdh-item .miss{flex:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;
+  color:var(--text-faint);outline:1px dashed var(--border-strong);outline-offset:-1px}
+.pdh-item .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:10.5px;
+  font-weight:700;flex:none;padding:1.5px 6px;border-radius:999px;background:var(--bg-elevated);
+  color:var(--text-faint);box-shadow:inset 0 0 0 1px var(--border)}
+.pdh-item .n[data-tone="accent"]{color:var(--accent);background:var(--accent-soft);
+  box-shadow:inset 0 0 0 1px var(--accent-line)}
+.pdh-item .ok{flex:none;width:7px;height:7px;border-radius:999px;background:var(--green);
+  box-shadow:0 0 0 2px var(--green-soft)}
+.pdh-item .pdh-dot{width:8px;height:8px;border-radius:999px;flex:none;background:var(--sc)}
+.pdh-item .ck{flex:none;color:var(--accent);opacity:0;transform:scale(.6);
+  transition:opacity .2s var(--e),transform .2s var(--e)}
+.pdh-item[aria-selected="true"] .ck{opacity:1;transform:none}
+.pdh-item[aria-selected="true"] .lb{font-weight:700}
+
+@media (prefers-reduced-motion: reduce){
+  .pdh-chev,.pdh-stage,.pdh-stage::after,.pdh-item .go,.pdh-item .ck{transition:none}
+}
+@media (max-width: 760px){
+  .pdh-cluster .pd-btn,.pdh-cluster .pdh-stage,.pdh-cluster .pd-cta{min-height:38px}
+  .pd-btn.pdh-trig,.pdh-stage{height:38px}
+  .pdh-sep{display:none}
+}
+@media (max-width: 640px){
+  /* al envolver, el cluster arranca por la izquierda: alineado a la derecha
+     dejaba huecos raros con dos filas de anchos distintos. */
+  .pdh-cluster{justify-content:flex-start}
+}
+
 /* --- tira de stats: un solo bloque, celdas separadas por pelo --- */
 .pd-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(122px,1fr));gap:1px;padding:1px;
   background:var(--border);border-radius:16px;overflow:hidden}
@@ -395,34 +499,10 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   font-size:23px;font-weight:600;letter-spacing:-.045em;line-height:1}
 .pd-stat .s{font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* --- stepper del ciclo de vida --- */
-.pd-phases{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.pd-ph{display:flex;flex-direction:column;gap:4px;text-align:left;padding:0;background:none;border-radius:10px;
-  transition:opacity .26s var(--e)}
-.pd-ph .bar{position:relative;height:4px;border-radius:999px;background:var(--track);margin-bottom:10px;overflow:hidden}
-.pd-ph .bar > span{position:absolute;inset:0;border-radius:999px;transform-origin:left center;
-  transition:transform .7s var(--e)}
-.pd-ph .nm{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:650;letter-spacing:-.014em;
-  transition:color .24s var(--e)}
-.pd-ph .dt{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-dim)}
-.pd-ph .ct{font-size:11.5px;font-weight:600}
-.pd-ph:not(:disabled){cursor:pointer}
-.pd-ph:not(:disabled):hover .nm{color:var(--accent)}
-.pd-ph:disabled{cursor:default}
-
 .pd-note{display:flex;align-items:flex-start;gap:11px;padding:12px 13px;border-radius:13px;
   font-size:12.5px;line-height:1.55;color:var(--text-dim)}
 .pd-note .ic{display:grid;place-items:center;width:26px;height:26px;border-radius:9px;flex:none}
 .pd-note b{color:var(--text);font-weight:650}
-
-.pd-mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:1px;padding:1px;
-  background:var(--border);border-radius:13px;overflow:hidden}
-.pd-mini > div,.pd-mini > button{display:flex;flex-direction:column;gap:4px;padding:10px 12px;text-align:left;
-  background:var(--bg-elevated)}
-.pd-mini .k{font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--text-dim)}
-.pd-mini .v{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:15px;font-weight:600;
-  letter-spacing:-.02em}
-.pd-mini button:hover .v{color:var(--accent)}
 
 /* --- listas del detalle (tareas equipo / cliente) --- */
 .pd-list{display:flex;flex-direction:column;gap:1px;padding:1px;background:var(--border);border-radius:14px;overflow:hidden}
@@ -449,7 +529,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pd-empty .d{font-size:12.5px;color:var(--text-dim);line-height:1.55;max-width:30ch}
 
 @media (prefers-reduced-motion: reduce){
-  .pd-lnk,.pd-btn,.pd-cta,.pd-back,.pd-ph .bar > span{transition:none}
+  .pd-lnk,.pd-btn,.pd-cta,.pd-back{transition:none}
   .pd-lnk:hover .go,.pd-cta:hover i,.pd-lnk:active,.pd-btn:active,.pd-cta:active,.pd-back:active{transform:none}
 }
 
@@ -462,9 +542,6 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 }
 @media (max-width:640px){
   .pd-main{padding:14px 13px 22px}
-  .pd-console{grid-template-columns:1fr;gap:7px}
-  .pd-console .pd-eyebrow{margin-top:2px}
-  .pd-phases{grid-template-columns:1fr;gap:14px}
   .pd-lnk,.pd-btn{height:42px}
   .pd-cta{height:44px}
   .pd-cta i{width:32px;height:32px}
@@ -755,9 +832,9 @@ const TAG_NEXT = () => ({ id: uid(), text: 'Next', color: '#3B82F6' })
 function seedProjects() {
   return [
     {
-      id: 'p1', clientId: 'c1', name: 'Chamber OS', status: 'active',
+      id: 'p1', clientId: 'c1', name: 'Chamber OS', stage: 'desarrollo',
       productionUrl: 'https://app.davischamber.com', devUrl: 'https://dev.chamberos.insights.dev',
-      githubRepo: 'insights-software/chamber-os', stack: 'Next.js',
+      githubRepo: 'insights-software/chamber-os',
       kickoff: 'Chamber OS reemplaza el stack legacy de la Davis Chamber of Commerce (WordPress + GrowthZone) por una plataforma unificada de gestión de membresías, eventos, facturación y comunicaciones. Fase 1: directorio de miembros + portal de auto-gestión. Fase 2: eventos y ticketing. Fase 3: billing recurrente y reportes para el board.',
       paidAmount: 11400, totalAmount: 38000, progress: 28,
       lastDeployDate: '2026-06-03',
@@ -776,9 +853,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p2', clientId: 'c2', name: 'Plataforma de Afiliados', status: 'active',
+      id: 'p2', clientId: 'c2', name: 'Plataforma de Afiliados', stage: 'desarrollo',
       productionUrl: 'https://app.alianzassabias.com', devUrl: 'https://staging.alianzassabias.com',
-      githubRepo: 'insights-software/alianzas-afiliados', stack: 'Remix + Stripe Connect',
+      githubRepo: 'insights-software/alianzas-afiliados',
       kickoff: 'Plataforma de afiliados multinivel para Alianzas Sabias (Vida Sabia). Tracking de referidos en árbol, cálculo de comisiones por nivel, payouts automáticos vía Stripe Connect y panel para cada afiliado con su downline, ventas y comisiones acumuladas.',
       paidAmount: 33800, totalAmount: 52000, progress: 65,
       lastDeployDate: '2026-06-09',
@@ -796,9 +873,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p3', clientId: 'c3', name: 'Green Roofing 3D', status: 'active',
+      id: 'p3', clientId: 'c3', name: 'Green Roofing 3D', stage: 'desarrollo',
       productionUrl: 'https://neumayer-3d.vercel.app', devUrl: 'https://dev-neumayer-3d.vercel.app',
-      githubRepo: 'insights-software/green-roofing-3d', stack: 'React + Three.js',
+      githubRepo: 'insights-software/green-roofing-3d',
       kickoff: 'Configurador 3D para Green Roofing: el cliente final diseña su techo verde en el navegador (dimensiones, tipo de vegetación, drenaje, accesos) con render WebGL en tiempo real, y recibe un presupuesto automático + PDF técnico. Foco en performance mobile y fidelidad visual del render.',
       paidAmount: 17220, totalAmount: 41000, progress: 42,
       lastDeployDate: '2026-05-28',
@@ -816,9 +893,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p4', clientId: 'c4', name: 'HiddenWire Client Portal', status: 'active',
+      id: 'p4', clientId: 'c4', name: 'HiddenWire Client Portal', stage: 'desarrollo',
       productionUrl: 'https://hiddenware.onrender.com', devUrl: 'https://dev-hiddenware.onrender.com',
-      githubRepo: 'insights-software/hiddenwire-portal', stack: 'Django + React',
+      githubRepo: 'insights-software/hiddenwire-portal',
       kickoff: 'Portal de clientes para HiddenWire Security Group: gestión de tickets de soporte, monitoreo de instalaciones de seguridad, reportes de SLA y auditoría. Roles granulares (cliente, técnico, admin, auditor) y trazabilidad completa para compliance.',
       paidAmount: 25850, totalAmount: 47000, progress: 55,
       lastDeployDate: '2026-05-30',
@@ -837,9 +914,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p5', clientId: 'c5', name: 'Shockwave Tennis Academy', status: 'active',
+      id: 'p5', clientId: 'c5', name: 'Shockwave Tennis Academy', stage: 'desarrollo',
       productionUrl: 'https://shockwave-tennis.onrender.com', devUrl: 'https://dev-shockwave.onrender.com',
-      githubRepo: 'insights-software/shockwave-tennis', stack: 'React + Node + Postgres',
+      githubRepo: 'insights-software/shockwave-tennis',
       kickoff: 'Plataforma integral para Shockwave Tennis Academy: reservas de canchas, gestión de alumnos y coaches, cobros (mensualidades y clases sueltas), y seguimiento de progreso deportivo. Incluye app para coaches y panel para padres con el avance de cada alumno.',
       paidAmount: 28600, totalAmount: 44000, progress: 65,
       lastDeployDate: '2026-06-10',
@@ -858,9 +935,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p6', clientId: 'c6', name: 'iRowing', status: 'active',
+      id: 'p6', clientId: 'c6', name: 'iRowing', stage: 'desarrollo',
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
-      githubRepo: 'insights-software/irowing', stack: 'React Native · Node.js · OAuth 2.0 Concept2',
+      githubRepo: 'insights-software/irowing',
       kickoff: 'App de análisis de rendimiento para atletas de remo indoor con máquinas Concept2. El cliente es Leonardo, ex remero de la selección argentina con 15+ años entrenando, que hoy gestiona todo en Google Sheets manualmente. La app descarga los datos de cada remada vía OAuth 2.0 a la API de Concept2, los analiza y los presenta con visualización tipo bolsa de valores (verde/rojo según mejora o baja). Foco motivacional para gente común que empieza a remar. Incluye app móvil para el atleta + dashboard web admin para Leonardo como coach. Soporte post-lanzamiento: 30 días.',
       paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: '2026-06-09',
       tags: [TAG_NEW()],
@@ -870,9 +947,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p7', clientId: 'c8', name: 'MCS Cleaning Marketplace', status: 'active',
+      id: 'p7', clientId: 'c8', name: 'MCS Cleaning Marketplace', stage: 'desarrollo',
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
-      githubRepo: 'insights-software/mcs-cleaning', stack: 'React Native · Node.js · Stripe · Geolocalización',
+      githubRepo: 'insights-software/mcs-cleaning',
       kickoff: 'App marketplace de servicios de limpieza del hogar para conectar clientes con trabajadores independientes ("asociados") en EE.UU. José lleva 15 años con esta idea y hoy opera de forma manual. La plataforma permite cotizar/contratar servicios online, los asociados gestionan trabajos en su zona y José controla comisiones y métricas. Incluye calculadora de precios dinámica por tipo de servicio y cobro automático con Stripe (split de comisión). Soporte post-lanzamiento: 30 días.',
       paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: '2026-06-08',
       tags: [TAG_NEW()],
@@ -882,9 +959,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p8', clientId: 'c7', name: 'Real Deal Exchange AI', status: 'active',
+      id: 'p8', clientId: 'c7', name: 'Real Deal Exchange AI', stage: 'desarrollo',
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
-      githubRepo: 'insights-software/real-deal-exchange', stack: 'Next.js · TypeScript · Supabase/PostgreSQL · Twilio · Vercel',
+      githubRepo: 'insights-software/real-deal-exchange',
       kickoff: 'Ecosistema PropTech para captura, procesamiento, scoring, CRM, comunicaciones y marketplace de oportunidades inmobiliarias en EE.UU. Contacto clave: Jossueth Irigoyen (creative finance, Subject-To, Seller Finance). Importa ~3.000–3.500 registros cada 10–15 días, los enriquece vía APIs, los puntúa con lógica de scoring propia, genera propuestas preliminares con agentes IA y un Human Review Gate. CRM interno con trazabilidad completa y arquitectura multi-tenant lista para escalar a Georgia, Texas y otros estados. Estructura de pago 40/30/30 sobre USD 15.000 + soporte USD 5.000 (3 meses). Plazo: 90 días.',
       paidAmount: 0, totalAmount: 15000, progress: 0, lastDeployDate: '2026-06-07',
       tags: [TAG_NEW()],
@@ -894,9 +971,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p9', clientId: 'c9', name: 'Kintsugi Roadside', status: 'active',
+      id: 'p9', clientId: 'c9', name: 'Kintsugi Roadside', stage: 'desarrollo',
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
-      githubRepo: 'insights-software/kintsugi-roadside', stack: 'Next.js · Node.js · Supabase · GPS nativo · Zelle · Vercel',
+      githubRepo: 'insights-software/kintsugi-roadside',
       kickoff: 'Plataforma integral de emergencias automotrices para conectar clientes con técnicos en campo. Reemplaza una operación sin sistema centralizado. Los clientes solicitan emergencias desde la app, los técnicos reciben y gestionan órdenes como Uber, y Marco controla asignaciones, pagos y métricas. Incluye tracking GPS en tiempo real, asignación manual, cierre de orden con firma digital y fotos antes/después, landing web premium, apps iOS + Android para clientes y técnicos, panel admin, panel cliente B2B/flotas, panel técnico, integración Zelle e IA conversacional. Estructura de pago 50/25/25 sobre USD 8.000. Plazo: 4–5 semanas.',
       paidAmount: 0, totalAmount: 8000, progress: 0, lastDeployDate: '2026-06-09',
       tags: [TAG_NEW()],
@@ -906,9 +983,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p10', clientId: 'c10', name: 'MMD Jewelry', status: 'active',
+      id: 'p10', clientId: 'c10', name: 'MMD Jewelry', stage: 'desarrollo',
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
-      githubRepo: 'insights-software/mmd-jewelry', stack: 'Next.js · GSAP · Shopify Storefront API · Tidio',
+      githubRepo: 'insights-software/mmd-jewelry',
       kickoff: 'Sitio web e-commerce de joyería con frontend personalizado de diseño editorial conectado a Shopify como backend. Replica una estética tipo Concio Studio: apertura cinematográfica con video, navegación minimalista, about inline, galería con scroll horizontal, tienda con grid infinito y filtros por tipo de joya. La clienta tiene ~50 joyas para vender internacionalmente y hoy maneja todo en Excel. Paleta: blanco roto, dorado arena, rosa palo, vino suave, verde salvia. Plazo: 2–3 semanas.',
       paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: '2026-06-10',
       tags: [TAG_NEW()],
@@ -918,9 +995,9 @@ function seedProjects() {
       chats: [],
     },
     {
-      id: 'p11', clientId: 'c4', name: 'HiddenWare App', status: 'active',
+      id: 'p11', clientId: 'c4', name: 'HiddenWare App', stage: 'desarrollo',
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
-      githubRepo: '', stack: 'Por definir',
+      githubRepo: '',
       kickoff: 'Proyecto planificado para el próximo mes — aún no iniciado. Tenerlo en cuenta para el arranque del próximo ciclo de cartera.',
       paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: null,
       tags: [TAG_NEXT()],
@@ -1958,15 +2035,10 @@ function Badge({ children, tone = 'neutral' }) {
 const prioTone = (p) => (p === 'alta' ? 'red' : p === 'media' ? 'yellow' : 'neutral')
 const sevTone = (s) => (s === 'alta' ? 'red' : s === 'media' ? 'yellow' : 'neutral')
 
-/* project status (activo / pausado / entregado) */
-const PROJECT_STATUS = [
-  /* "Activo" en verde: el naranja es el color de marca y de acción, no un estado. */
-  { key: 'active', label: 'Activo', tone: 'green', dot: 'var(--green)' },
-  { key: 'pending', label: 'Pendiente', tone: 'blue', dot: 'var(--blue)' },
-  { key: 'paused', label: 'Pausado', tone: 'yellow', dot: 'var(--yellow)' },
-  { key: 'delivered', label: 'Entregado', tone: 'green', dot: 'var(--green)' },
-]
-const projStatusMeta = (s) => PROJECT_STATUS.find((x) => x.key === s) || PROJECT_STATUS[0]
+/* Etapa comercial del proyecto — el único eje de clasificación (ver lib/stages.js).
+   Reemplazó a activo/pendiente/pausado/entregado, que decía en qué estado
+   administrativo estaba el proyecto pero no si se estaba cobrando. */
+const stageColor = (key) => `var(${stageMeta(key).colorVar})`
 
 /* prioridad de proyecto: banderita roja (alta) / amarilla (normal) / celeste (baja) */
 const PROJECT_PRIORITY = [
@@ -2050,8 +2122,12 @@ function trackInfo(project, kind, botCommAt) {
   const manual = (kind === 'avance' ? project.avances : project.comms)?.[0]?.date || null
   const auto = kind === 'avance' ? (project.lastProgressAt || null) : (botCommAt || null)
   const latest = latestISO(manual, auto)
-  // proyecto entregado: ya no se hace seguimiento — nunca marca en rojo (no más avisos de avance)
-  if (project.status === 'delivered') return { first: !latest, days: latest ? businessDaysSince(latest) : null, overdue: false, delivered: true }
+  // Proyecto en un plan de mantenimiento pago: ya no está en obra, así que no
+  // se le hace seguimiento de avance ni marca en rojo. (Antes esto lo decía el
+  // estado "entregado", que dejó de existir con las etapas.)
+  if (isPaidStage(projectStage(project))) {
+    return { first: !latest, days: latest ? businessDaysSince(latest) : null, overdue: false, delivered: true }
+  }
   if (latest) {
     const days = businessDaysSince(latest)
     const threshold = kind === 'avance' ? 5 : 3
@@ -2079,31 +2155,6 @@ function fileToImageDataURL(file, maxW = 1100, quality = 0.82) {
     }
     reader.onerror = reject; reader.readAsDataURL(file)
   })
-}
-
-/* fecha estimada de ingreso de proyecto pendiente: chip con color por proximidad */
-const parseLocalDate = (iso) => { if (!iso) return null; const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d) }
-const daysUntil = (iso) => { const dt = parseLocalDate(iso); if (!dt) return null; const t = NOW(); return Math.ceil((dt - new Date(t.getFullYear(), t.getMonth(), t.getDate())) / 86400000) }
-const fmtShortDate = (iso) => {
-  const dt = parseLocalDate(iso)
-  if (!dt) return ''
-  return dt.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/\./g, '').replace(/,/g, '')   // "lun 3 jul"
-}
-const pendingDateColor = (iso) => {
-  const d = daysUntil(iso)
-  if (d == null) return 'var(--text-faint)'
-  if (d <= 5) return 'var(--red)'
-  if (d <= 15) return 'var(--yellow)'
-  return 'var(--green)'
-}
-function PendingDateChip({ date, style }) {
-  if (!date) return null
-  const col = pendingDateColor(date)
-  return (
-    <span className="tag" title="Ingreso estimado del proyecto" style={{ color: col, background: 'transparent', borderColor: col, fontWeight: 700, ...style }}>
-      <I2.calendar width={12} height={12} /> {fmtShortDate(date)}
-    </span>
-  )
 }
 
 /* hilo de comentarios reutilizable: muestra avatar + nombre del autor, registra actividad */
@@ -2227,57 +2278,136 @@ function CommentThread({ comments, onAdd, onDelete, subject, label = 'Comentario
   )
 }
 
-/* clickable status badge with a dropdown (activo/pausado/entregado).
-   `compact` = variante de la card de proyecto: sin pastilla, solo el punto (que
-   late si el proyecto está activo) + la etiqueta. El chevron aparece en hover
-   para que se note que es un menú sin ensuciar la card en reposo. */
-function StatusMenu({ status, onChange, compact = false }) {
+/* ---------------------------------------------------------------------------
+   Menú flotante anclado a un botón. Lo comparten los tres desplegables del
+   encabezado (Enlaces, Paneles, Etapa) y el selector de etapa del listado:
+   antes cada uno recalculaba su propio position:fixed con su propio bug de
+   borde. Se abre hacia arriba si abajo no entra, y se cierra con Escape.
+--------------------------------------------------------------------------- */
+function useAnchoredMenu(menuW, menuH) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState(null)
   const btnRef = useRef(null)
-  const meta = projStatusMeta(status)
-  const menuW = 150, menuH = PROJECT_STATUS.length * 38 + 12
   const toggle = (e) => {
-    e.stopPropagation()
+    if (e) e.stopPropagation()
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect()
       const down = r.bottom + menuH <= window.innerHeight
-      setPos({ left: Math.max(8, r.right - menuW), top: down ? r.bottom + 4 : Math.max(8, r.top - menuH - 4) })
+      // Cuelga del borde izquierdo del botón (es lo que se lee como "sale de acá")
+      // y recién si no entra se alinea por la derecha. Sin esto, un botón cerca
+      // del borde izquierdo abría el menú pegado al 8px de la ventana, suelto.
+      const fits = r.left + menuW <= window.innerWidth - 8
+      setPos({
+        left: Math.max(8, fits ? r.left : r.right - menuW),
+        top: down ? r.bottom + 6 : Math.max(8, r.top - menuH - 6),
+      })
     }
     setOpen((v) => !v)
   }
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+  return { open, setOpen, pos, btnRef, toggle }
+}
+
+/* Envoltorio del menú: scrim que cierra al click + superficie flotante. */
+function MenuSurface({ pos, onClose, label, role = 'menu', children }) {
+  return createPortal(
+    <>
+      <div onClick={(e) => { e.stopPropagation(); onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
+      <div className="surface" role={role} aria-label={label} onClick={(e) => e.stopPropagation()}
+        style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, boxShadow: 'var(--shadow-lift)' }}>
+        <div className="pdh-menu">{children}</div>
+      </div>
+    </>,
+    document.body
+  )
+}
+
+/* Selector de ETAPA con menú. Tres variantes, un solo comportamiento:
+   · compact → card del listado (punto que late en Desarrollo + etiqueta)
+   · tag     → celda de la tabla
+   · header  → el control con color del detalle del proyecto
+   El menú agrupa "En obra" y "Mantenimiento": la diferencia entre estar
+   construyendo y estar cobrando es la que manda en este negocio. */
+function StageMenu({ stage, onChange, variant = 'tag' }) {
+  const key = stage && PROJECT_STAGES.some((s) => s.key === stage) ? stage : 'desarrollo'
+  const meta = stageMeta(key)
+  const menuH = PROJECT_STAGES.length * 38 + STAGE_GROUPS.length * 26 + 14
+  const { open, pos, btnRef, toggle, setOpen } = useAnchoredMenu(216, menuH)
+  const pick = (e, k) => { e.stopPropagation(); if (k !== key) onChange(k); setOpen(false) }
   return (
     <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
-      {compact ? (
-        <button ref={btnRef} onClick={toggle} className="pj-status" title="Cambiar estado" aria-haspopup="menu" aria-expanded={open}>
-          <span className={`pj-dot${status === 'active' ? ' live' : ''}`} style={{ background: meta.dot }} />
+      {variant === 'header' ? (
+        <button ref={btnRef} onClick={toggle} className="pdh-stage" data-stage={key}
+          aria-haspopup="listbox" aria-expanded={open} title={`Etapa: ${meta.label} — cambiar`}>
+          <span className="pdh-dot" aria-hidden="true" />
+          <span>{meta.label}</span>
+          <I2.chevD className="pdh-chev" width={12} height={12} />
+        </button>
+      ) : variant === 'compact' ? (
+        <button ref={btnRef} onClick={toggle} className="pj-status" title={`Etapa: ${meta.label} — cambiar`} aria-haspopup="listbox" aria-expanded={open}>
+          <span className={`pj-dot${key === 'desarrollo' ? ' live' : ''}`} style={{ background: stageColor(key) }} />
           {meta.label}
           <I2.chevD className="cv" width={10} height={10} style={{ color: 'var(--text-faint)' }} />
         </button>
       ) : (
-      <button ref={btnRef} onClick={toggle} title="Cambiar estado">
-        <span className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text)', background: 'var(--bg-elevated)', borderColor: 'var(--border)', cursor: 'pointer' }}>
-          <span style={{ width: 7, height: 7, borderRadius: 99, background: meta.dot, flexShrink: 0 }} />
-          {meta.label}<I2.chevD width={11} height={11} style={{ marginLeft: 1, color: 'var(--text-faint)' }} />
-        </span>
-      </button>
+        <button ref={btnRef} onClick={toggle} title={`Etapa: ${meta.label} — cambiar`} aria-haspopup="listbox" aria-expanded={open} data-stage={key}>
+          <span className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text)', background: 'var(--ss)', borderColor: 'var(--sl)', cursor: 'pointer' }}>
+            <span style={{ width: 7, height: 7, borderRadius: 99, background: 'var(--sc)', flexShrink: 0 }} />
+            {meta.label}<I2.chevD width={11} height={11} style={{ marginLeft: 1, color: 'var(--text-faint)' }} />
+          </span>
+        </button>
       )}
-      {open && pos && createPortal(
-        <>
-          <div onClick={(e) => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
-          <div className="surface" onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 201, padding: 5, minWidth: menuW, boxShadow: 'var(--shadow)' }}>
-            {PROJECT_STATUS.map((o) => (
-              <button key={o.key} className="row-hover" onClick={(e) => { e.stopPropagation(); onChange(o.key); setOpen(false) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 8, fontSize: 13, fontWeight: 600, color: o.key === status ? 'var(--accent)' : 'var(--text)' }}>
-                <span style={{ width: 8, height: 8, borderRadius: 99, background: o.dot, flexShrink: 0 }} />{o.label}
-                {o.key === status && <I2.check width={14} height={14} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />}
-              </button>
-            ))}
-          </div>
-        </>,
-        document.body
+      {open && pos && (
+        <MenuSurface pos={pos} onClose={() => setOpen(false)} role="listbox" label="Etapa del proyecto">
+          {STAGE_GROUPS.map((g) => (
+            <div key={g.key} role="group" aria-label={g.label}>
+              <div className="pdh-head" aria-hidden="true">{g.label}</div>
+              {PROJECT_STAGES.filter((s) => s.group === g.key).map((s) => (
+                <button key={s.key} className="row-hover pdh-item" role="option" data-stage={s.key}
+                  aria-selected={s.key === key} onClick={(e) => pick(e, s.key)}>
+                  <span className="pdh-dot" aria-hidden="true" />
+                  <span className="lb">{s.label}</span>
+                  <I2.check className="ck" width={14} height={14} />
+                </button>
+              ))}
+            </div>
+          ))}
+        </MenuSurface>
       )}
     </span>
+  )
+}
+
+/* Volver atrás en la etapa borra las fechas selladas de las fases siguientes —
+   y de ahí sale la facturación. Eso no puede pasar de un click distraído, así
+   que SOLO el retroceso pide confirmación; avanzar es directo. */
+function StageConfirmModal({ open, project, to, onClose, onConfirm }) {
+  // El modal queda montado aunque `to` vuelva a null: desmontarlo de golpe se
+  // saltea la animación de salida del <Modal>.
+  const meta = stageMeta(to)
+  return (
+    <Modal open={open && !!to} onClose={onClose} width={460} title={`Volver a ${meta.label}`} sub={project?.name}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="pd-note" style={{ background: 'var(--yellow-soft)' }}>
+          <span className="ic" style={{ background: 'var(--card)', color: 'var(--yellow)' }}><I2.alert width={15} height={15} /></span>
+          <div>
+            Volver atrás <b>borra las fechas de las etapas siguientes</b>. Si el proyecto estaba en un plan pago,
+            deja de contar el cobro y se pierde el día en que arrancó.
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button className="btn" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" onClick={() => onConfirm(to)} autoFocus>
+            <I2.check width={15} height={15} /> Volver a {meta.label}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -2456,9 +2586,9 @@ function FieldNote({ error, hint }) {
    fase, lastNoticeSentAt, activity, avances, comms, clientTasks, chats…— tiene que
    releerse del proyecto actual o guardar pisa el estado que decide cuándo se cobra. */
 const PROJECT_FORM_FIELDS = [
-  'name', 'stack', 'status', 'priority', 'kind', 'clientId', 'githubRepo',
+  'name', 'priority', 'kind', 'clientId', 'githubRepo',
   'productionUrl', 'testingUrl', 'whatsappUrl', 'driveUrl',
-  'totalAmount', 'paidAmount', 'expectedStartDate', 'kickoff',
+  'totalAmount', 'paidAmount', 'kickoff',
 ]
 /* Del lifecycle, el formulario solo toca los datos del cobro. La fase y sus
    fechas se mueven desde el detalle con confirmación. */
@@ -2485,12 +2615,6 @@ function EditProjectModal({ open, project, clients = [], onClose, onSave, onDele
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Nombre"><input className="input" value={d.name} onChange={(e) => set('name', e.target.value)} /></Field>
-            <Field label="Stack"><input className="input" value={d.stack || ''} onChange={(e) => set('stack', e.target.value)} /></Field>
-            <Field label="Estado">
-              <select className="input" value={d.status} onChange={(e) => set('status', e.target.value)}>
-                {PROJECT_STATUS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-              </select>
-            </Field>
             <Field label="Prioridad">
               <select className="input" value={d.priority || 'normal'} onChange={(e) => set('priority', e.target.value)}>
                 {PROJECT_PRIORITY.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
@@ -2517,7 +2641,6 @@ function EditProjectModal({ open, project, clients = [], onClose, onSave, onDele
             <Field label="Carpeta de Drive (compartida con el cliente)"><input className="input" value={d.driveUrl || ''} onChange={(e) => set('driveUrl', e.target.value)} placeholder="https://drive.google.com/…" /></Field>
             <Field label="Contrato total (USD)"><input className="input mono" type="number" value={d.totalAmount} onChange={(e) => set('totalAmount', Number(e.target.value))} /></Field>
             <Field label="Cobrado / pagado (USD)"><input className="input mono" type="number" value={d.paidAmount} onChange={(e) => set('paidAmount', Number(e.target.value))} /></Field>
-            <Field label="Ingreso estimado (si está pendiente)"><input className="input mono" type="date" value={(d.expectedStartDate || '').slice(0, 10)} onChange={(e) => set('expectedStartDate', e.target.value)} /></Field>
           </div>
           <Field label="Kick-off"><textarea className="input" rows={3} value={d.kickoff || ''} onChange={(e) => set('kickoff', e.target.value)} /></Field>
 
@@ -2529,7 +2652,7 @@ function EditProjectModal({ open, project, clients = [], onClose, onSave, onDele
               <strong style={{ fontSize: 13.5 }}>Prueba y mantenimiento</strong>
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.55, marginBottom: 13 }}>
-              Los datos del cobro. La fase del proyecto se cambia desde el detalle, con confirmación.
+              Los datos del cobro. La etapa del proyecto se cambia desde su encabezado.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12 }}>
               <Field label="Monto mensual (USD)">
@@ -2925,7 +3048,7 @@ function phaseCounter(info) {
   return { n: info.countdown, unit: info.countdown === 1 ? 'día · cobro' : 'días · cobro', label: '' }
 }
 
-function ProjectCard({ project: p, client, team, pct, onOpen, onStatus, onAssign, onScope, onLinks, onPending }) {
+function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign, onScope, onLinks }) {
   const info = phaseInfo(p)
   const adv = lastAdvanceInfo(p)
   const counter = phaseCounter(info)
@@ -2945,7 +3068,7 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStatus, onAssign
       aria-label={`Abrir ${p.name}`}
     >
       <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', minHeight: 24 }}>
-        <StatusMenu compact status={p.status} onChange={onStatus} />
+        <StageMenu variant="compact" stage={projectStage(p)} onChange={onStage} />
       </div>
 
       {/* el anillo mide avance, no fase: va siempre en verde. La fase se lee en el
@@ -2955,14 +3078,6 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStatus, onAssign
       <div style={{ marginTop: 12, width: '100%' }}>
         <div className="nm" title={p.name}>{p.name}</div>
       </div>
-
-      {p.status === 'pending' && (
-        <div style={{ marginTop: 9 }} onClick={(e) => { stop(e); onPending() }}>
-          {p.expectedStartDate
-            ? <PendingDateChip date={p.expectedStartDate} style={{ cursor: 'pointer' }} />
-            : <span className="tag click" style={{ color: 'var(--blue)', background: 'transparent', borderColor: 'var(--blue)' }}><I2.calendar width={12} height={12} /> Definir ingreso</span>}
-        </div>
-      )}
 
       <div className="pj-line">
         <span title={info.countdownLabel} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
@@ -3126,7 +3241,13 @@ function Projects({ onOpenProject }) {
   const planOf = (p) => (p.planId ? planById.get(p.planId) || null : null)
   const [newOpen, setNewOpen] = useState(false)
   const qp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
-  const [tab, setTab] = useState(qp.get('tab') || 'active')
+  /* El ?tab= viejo traía estados que ya no existen (active/paused/delivered) y
+     dejaba el listado vacío sin explicación: cualquier valor que no sea una
+     etapa cae en Desarrollo. */
+  const [tab, setTab] = useState(() => {
+    const t = qp.get('tab')
+    return PROJECT_STAGES.some((s) => s.key === t) ? t : 'desarrollo'
+  })
   const [view, setView] = useState('cards')
   const [clientFilter, setClientFilter] = useState(qp.get('client') || 'all')
   const [pmFilter, setPmFilter] = useState(qp.get('pm') || 'all')
@@ -3135,7 +3256,7 @@ function Projects({ onOpenProject }) {
   const [prioFilter, setPrioFilter] = useState(qp.get('prio') || 'all')   // all | sort | alta | normal | baja
   const [kindFilter, setKindFilter] = useState(qp.get('kind') || 'all')   // all | cliente | interno
   const [search, setSearch] = useState('')             // búsqueda en vivo (client-side): nombre, cliente, PM/Dev
-  const [pendingFor, setPendingFor] = useState(null)   // id del proyecto al que se le pide fecha de ingreso
+  const [stageAsk, setStageAsk] = useState(null)       // { projectId, to } — retroceso de etapa a confirmar
   const [logModal, setLogModal] = useState(null)       // { projectId, kind } | null
   const [scopeFor, setScopeFor] = useState(null)       // id del proyecto para abrir Alcance (acceso directo)
   const [cardCfgFor, setCardCfgFor] = useState(null)   // id del proyecto para editar la tarjeta (links + qué mostrar)
@@ -3144,17 +3265,28 @@ function Projects({ onOpenProject }) {
   const updateProject = (id, fields) => projectStore.patch(id, (p) => ({ ...p, ...fields }))
   const patchProject = (id, fn) => projectStore.patch(id, fn)
   const updateClient = (id, fields) => clientStore.patch(id, (c) => ({ ...c, ...fields }))
-  const setStatus = (id, status) => { updateProject(id, { status }); if (status === 'pending') setPendingFor(id) }
+  /* Mover la etapa sella fechas del ciclo de vida (de ahí sale el cobro), así que
+     el retroceso pasa antes por confirmación. Avanzar es directo. */
+  const commitStage = (id, to) => {
+    patchProject(id, (p) => ({ ...p, ...applyStage(p, to) }))
+    const proj = data.projects.find((p) => p.id === id)
+    if (logActivity && proj) logActivity({ type: 'stage', text: `pasó ${proj.name} a ${stageMeta(to).label}` })
+  }
+  const setStage = (id, to) => {
+    const proj = data.projects.find((p) => p.id === id)
+    if (proj && stageIsRegression(proj, to)) { setStageAsk({ projectId: id, to }); return }
+    commitStage(id, to)
+  }
   const createProject = ({ name, clientId, kind, whatsappUrl, testingUrl }) => {
     const id = uid()
     const proj = {
-      id, name, clientId: kind === 'interno' ? '' : clientId, kind: kind || 'cliente', status: 'active', priority: 'normal',
+      id, name, clientId: kind === 'interno' ? '' : clientId, kind: kind || 'cliente', stage: 'desarrollo', priority: 'normal',
       assignments: { pm: null, dev: null }, tags: [],
       avances: [], comms: [], scopeFiles: [], salesLinks: [], scopeNotes: [],
       risks: [], pendingAgency: [], pendingClient: [], chats: [],
       createdAt: new Date().toISOString(),
       testingUrl: testingUrl || '', whatsappUrl: whatsappUrl || '', productionUrl: '',
-      totalAmount: 0, paidAmount: 0, lastDeployDate: null, githubRepo: '', kickoff: '', stack: '',
+      totalAmount: 0, paidAmount: 0, lastDeployDate: null, githubRepo: '', kickoff: '',
       cardActions: { scope: true, testing: true, whatsapp: true },
     }
     projectStore.create(proj)
@@ -3166,7 +3298,7 @@ function Projects({ onOpenProject }) {
   // keep filters URL-friendly
   useEffect(() => {
     const p = new URLSearchParams()
-    if (tab !== 'active') p.set('tab', tab)
+    if (tab !== 'desarrollo') p.set('tab', tab)
     if (clientFilter !== 'all') p.set('client', clientFilter)
     if (pmFilter !== 'all') p.set('pm', pmFilter)
     if (devFilter !== 'all') p.set('dev', devFilter)
@@ -3210,11 +3342,11 @@ function Projects({ onOpenProject }) {
     return hay.includes(q)
   }
   const keep = (p) => matchesFilters(p) && matchesSearch(p)
-  const countFor = (status) => universe.filter((p) => p.status === status && keep(p)).length
-  let list = universe.filter((p) => p.status === tab && keep(p))
+  const countFor = (stage) => universe.filter((p) => projectStage(p) === stage && keep(p)).length
+  let list = universe.filter((p) => projectStage(p) === tab && keep(p))
   if (prioFilter === 'sort') list = [...list].sort((a, b) => projPrioMeta(b.priority).rank - projPrioMeta(a.priority).rank)
-  const TABS = [['active', 'Activos'], ['pending', 'Pendiente'], ['paused', 'Pausados'], ['delivered', 'Entregados']]
-  const tabLabel = (TABS.find(([k]) => k === tab) || TABS[0])[1].toLowerCase()
+  const TABS = PROJECT_STAGES.map((s) => [s.key, s.label])
+  const tabLabel = `en ${stageMeta(tab).label}`
 
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
@@ -3228,7 +3360,7 @@ function Projects({ onOpenProject }) {
       {/* Una sola fila de control: estado, filtros, lo que está aplicado, búsqueda
           y la acción principal. Antes eran tres franjas apiladas. */}
       <div className="pj-bar" style={{ marginBottom: 20 }}>
-        <div className="pj-tabs" role="tablist" aria-label="Estado del proyecto">
+        <div className="pj-tabs" role="tablist" aria-label="Etapa del proyecto">
           {TABS.map(([k, l]) => (
             <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
               {tab === k && (
@@ -3356,11 +3488,10 @@ function Projects({ onOpenProject }) {
               team={data.team}
               pct={projectProgress(p, planOf(p))}
               onOpen={() => onOpenProject(p.id)}
-              onStatus={(s) => setStatus(p.id, s)}
+              onStage={(s) => setStage(p.id, s)}
               onAssign={(assignments) => updateProject(p.id, { assignments })}
               onScope={() => setScopeFor(p.id)}
               onLinks={() => setCardCfgFor(p.id)}
-              onPending={() => setPendingFor(p.id)}
             />
           ))}
         </motion.div>
@@ -3369,7 +3500,7 @@ function Projects({ onOpenProject }) {
           <table>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Proyecto', 'Cliente', 'Equipo', 'Estado', 'Avance', 'Últ. comunicación', 'Últ. avance'].map((h) =><th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+                {['Proyecto', 'Cliente', 'Equipo', 'Etapa', 'Avance', 'Últ. comunicación', 'Últ. avance'].map((h) =><th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -3393,7 +3524,7 @@ function Projects({ onOpenProject }) {
                     <td style={{ padding: '13px 16px', fontWeight: 600 }}>{p.name}</td>
                     <td style={{ padding: '13px 16px', color: p.kind === 'interno' ? 'var(--accent)' : 'var(--text-dim)' }}>{p.kind === 'interno' ? 'Interno · Insights' : cl?.company}</td>
                     <td style={{ padding: '13px 16px' }}><TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} size={26} ring="var(--card)" /></td>
-                    <td style={{ padding: '13px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} /><StatusMenu status={p.status} onChange={(s) => setStatus(p.id, s)} />{p.status === 'pending' && p.expectedStartDate && <PendingDateChip date={p.expectedStartDate} />}</div></td>
+                    <td style={{ padding: '13px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} /><StageMenu stage={projectStage(p)} onChange={(s) => setStage(p.id, s)} /></div></td>
                     <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={projectProgress(p, planOf(p))} showLabel /></td>
                     {trackCell('comm', 'Sin primer mensaje')}
                     {trackCell('avance', 'Sin primer avance')}
@@ -3405,39 +3536,13 @@ function Projects({ onOpenProject }) {
         </div>
       )}
 
-      <PendingDatePrompt open={!!pendingFor} project={data.projects.find((p) => p.id === pendingFor)} onClose={() => setPendingFor(null)} onSave={(d) => { updateProject(pendingFor, { expectedStartDate: d }); setPendingFor(null) }} />
+      <StageConfirmModal open={!!stageAsk} to={stageAsk?.to} project={data.projects.find((p) => p.id === stageAsk?.projectId)}
+        onClose={() => setStageAsk(null)} onConfirm={(to) => { commitStage(stageAsk.projectId, to); setStageAsk(null) }} />
       <ProjectLogModal open={!!logModal} kind={logModal?.kind} project={data.projects.find((p) => p.id === logModal?.projectId)} onClose={() => setLogModal(null)} patch={(fn) => patchProject(logModal.projectId, fn)} />
       <ScopeModal open={!!scopeFor} project={data.projects.find((p) => p.id === scopeFor)} onClose={() => setScopeFor(null)} patch={(fn) => patchProject(scopeFor, fn)} />
       <CardConfigModal open={!!cardCfgFor} project={data.projects.find((p) => p.id === cardCfgFor)} onClose={() => setCardCfgFor(null)} onSave={(f) => updateProject(cardCfgFor, f)} />
       <NewProjectModal open={newOpen} clients={data.clients} onClose={() => setNewOpen(false)} onCreate={createProject} />
     </div>
-  )
-}
-
-/* popup de fecha estimada de ingreso para proyectos pendientes */
-function PendingDatePrompt({ open, project, onClose, onSave }) {
-  const [date, setDate] = useState('')
-  useEffect(() => { if (open) setDate(project?.expectedStartDate ? project.expectedStartDate.slice(0, 10) : '') }, [open, project && project.id])
-  return (
-    <Modal open={open} onClose={onClose} title="Proyecto pendiente de ingreso" sub={project?.name} width={420}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>¿Para cuándo está previsto el ingreso de este proyecto? Lo vas a ver en la tarjeta con un color según qué tan cerca esté.</div>
-        <Field label="Fecha estimada de ingreso"><input className="input mono" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-        {date && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)' }}>
-            Vista previa: <PendingDateChip date={date} />
-            <span>{(() => { const d = daysUntil(date); return d == null ? '' : d < 0 ? `(hace ${-d}d)` : d === 0 ? '(hoy)' : `(en ${d}d)` })()}</span>
-          </div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-          {date ? <button className="btn" onClick={() => { setDate(''); onSave('') }} style={{ color: 'var(--text-dim)' }}>Quitar fecha</button> : <span />}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn" onClick={onClose}>Cancelar</button>
-            <button className="btn btn-accent" onClick={() => onSave(date)}><I2.check width={15} height={15} /> Guardar</button>
-          </div>
-        </div>
-      </div>
-    </Modal>
   )
 }
 
@@ -4105,7 +4210,7 @@ function Clients() {
   const { data, clientStore } = useApp()
   const [edit, setEdit] = useState(null)       // client being viewed/edited
   const [creating, setCreating] = useState(false)
-  const projectsOf = (id) => data.projects.filter((p) => p.clientId === id && p.status === 'active').length
+  const projectsOf = (id) => data.projects.filter((p) => p.clientId === id).length
 
   const blank = { id: '', name: '', company: '', email: '', phone: '', onboardDate: NOW().toISOString(), onboarding: { businessDescription: '', goals: '', existingTech: '', approvedBudget: 0, notes: '' } }
 
@@ -4137,7 +4242,7 @@ function Clients() {
         <Field label="Objetivos"><textarea className="input" rows={2} value={f.onboarding.goals} onChange={(e) => setO('goals', e.target.value)} /></Field>
         <Field label="Observaciones"><textarea className="input" rows={2} value={f.onboarding.notes} onChange={(e) => setO('notes', e.target.value)} /></Field>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-          {onDelete && f.id ? <button className="btn" onClick={() => { if (window.confirm(`¿Eliminar el cliente "${f.name || f.company}"?${activeProjs ? ` Tiene ${activeProjs} proyecto(s) activo(s); esos proyectos no se borran.` : ''} No se puede deshacer.`)) onDelete(f.id) }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I2.trash width={15} height={15} /> Eliminar cliente</button> : <span />}
+          {onDelete && f.id ? <button className="btn" onClick={() => { if (window.confirm(`¿Eliminar el cliente "${f.name || f.company}"?${activeProjs ? ` Tiene ${activeProjs} proyecto(s); esos proyectos no se borran.` : ''} No se puede deshacer.`)) onDelete(f.id) }} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}><I2.trash width={15} height={15} /> Eliminar cliente</button> : <span />}
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn" onClick={onCancel}>Cancelar</button>
             <button className="btn btn-accent" onClick={() => onSave(f)}><I2.check width={15} height={15} /> Guardar</button>
@@ -4156,7 +4261,7 @@ function Clients() {
       <div className="surface tbl" style={{ overflow: 'hidden' }}>
         <table>
           <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-            {['Cliente', 'Empresa', 'Email', 'Proyectos activos', 'Onboarding'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+            {['Cliente', 'Empresa', 'Email', 'Proyectos', 'Onboarding'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
           </tr></thead>
           <tbody>
             {data.clients.map((c) => (
@@ -5598,48 +5703,11 @@ function PlanProgress({ linkedPlan, patchPlan, onAssociate, markProgress }) {
 }
 
 /* ============================================================================
-   15b · CICLO DE VIDA DEL PROYECTO — fases 1·2·3 + cobro de mantenimiento
-   El cambio de fase SIEMPRE lo confirma una persona: sella una fecha que
-   después factura. El sistema sugiere, no ejecuta.
+   15b · COBRO DE MANTENIMIENTO
+   La etapa del proyecto (lib/stages.js) es la que mueve las fases del ciclo de
+   vida y sella las fechas; acá queda solo lo que sale de esas fechas: el aviso
+   de cobro y el mail que se le manda al cliente.
 ============================================================================ */
-const PHASE_ICON = { 1: I2.phase1, 2: I2.phase2, 3: I2.phase3 }
-
-function PhaseConfirmModal({ open, to, project, onClose, onConfirm }) {
-  const target = to || 1
-  const meta = phaseMeta(target)
-  const lc = normalizeLifecycle(project)
-  const back = target < lc.phase
-  const today = fmtDate(new Date().toISOString())
-  return (
-    <Modal open={open} onClose={onClose} width={480}
-      title={back ? `Volver a ${meta.label}` : `Pasar a ${meta.label}`} sub={project?.name}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div className="pd-note" style={{ background: back ? 'var(--yellow-soft)' : 'var(--accent-soft)' }}>
-          <span className="ic" style={{ background: 'var(--card)', color: back ? 'var(--yellow)' : 'var(--accent)' }}>
-            {back ? <I2.alert width={15} height={15} /> : <I2.check width={15} height={15} />}
-          </span>
-          <div>
-            {back
-              ? <>Volver atrás <b>borra las fechas de las fases siguientes</b>. Si el proyecto ya estaba en mantenimiento, deja de contar el cobro.</>
-              : <>Se va a guardar <b>hoy, {today}</b>, como el día en que arranca {meta.label.toLowerCase()}. De esa fecha sale el contador{target === 3 ? ' y el aviso de cobro' : ''}.</>}
-          </div>
-        </div>
-        {target === 3 && (
-          <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>
-            Si todavía no cargaste el día de cobro, se toma el de hoy (hasta el 28). Después lo cambiás en Editar proyecto.
-          </div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={() => onConfirm(target)} autoFocus>
-            <I2.check width={15} height={15} /> {back ? 'Volver a ' : 'Pasar a '}{meta.label}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
 /* Previsualización REAL del mail de aviso (el mismo HTML que se manda).
    No hay envío todavía y el copy no lo disimula: se copia y se manda a mano. */
 function MaintenanceMailModal({ open, onClose, project, client, dueAt, amount, replyTo, sentAt, onMarkSent, onUndo }) {
@@ -5647,7 +5715,9 @@ function MaintenanceMailModal({ open, onClose, project, client, dueAt, amount, r
   const [copyErr, setCopyErr] = useState('')
   const dueKey = dueAt ? dueAt.getTime() : 0
   const mail = useMemo(() => {
-    if (!open || !dueAt) return null
+    // Sin monto NO se arma el mail: `Number(null) || 0` lo mandaba diciendo
+    // "USD 0" y eso sale a un cliente real.
+    if (!open || !dueAt || amount == null) return null
     try {
       return buildMaintenanceNotice({
         clientName: (client && (client.name || client.company)) || 'Hola',
@@ -5679,7 +5749,7 @@ function MaintenanceMailModal({ open, onClose, project, client, dueAt, amount, r
       {!mail ? (
         <div className="pd-hollow">
           <strong style={{ color: 'var(--text-dim)', fontSize: 13 }}>Todavía no se puede armar el mail</strong>
-          Falta el día de cobro del proyecto. Cargalo en Editar proyecto y el aviso se arma solo.
+          Faltan datos del cobro: el monto mensual o el día. Cargalos en Editar proyecto y el aviso se arma solo.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
@@ -5732,135 +5802,70 @@ function MaintenanceMailModal({ open, onClose, project, client, dueAt, amount, r
   )
 }
 
-function LifecyclePanel({ project, client, planProgress, patch, onEdit, logActivity, replyTo }) {
-  const [confirmTo, setConfirmTo] = useState(null)
+/* AVISO DE COBRO — lo único del ciclo de vida que sigue viviendo en el detalle.
+   El stepper de fases se retiró (la etapa del encabezado dice lo mismo y además
+   filtra), pero el recordatorio no: cuando faltan 7 días o menos para cobrar hay
+   que mandarle el mail al cliente, y eso mueve plata. No es una sección: aparece
+   sola cuando corresponde y desaparece cuando ya está avisado. */
+function BillingAlert({ project, client, patch, replyTo, onEdit }) {
   const [mailOpen, setMailOpen] = useState(false)
-  // Si cambia el proyecto, ningún modal puede quedar abierto encima de otro:
-  // el aviso de cobro de un proyecto sobre la fase 1 de otro no significa nada.
-  useEffect(() => { setMailOpen(false); setConfirmTo(null) }, [project.id])
+  // Si cambia el proyecto, el modal no puede quedar abierto sobre otro cobro.
+  useEffect(() => { setMailOpen(false) }, [project.id])
   const lc = normalizeLifecycle(project)
-  const info = phaseInfo(project)
-  // Se le pasa el desglose entero ({ pct, total }), no el %: sin plan con tareas
-  // reales no hay sugerencia de pasar a la prueba (ver suggestedTransition).
-  const sug = suggestedTransition(project, planProgress)
   const notice = billingNotice(project)
-  const next = lc.phase < 3 ? lc.phase + 1 : null
-  const stampOf = (n) => (n === 1 ? lc.startedAt : n === 2 ? lc.phase2At : lc.phase3At)
-  const clientLabel = (client && (client.name || client.company)) || 'el cliente'
   // Aviso vigente = ya se mandó el de este ciclo (billingNotice lo descarta solo).
   const sentThisCycle = !!lc.lastNoticeSentAt && !notice.shouldNotify && notice.daysUntil != null && notice.daysUntil <= 7
-
-  const apply = (to) => {
-    patch((p) => ({ ...p, lifecycle: advancePhase(p, to) }))
-    if (logActivity) logActivity({ type: 'phase', text: `pasó ${project.name} a ${phaseMeta(to).label}` })
-    setConfirmTo(null)
-  }
   const markSent = () => patch((p) => ({ ...p, lifecycle: markNoticeSent(p) }))
   const undoSent = () => patch((p) => ({ ...p, lifecycle: { ...normalizeLifecycle(p), lastNoticeSentAt: null } }))
+  // Un proyecto en un plan pago SIN monto o SIN día de cobro no avisa nada por
+  // su cuenta: no hay próximo cobro que calcular y el mail saldría en USD 0.
+  // Eso se dice acá, que es donde el dato se usa.
+  const missing = lc.phase === 3 && (lc.maintenanceAmount == null || lc.billingDay == null)
+  if (lc.phase !== 3 || (!missing && !notice.shouldNotify && !sentThisCycle)) return null
+  const clientLabel = (client && (client.name || client.company)) || 'el cliente'
 
   return (
     <section className="pd-sec">
-      <div className="pd-h">
-        <h2>Ciclo de vida</h2>
-        <span className="sub">Desarrollo → prueba gratis → mantenimiento</span>
-        <span style={{ flex: 1 }} />
-        {next && (
-          <button className="pd-cta quiet" onClick={() => setConfirmTo(next)}>
-            Pasar a {phaseMeta(next).label} <i><I2.arrowRight width={13} height={13} /></i>
+      {missing ? (
+        <div className="pd-note" style={{ background: 'var(--accent-soft)' }}>
+          <span className="ic" style={{ background: 'var(--card)', color: 'var(--accent)' }}><I2.alert width={15} height={15} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <b>Falta cargar el cobro de {stageMeta(projectStage(project)).label}.</b>{' '}
+            {lc.maintenanceAmount == null && lc.billingDay == null
+              ? 'No están ni el monto mensual ni el día de cobro.'
+              : lc.maintenanceAmount == null
+                ? `Está el día ${lc.billingDay} de cada mes, pero falta el monto mensual.`
+                : `Está el monto (${money(lc.maintenanceAmount)}/mes), pero falta el día de cobro.`}
+            {' '}Sin eso no se calcula el próximo cobro ni se puede mandar el aviso.
+          </div>
+          <button className="pd-cta" style={{ flex: 'none' }} onClick={onEdit}>
+            Cargar el cobro <i><I2.pencil width={13} height={13} /></i>
           </button>
-        )}
-      </div>
-
-      <div className="pd-panel lift" style={{ padding: '16px 18px 18px' }}>
-        <div className="pd-phases">
-          {PHASES.map((ph) => {
-            const done = ph.phase < lc.phase
-            const cur = ph.phase === lc.phase
-            const Ico = PHASE_ICON[ph.phase]
-            const col = `var(${ph.colorVar})`
-            const stamp = stampOf(ph.phase)
-            return (
-              <button key={ph.phase} type="button" className="pd-ph" disabled={cur}
-                aria-current={cur ? 'step' : undefined}
-                onClick={() => setConfirmTo(ph.phase)}
-                title={cur ? 'Fase actual' : done ? `Volver a ${ph.label}` : `Pasar a ${ph.label}`}>
-                <span className="bar">
-                  <span style={{ background: col, opacity: done ? 0.4 : 1, transform: `scaleX(${done || cur ? 1 : 0})` }} />
-                </span>
-                <span className="nm" style={{ color: cur ? 'var(--text)' : 'var(--text-dim)' }}>
-                  <Ico width={14} height={14} style={{ color: done || cur ? col : 'var(--text-faint)', flex: 'none' }} />
-                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{ph.label}</span>
-                  {done && <I2.check width={12} height={12} style={{ color: 'var(--green)', flex: 'none' }} />}
-                </span>
-                <span className="dt">{stamp ? fmtDate(stamp) : 'sin fecha'}</span>
-                <span className="ct" style={{ color: cur ? 'var(--text)' : 'var(--text-dim)' }}>
-                  {cur ? info.countdownLabel : done ? 'Cumplida' : 'Pendiente'}
-                </span>
-              </button>
-            )
-          })}
         </div>
-
-        {sug && (
-          <div className="pd-note" style={{ background: 'var(--accent-soft)', marginTop: 16 }}>
-            <span className="ic" style={{ background: 'var(--card)', color: 'var(--accent)' }}><I2.sparkle width={15} height={15} /></span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <b>Parece que toca cambiar de fase.</b> {sug.reason} Nada se mueve hasta que lo confirmes.
-            </div>
-            <button className="pd-cta" style={{ flex: 'none' }} onClick={() => setConfirmTo(sug.to)}>
-              Pasar a {phaseMeta(sug.to).label} <i><I2.arrowRight width={13} height={13} /></i>
-            </button>
+      ) : notice.shouldNotify ? (
+        <div className="pd-note" style={{ background: 'var(--yellow-soft)' }}>
+          <span className="ic" style={{ background: 'var(--card)', color: 'var(--yellow)' }}><I2.bell width={15} height={15} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <b>Falta avisarle el cobro a {clientLabel}.</b>{' '}
+            {notice.daysUntil === 0 ? 'Se cobra hoy' : `Se cobra en ${notice.daysUntil} ${notice.daysUntil === 1 ? 'día' : 'días'}`} ({fmtDate(notice.dueAt)}).
+            El mail ya está escrito, pero se manda a mano.
           </div>
-        )}
-
-        {lc.phase === 3 && (
-          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div className="pd-mini">
-              {lc.maintenanceAmount != null
-                ? <div><span className="k">Mantenimiento</span><span className="v">{money(lc.maintenanceAmount)}<span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-faint)' }}> /mes</span></span></div>
-                : <button type="button" onClick={onEdit} title="Cargar el monto"><span className="k">Mantenimiento</span><span className="v" style={{ color: 'var(--text-faint)' }}>Definir</span></button>}
-              {lc.billingDay
-                ? <div><span className="k">Día de cobro</span><span className="v">{lc.billingDay} de cada mes</span></div>
-                : <button type="button" onClick={onEdit} title="Cargar el día de cobro"><span className="k">Día de cobro</span><span className="v" style={{ color: 'var(--text-faint)' }}>Definir</span></button>}
-              <div>
-                <span className="k">Próximo cobro</span>
-                <span className="v" style={{ color: notice.dueAt ? 'var(--blue)' : 'var(--text-faint)' }}>{notice.dueAt ? fmtDate(notice.dueAt) : '—'}</span>
-              </div>
-            </div>
-
-            {notice.shouldNotify ? (
-              <div className="pd-note" style={{ background: 'var(--yellow-soft)' }}>
-                <span className="ic" style={{ background: 'var(--card)', color: 'var(--yellow)' }}><I2.bell width={15} height={15} /></span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <b>Falta avisarle el cobro a {clientLabel}.</b>{' '}
-                  {notice.daysUntil === 0 ? 'Se cobra hoy' : `Se cobra en ${notice.daysUntil} ${notice.daysUntil === 1 ? 'día' : 'días'}`} ({fmtDate(notice.dueAt)}).
-                  El mail ya está escrito, pero se manda a mano.
-                </div>
-                <button className="pd-cta" style={{ flex: 'none' }} onClick={() => setMailOpen(true)}>
-                  Ver el mail <i><I2.mail width={13} height={13} /></i>
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12, color: 'var(--text-faint)' }}>
-                <span style={{ flex: 1, minWidth: 160, lineHeight: 1.5 }}>
-                  {sentThisCycle
-                    ? <>Ya avisaste este cobro el <span className="mono">{fmtDate(lc.lastNoticeSentAt)}</span>.</>
-                    : notice.dueAt
-                      ? <>Cuando falten 7 días para el cobro te avisamos acá para mandar el mail.</>
-                      : <>Cargá el día de cobro para que aparezca el aviso.</>}
-                </span>
-                <button className="pd-btn" onClick={() => setMailOpen(true)} disabled={!notice.dueAt}
-                  style={!notice.dueAt ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>
-                  <I2.mail width={13} height={13} /> Ver el mail
-                </button>
-              </div>
-            )}
+          <button className="pd-cta" style={{ flex: 'none' }} onClick={() => setMailOpen(true)}>
+            Ver el mail <i><I2.mail width={13} height={13} /></i>
+          </button>
+        </div>
+      ) : (
+        <div className="pd-note" style={{ background: 'var(--bg-elevated)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <span className="ic" style={{ background: 'var(--card)', color: 'var(--green)' }}><I2.check width={15} height={15} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            Ya avisaste este cobro el <span className="mono">{fmtDate(lc.lastNoticeSentAt)}</span>. Se cobra el {fmtDate(notice.dueAt)}.
           </div>
-        )}
-      </div>
+          <button className="pd-btn" style={{ flex: 'none' }} onClick={() => setMailOpen(true)}>
+            <I2.mail width={13} height={13} /> Ver el mail
+          </button>
+        </div>
+      )}
 
-      <PhaseConfirmModal open={confirmTo != null} to={confirmTo} project={project}
-        onClose={() => setConfirmTo(null)} onConfirm={apply} />
       <MaintenanceMailModal open={mailOpen} onClose={() => setMailOpen(false)} project={project} client={client}
         dueAt={notice.dueAt} amount={lc.maintenanceAmount} replyTo={replyTo}
         sentAt={sentThisCycle ? lc.lastNoticeSentAt : null} onMarkSent={markSent} onUndo={undoSent} />
@@ -5868,38 +5873,83 @@ function LifecyclePanel({ project, client, planProgress, patch, onEdit, logActiv
   )
 }
 
-/* Chip de enlace externo. Sin URL no se disfraza de enlace: se ve hueco,
-   punteado, dice qué falta y su click lleva a cargarlo. Nada de botones muertos. */
-function ExtLink({ Ico, label, url, empty = 'sin cargar', onEmpty, tone }) {
-  if (!url) {
-    return (
-      <button type="button" className="pd-lnk empty" onClick={onEmpty} title={`Cargar el enlace de ${label}`}>
-        <Ico width={14} height={14} />{label}
-        <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.85 }}>· {empty}</span>
-        <I2.plus width={12} height={12} />
-      </button>
-    )
-  }
+/* Menú ENLACES — todo lo que SALE de la app (abre otra pestaña).
+   Antes eran cinco chips sueltos ocupando una franja entera del encabezado; ahora
+   es un solo disparador con el contador de los que están cargados. Un enlace sin
+   URL no se disfraza de enlace: se ve hueco, dice qué falta y su click lleva a
+   cargarlo. Nada de botones muertos. */
+function LinksMenu({ items }) {
+  const loaded = items.filter((i) => i.url).length
+  const { open, pos, btnRef, toggle, setOpen } = useAnchoredMenu(232, items.length * 38 + 12)
   return (
-    <a className="pd-lnk" href={url} target="_blank" rel="noreferrer" title={`Abrir ${label} en otra pestaña`}
-      style={tone ? { color: tone } : undefined}>
-      <Ico width={14} height={14} />{label}
-      <span className="go"><I2.ext width={12} height={12} /></span>
-    </a>
+    <span style={{ display: 'inline-block' }}>
+      <button ref={btnRef} type="button" className="pd-btn pdh-trig" onClick={toggle}
+        aria-haspopup="menu" aria-expanded={open}
+        title={loaded ? `${loaded} de ${items.length} enlaces cargados` : 'Ningún enlace cargado todavía'}>
+        <span className="pdh-ico"><I2.link width={14} height={14} /></span>
+        Enlaces
+        {loaded > 0 && <span className="n">{loaded}</span>}
+        <I2.chevD className="pdh-chev" width={12} height={12} />
+      </button>
+      {open && pos && (
+        <MenuSurface pos={pos} onClose={() => setOpen(false)} label="Enlaces del proyecto">
+          {items.map((it) => {
+            const Ico = it.Ico
+            return it.url ? (
+              <a key={it.label} className="row-hover pdh-item" role="menuitem" href={it.url} target="_blank" rel="noreferrer"
+                onClick={() => setOpen(false)} title={`Abrir ${it.label} en otra pestaña`}>
+                <span className="ic"><Ico width={14} height={14} /></span>
+                <span className="lb">{it.label}</span>
+                <I2.ext className="go" width={12} height={12} />
+              </a>
+            ) : (
+              <button key={it.label} type="button" className="row-hover pdh-item empty" role="menuitem"
+                onClick={() => { setOpen(false); it.onEmpty && it.onEmpty() }} title={`Cargar el enlace de ${it.label}`}>
+                <span className="ic"><Ico width={14} height={14} /></span>
+                <span className="lb">{it.label}</span>
+                <span className="miss">sin cargar</span>
+              </button>
+            )
+          })}
+        </MenuSurface>
+      )}
+    </span>
   )
 }
 
-/* Botón de panel interno (abre un modal). Lleva su contador cuando hay algo
-   cargado, para no tener que abrirlo solo para ver si está vacío.
-   El relleno de color se reserva para lo que PIDE algo (cuentas incompletas):
-   si todos los chips gritan, ninguno se escucha. */
-function PanelBtn({ Ico, label, onClick, count, tone, dot, title }) {
+/* Menú PANELES — lo que abre un modal acá adentro. Cada ítem lleva su contador
+   para no tener que abrirlo solo para ver si está vacío. El color se reserva
+   para lo que PIDE algo (cuentas incompletas): si todos gritan, no se oye ninguno. */
+function PanelsMenu({ items }) {
+  const attn = items.some((i) => i.tone === 'accent')
+  const { open, pos, btnRef, toggle, setOpen } = useAnchoredMenu(232, items.length * 38 + 12)
   return (
-    <button type="button" className="pd-btn" onClick={onClick} title={title || label} data-tone={tone || undefined}>
-      <Ico width={14} height={14} />{label}
-      {dot ? <span className="pd-dotmark" style={{ background: dot }} /> : null}
-      {count ? <span className="n">{count}</span> : null}
-    </button>
+    <span style={{ display: 'inline-block' }}>
+      <button ref={btnRef} type="button" className="pd-btn pdh-trig" onClick={toggle}
+        aria-haspopup="menu" aria-expanded={open}
+        title={attn ? 'Paneles del proyecto — hay cuentas pendientes' : 'Paneles del proyecto'}>
+        <span className="pdh-ico"><I2.layers width={14} height={14} /></span>
+        Paneles
+        {attn && <span className="pdh-attn" aria-hidden="true" />}
+        <I2.chevD className="pdh-chev" width={12} height={12} />
+      </button>
+      {open && pos && (
+        <MenuSurface pos={pos} onClose={() => setOpen(false)} label="Paneles del proyecto">
+          {items.map((it) => {
+            const Ico = it.Ico
+            return (
+              <button key={it.label} type="button" className="row-hover pdh-item" role="menuitem"
+                onClick={() => { setOpen(false); it.onClick() }} title={it.title || it.label}>
+                <span className="ic"><Ico width={14} height={14} /></span>
+                <span className="lb">{it.label}</span>
+                {it.dot ? <span className="ok" style={{ background: it.dot }} aria-hidden="true" /> : null}
+                {it.count ? <span className="n" data-tone={it.tone || undefined}>{it.count}</span> : null}
+              </button>
+            )
+          })}
+        </MenuSurface>
+      )}
+    </span>
   )
 }
 
@@ -5911,7 +5961,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [kickoffOpen, setKickoffOpen] = useState(true)
   const [editKickoff, setEditKickoff] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-  const [pendingPrompt, setPendingPrompt] = useState(false)
+  const [stageAsk, setStageAsk] = useState(null)   // etapa a la que se retrocede, pendiente de confirmar
   const [scopeOpen, setScopeOpen] = useState(false)
   const [driveOpen, setDriveOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
@@ -5945,6 +5995,16 @@ function ProjectDetail({ projectId, onBack }) {
     out.lifecycle = lifecycle
     return out
   })
+  /* ETAPA — mover la etapa mueve la fase del ciclo de vida y sella su fecha, que
+     es de donde sale el cobro. Por eso el retroceso pide confirmación y avanzar no. */
+  const stage = projectStage(project)
+  const commitStage = (to) => {
+    patch((p) => ({ ...p, ...applyStage(p, to) }))
+    if (logActivity) logActivity({ type: 'stage', text: `pasó ${project.name} a ${stageMeta(to).label}` })
+    setStageAsk(null)
+  }
+  const setStage = (to) => (stageIsRegression(project, to) ? setStageAsk(to) : commitStage(to))
+
   // tareas del equipo (vienen de la sección Tareas, filtradas por proyecto) y tareas/dependencias del cliente
   const userOf = (id) => (data.team || []).find((u) => u.id === id)
   const teamTasks = (data.tasks || []).filter((t) => t.projectId === projectId)
@@ -5995,14 +6055,33 @@ function ProjectDetail({ projectId, onBack }) {
             <div className="pd-meta">
               {project.kind === 'interno' ? '◆ Interno · Insights' : (client?.company || 'Sin cliente')}
               {client?.name && <><i>·</i>{client.name}</>}
-              {project.stack && <><i>·</i>{project.stack}</>}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <StatusMenu status={project.status} onChange={(s) => { patch((p) => ({ ...p, status: s })); if (s === 'pending') setPendingPrompt(true) }} />
-            {project.status === 'pending' && (project.expectedStartDate
-              ? <span onClick={() => setPendingPrompt(true)} style={{ cursor: 'pointer' }}><PendingDateChip date={project.expectedStartDate} /></span>
-              : <button className="tag click" onClick={() => setPendingPrompt(true)} style={{ color: 'var(--blue)', background: 'transparent', borderColor: 'var(--blue)' }}><I2.calendar width={12} height={12} /> Definir ingreso</button>)}
+          {/* CONSOLA — cuatro controles, un solo renglón: lo que sale de la app,
+              lo que abre un panel acá adentro, en qué etapa está y la única
+              acción destacada. Antes esto eran diez chips en dos franjas. */}
+          <div className="pdh-cluster">
+            <LinksMenu items={[
+              { Ico: I2.ext, label: 'Testing', url: testingUrl, onEmpty: () => setEditOpen(true) },
+              { Ico: I2.rocket, label: 'Producción', url: project.productionUrl, onEmpty: () => setEditOpen(true) },
+              { Ico: I2.folder, label: 'Drive', url: project.driveUrl, onEmpty: () => setDriveOpen(true) },
+              { Ico: I2.calendar, label: 'Plan público', url: planUrl, onEmpty: () => setPlanOpen(true) },
+              { Ico: I2.gantt, label: 'Progreso', url: planDashUrl, onEmpty: () => setPlanOpen(true) },
+            ]} />
+            <PanelsMenu items={[
+              { Ico: I2.pdf, label: 'Alcance', count: scopeN, onClick: () => setScopeOpen(true), title: 'Propuesta, alcance firmado y links de venta' },
+              { Ico: I2.key, label: 'Cuentas', count: accounts.length ? `${accDone}/${accounts.length}` : 0,
+                tone: accounts.length && accDone < accounts.length ? 'accent' : undefined,
+                onClick: () => setAccountsOpen(true),
+                title: accounts.length ? `${accDone} de ${accounts.length} cuentas listas` : 'Cuentas y accesos que necesita el proyecto' },
+              { Ico: I2.lock, label: 'Datos', count: vaultN, onClick: () => setVaultOpen(true), title: 'Datos y credenciales del cliente' },
+              { Ico: I2.eye, label: 'Compartir', dot: project.shareEnabled ? 'var(--green)' : undefined, onClick: () => setShareOpen(true),
+                title: project.shareEnabled ? 'El cliente tiene acceso a la vista compartida' : 'Compartir la vista con el cliente' },
+              { Ico: I2.calendar, label: 'Plan', onClick: () => setPlanOpen(true), title: linkedPlan ? 'Plan asociado — cambiar o publicar' : 'Asociar un plan de ejecución' },
+            ]} />
+            <span className="pdh-sep" aria-hidden="true" />
+            <StageMenu variant="header" stage={stage} onChange={setStage} />
+            <span className="pdh-sep" aria-hidden="true" />
             <button className="pd-cta" onClick={() => setEditOpen(true)}>
               Editar proyecto <i><I2.pencil width={13} height={13} /></i>
             </button>
@@ -6019,38 +6098,6 @@ function ProjectDetail({ projectId, onBack }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <span className="pd-eyebrow">Etiquetas</span>
             <ProjectTags tags={project.tags} onChange={(tags) => patch((p) => ({ ...p, tags }))} />
-          </div>
-        </div>
-
-        {/* CONSOLA DE ACCIONES — dos grupos, no nueve botones iguales:
-            arriba lo que SALE de la app, abajo lo que abre un panel acá adentro. */}
-        <div className="pd-panel pd-console" style={{ marginTop: 18 }}>
-          <span className="pd-eyebrow">Enlaces</span>
-          <div className="pd-row">
-            <ExtLink Ico={I2.ext} label="Testing" url={testingUrl} onEmpty={() => setEditOpen(true)} />
-            <ExtLink Ico={I2.rocket} label="Producción" url={project.productionUrl} onEmpty={() => setEditOpen(true)} />
-            <ExtLink Ico={I2.folder} label="Drive" url={project.driveUrl} onEmpty={() => setDriveOpen(true)} />
-            {planUrl && <ExtLink Ico={I2.calendar} label="Plan público" url={planUrl} />}
-            {planDashUrl && <ExtLink Ico={I2.gantt} label="Progreso" url={planDashUrl} />}
-          </div>
-
-          <div className="pd-rule" />
-
-          <span className="pd-eyebrow">Paneles</span>
-          <div className="pd-row">
-            <PanelBtn Ico={I2.pdf} label="Alcance" count={scopeN}
-              onClick={() => setScopeOpen(true)} title="Propuesta, alcance firmado y links de venta" />
-            <PanelBtn Ico={I2.key} label="Cuentas" count={accounts.length ? `${accDone}/${accounts.length}` : 0}
-              tone={accounts.length && accDone < accounts.length ? 'accent' : undefined}
-              onClick={() => setAccountsOpen(true)}
-              title={accounts.length ? `${accDone} de ${accounts.length} cuentas listas` : 'Cuentas y accesos que necesita el proyecto (Supabase, GitHub, Vercel…)'} />
-            <PanelBtn Ico={I2.lock} label="Datos" count={vaultN}
-              onClick={() => setVaultOpen(true)} title="Datos y credenciales del cliente (correos, contraseñas, dominios, hosting…)" />
-            <PanelBtn Ico={I2.eye} label="Compartir" dot={project.shareEnabled ? 'var(--green)' : undefined}
-              onClick={() => setShareOpen(true)}
-              title={project.shareEnabled ? 'El cliente tiene acceso a la vista compartida' : 'Compartir la vista con el cliente (link + contraseña)'} />
-            <PanelBtn Ico={I2.calendar} label="Plan"
-              onClick={() => setPlanOpen(true)} title={linkedPlan ? 'Plan asociado — cambiar o publicar' : 'Asociar un plan de ejecución'} />
           </div>
         </div>
 
@@ -6077,9 +6124,8 @@ function ProjectDetail({ projectId, onBack }) {
           </motion.button>
         </motion.div>
 
-        {/* CICLO DE VIDA — en qué fase está y cómo se mueve */}
-        <LifecyclePanel project={project} client={client} planProgress={prog} patch={patch}
-          onEdit={() => setEditOpen(true)} logActivity={logActivity} replyTo={me?.email || ''} />
+        {/* AVISO DE COBRO — solo aparece cuando hay uno a la vista */}
+        <BillingAlert project={project} client={client} patch={patch} replyTo={me?.email || ''} onEdit={() => setEditOpen(true)} />
 
         {/* AVANCE DEL PLAN — acordeón de semanas, tachado + % en vivo para el
             cliente. Tachar una tarea marca "último avance" del proyecto. */}
@@ -6180,7 +6226,8 @@ function ProjectDetail({ projectId, onBack }) {
       </Modal>
 
       <EditProjectModal open={editOpen} project={project} clients={data.clients} onClose={() => setEditOpen(false)} onSave={saveProject} onDelete={(id) => { projectStore.remove(id); onBack() }} />
-      <PendingDatePrompt open={pendingPrompt} project={project} onClose={() => setPendingPrompt(false)} onSave={(d) => { patch((p) => ({ ...p, expectedStartDate: d })); setPendingPrompt(false) }} />
+      <StageConfirmModal open={!!stageAsk} to={stageAsk} project={project}
+        onClose={() => setStageAsk(null)} onConfirm={commitStage} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
       <AccountsModal open={accountsOpen} project={project} onClose={() => setAccountsOpen(false)} patch={patch} />
       <VaultModal open={vaultOpen} project={project} onClose={() => setVaultOpen(false)} patch={patch} />
@@ -6422,7 +6469,7 @@ function buildSystemPrompt(project, client, plan) {
 KICK-OFF:
 ${project.kickoff}
 
-STACK: ${project.stack}
+ETAPA: ${stageMeta(projectStage(project)).label}
 AVANCE: ${prog.pct}% · ${prog.done}/${prog.total} tareas del plan (equipo ${prog.equipoDone}/${prog.equipoTotal} · cliente ${prog.clienteDone}/${prog.clienteTotal})
 
 PLAN (${plan?.title || 'sin plan'}) — semanas y tareas:
@@ -6554,8 +6601,7 @@ function buildGlobalSystemPrompt(data, plans) {
     const pa = (p.pendingAgency || []).map((x) => `${x.title} [${x.priority}]`).join('; ') || 'ninguno'
     const pc = (p.pendingClient || []).map((x) => `${x.title} [${x.priority}]`).join('; ') || 'ninguno'
     const risks = (p.risks || []).map((r) => `${r.description} (${r.severity})`).join('; ') || 'ninguno'
-    return `### ${p.name} — ${clientName(p.clientId)} · estado ${projStatusMeta(p.status).label} · avance ${prog.pct}% (${prog.done}/${prog.total} tareas, cliente ${prog.clienteDone}/${prog.clienteTotal})
-Stack: ${p.stack || '—'}
+    return `### ${p.name} — ${clientName(p.clientId)} · etapa ${stageMeta(projectStage(p)).label} · avance ${prog.pct}% (${prog.done}/${prog.total} tareas, cliente ${prog.clienteDone}/${prog.clienteTotal})
 Kick-off: ${p.kickoff || '—'}
 Plan (${plan?.title || 'sin plan asociado'}):
 ${planPromptText(plan, '    ')}
@@ -7758,7 +7804,9 @@ function AppShell({ session, onLogout }) {
 
   // pop-up de inicio para el PM con el estado de seguimiento de sus proyectos
   const [pmAlertSeen, setPmAlertSeen] = useState(false)
-  const pmProjects = projectStore.items.filter((p) => myId && p.assignments?.pm?.userId === myId && p.status === 'active')
+  // Solo los que están EN OBRA (desarrollo y prueba gratis): a un proyecto que
+  // ya pasó a un plan pago no se le reclama avance semanal.
+  const pmProjects = projectStore.items.filter((p) => myId && p.assignments?.pm?.userId === myId && !isPaidStage(projectStage(p)))
 
   // El editor de video vive en un iframe cuyo estado (clips, cortes, subtítulos,
   // transcripción Whisper) existe solo en la memoria de ese documento: desmontarlo
@@ -7875,7 +7923,7 @@ function ClientView({ shareId }) {
           <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>Seguimiento en tiempo real · solo lectura</span>
         </div>
         <h1 style={{ fontSize: 30 }}>{p.name}</h1>
-        <div style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 22 }}>{p.client}{p.stack ? ` · ${p.stack}` : ''}</div>
+        <div style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 22 }}>{p.client}</div>
 
         {kpis && (
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
@@ -7994,4 +8042,6 @@ export default function InsightsApp() {
   if (cloudEnabled && !session) return <Login />
   return <AppShell session={session} onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
 }
+
+
 
