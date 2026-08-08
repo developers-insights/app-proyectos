@@ -105,3 +105,45 @@ El `PATCH …/functions/{slug}` con `{"body": …}` sube el código VACÍO y dej
 3. Correr `docs/migrations/2026-08-01-drop-sprints.sql` cuando la UI esté validada en producción.
 4. Envío real del mail de mantenimiento (falta proveedor: Resend + dominio verificado + cron).
 5. Valentín Toledo quedó sin rol (no tiene email cargado) → ve todos los proyectos.
+
+---
+
+# 2026-08-07 · La ETAPA reemplaza al estado; la consola pasa al encabezado
+
+## Qué cambió
+- **`project.stage`** (`src/lib/stages.js`) es el único eje de clasificación: Desarrollo · Free Maint. ·
+  Starter · Kaizen · Scale. Reemplaza a `project.status` (activo/pendiente/pausado/entregado) y al
+  stepper visual "Ciclo de vida" del detalle. La etapa **manda** sobre `lifecycle.phase`
+  (desarrollo→1, free→2, planes pagos→3) vía `applyStage()` → `advancePhase()`, así que el cobro
+  recurrente y su aviso siguen intactos. Los proyectos viejos derivan su etapa de la fase.
+- **Retroceder de etapa borra fechas selladas** → confirmación obligatoria en los 3 puntos donde se
+  cambia (card, tabla, detalle). Avanzar es directo. Entre planes pagos no se reinicia nada.
+- **Encabezado del detalle**: las filas ENLACES y PANELES se volvieron dos desplegables. Los cuatro
+  controles (Enlaces · Paneles · Etapa · Editar proyecto) son un cluster con jerarquía
+  (`.pdh-*`, neutro → color de estado → CTA). Token nuevo `--violet` para Scale.
+- **Se fue**: el stack de tecnologías de toda la UI, la fecha estimada de ingreso (existía solo para
+  "pendiente") y el CSS muerto de la consola vieja y el stepper.
+
+## Bugs que la revisión encontró y se corrigieron antes del deploy
+1. Sin la sección de ciclo de vida, un proyecto en plan pago **sin monto** mandaba el mail diciendo
+   "USD 0" (`Number(null) || 0`). Ahora el mail no se arma sin monto y hay una alerta que lo pide.
+2. `trackInfo` perdió el corte de "entregado" → los proyectos en mantenimiento marcaban rojo para
+   siempre. Ahora lo corta `isPaidStage()`, que además los saca del pop-up del PM.
+3. "Proyectos activos" en Clientes contaba todos; se corrigió la etiqueta y el texto del borrado.
+4. `planAgent.js` seguía leyendo `project.status`/`stack` → ahora manda la etapa.
+5. `role="option"` usaba `aria-checked` en vez de `aria-selected`, y los encabezados de grupo colgaban
+   sueltos del listbox.
+
+## Verificado
+Build verde. En el browser (harness temporal, dark + light, 1280 y 375 px): 5 pestañas con sus
+contadores, los 3 menús con su posición y contenido, el cambio de etapa tiñendo el control, la
+confirmación de retroceso sin aplicar el cambio, y los 3 estados del aviso de cobro (falta cargar /
+falta avisar / ya avisado). Sin overflow horizontal; alturas táctiles 38-44 px en mobile.
+Prod: bundle servido por Render contiene "Free Maint.", "Kaizen" y la alerta de cobro; "Ciclo de vida"
+ya no aparece. Edge Function `onboarding-signup` redeployada (v2) creando proyectos con `stage`.
+
+## PENDIENTE
+- El workflow `Deploy a Render` sigue fallando con **401**: el secret `RENDER_API_KEY` está vencido o
+  mal cargado en `developers-insights/app-proyectos`. El deploy igual sale por el autoDeploy propio de
+  Render, pero el workflow no sirve de nada hasta arreglar el secret.
+- Nadie miró la app con ojos humanos todavía (el Browser pane no compone frames; se midió el DOM).
