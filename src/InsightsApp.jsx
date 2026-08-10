@@ -797,6 +797,7 @@ function seedClients() {
     { id: 'c8', name: 'José Anaya', company: 'MCS Cleaning Marketplace', email: 'jose@mcscleaning.com', phone: '+1 305 555 0108', onboarding: { businessDescription: 'Marketplace de servicios de limpieza del hogar en EE.UU. con trabajadores independientes ("asociados").', goals: 'Plataforma para cotizar/contratar online, gestión de asociados por zona y control de comisiones.', existingTech: 'Operación manual', approvedBudget: 0, notes: 'Lleva 15 años con la idea. Cobro automático Stripe con split de comisión.' } },
     { id: 'c9', name: 'Marco', company: 'Kintsugi Roadside', email: 'marco@kintsugiroadside.com', phone: '+1 786 555 0109', onboarding: { businessDescription: 'Servicio de emergencias automotrices que conecta clientes con técnicos en campo.', goals: 'Plataforma estilo Uber para emergencias: solicitud, asignación, tracking GPS, cobro Zelle.', existingTech: 'Sin sistema centralizado', approvedBudget: 8000, notes: 'Incluye landing premium, apps cliente/técnico, panel admin y B2B/flotas.' } },
     { id: 'c10', name: 'Agustín', company: 'MMD Jewelry', email: 'agustin@mmdjewelry.com', phone: '+54 11 5555 0110', onboarding: { businessDescription: 'Joyería con ~50 piezas para vender internacionalmente, hoy gestionadas en Excel.', goals: 'Sitio e-commerce headless de diseño editorial (Next.js) conectado a Shopify.', existingTech: 'Excel', approvedBudget: 0, notes: 'Estética tipo Concio Studio. Paleta: blanco roto, dorado arena, rosa palo, vino suave, verde salvia.' } },
+    { id: 'c11', name: 'Andry', company: 'YExamPrep', email: '', phone: '', onboarding: { businessDescription: 'App para contratistas (preparación de exámenes de licencia).', goals: '', existingTech: '', approvedBudget: 0, notes: '' } },
   ]
 }
 
@@ -1002,6 +1003,14 @@ function seedProjects() {
       kickoff: 'Proyecto planificado para el próximo mes — aún no iniciado. Tenerlo en cuenta para el arranque del próximo ciclo de cartera.',
       paidAmount: 0, totalAmount: 0, progress: 0, lastDeployDate: null,
       tags: [TAG_NEXT()],
+      pendingAgency: [], pendingClient: [], risks: [], chats: [],
+    },
+    {
+      id: 'p12', clientId: 'c11', name: 'YExamPrep', stage: 'finalizado',
+      productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
+      githubRepo: '',
+      kickoff: 'App para contratistas (preparación de exámenes de licencia). Desarrollo terminado; no se vendió mantenimiento — candidato a ofrecerle un plan.',
+      paidAmount: 0, totalAmount: 0, progress: 100, lastDeployDate: null,
       pendingAgency: [], pendingClient: [], risks: [], chats: [],
     },
   ].map((p) => ({ ...p, assignments: p.assignments || DEMO_ASSIGN[p.id] || { pm: null, dev: null }, tags: p.tags || [] }))
@@ -3052,7 +3061,10 @@ function phaseCounter(info) {
 function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign, onScope, onLinks }) {
   const info = phaseInfo(p)
   const adv = lastAdvanceInfo(p)
-  const counter = phaseCounter(info)
+  const sMeta = stageMeta(projectStage(p))
+  // En estados terminales (finalizado/pausado/cancelado) no hay contador de fase
+  // ni seguimiento de avance: el desarrollo dejó de correr.
+  const counter = sMeta.terminal ? { n: null, unit: sMeta.label, label: '' } : phaseCounter(info)
   const show = { scope: true, testing: true, whatsapp: true, ...(p.cardActions || {}) }
   const testingUrl = p.testingUrl || p.productionUrl || ''
   const waUrl = p.whatsappUrl || ''
@@ -3081,16 +3093,20 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign,
       </div>
 
       <div className="pj-line">
-        <span title={info.countdownLabel} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
+        <span title={sMeta.terminal ? sMeta.hint : info.countdownLabel} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
           {counter.n != null && <b style={{ color: `var(${info.colorVar})` }}>{counter.n}</b>}
-          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: sMeta.terminal ? stageColor(sMeta.key) : undefined, fontWeight: sMeta.terminal ? 600 : undefined }}>
             {counter.unit}{counter.label ? ` · ${counter.label}` : ''}
           </span>
         </span>
-        <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4, flex: 'none' }}>
-          {!adv.none && 'avance'}
-          <b style={{ fontSize: 11.5, color: adv.stale ? 'var(--yellow)' : 'var(--text-dim)' }}>{adv.text}</b>
-        </span>
+        {sMeta.offerMaintenance ? (
+          <span className="tag" style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--accent)', background: 'var(--accent-soft, rgba(229,115,0,.12))', borderColor: 'var(--accent-line, rgba(229,115,0,.35))', fontSize: 10.5 }}>✦ Ofrecer mantenimiento</span>
+        ) : sMeta.terminal ? <span /> : (
+          <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4, flex: 'none' }}>
+            {!adv.none && 'avance'}
+            <b style={{ fontSize: 11.5, color: adv.stale ? 'var(--yellow)' : 'var(--text-dim)' }}>{adv.text}</b>
+          </span>
+        )}
       </div>
 
       <div className="pj-foot">
@@ -7812,7 +7828,7 @@ function AppShell({ session, onLogout }) {
   const [pmAlertSeen, setPmAlertSeen] = useState(false)
   // Solo los que están EN OBRA (desarrollo y prueba gratis): a un proyecto que
   // ya pasó a un plan pago no se le reclama avance semanal.
-  const pmProjects = projectStore.items.filter((p) => myId && p.assignments?.pm?.userId === myId && !isPaidStage(projectStage(p)))
+  const pmProjects = projectStore.items.filter((p) => myId && p.assignments?.pm?.userId === myId && !isPaidStage(projectStage(p)) && !stageMeta(projectStage(p)).terminal)
 
   // El editor de video vive en un iframe cuyo estado (clips, cortes, subtítulos,
   // transcripción Whisper) existe solo en la memoria de ese documento: desmontarlo

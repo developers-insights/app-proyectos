@@ -15,6 +15,7 @@
  */
 
 import { planBoardSummary, taskEstado, taskResponsable } from '../plan/planModel.js'
+import { projectStage, isDevelopmentDone } from './stages.js'
 
 /** Entero 0..100, tolerante a basura. */
 function clampPct(n) {
@@ -42,6 +43,9 @@ function allTasks(plan) {
  * se lee como "no se hizo nada", que es peor que mostrar el número viejo.
  */
 export function projectProgress(project, plan) {
+  // Si el desarrollo ya terminó (pasó a mantenimiento o quedó finalizado), el
+  // avance es 100% por definición: la construcción se completó.
+  if (isDevelopmentDone(projectStage(project))) return 100
   const summary = planBoardSummary(plan)
   if (!plan || summary.total === 0) return clampPct(project && project.progress)
   return clampPct(summary.pctInsights)

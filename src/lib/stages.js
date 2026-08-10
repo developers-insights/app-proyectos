@@ -28,12 +28,21 @@ export const PROJECT_STAGES = [
   { key: 'starter',    label: 'Starter',     group: 'mantenimiento', phase: 3, colorVar: '--green',  hint: 'Plan mensual' },
   { key: 'kaizen',     label: 'Kaizen',      group: 'mantenimiento', phase: 3, colorVar: '--yellow', hint: 'Plan mensual' },
   { key: 'scale',      label: 'Scale',       group: 'mantenimiento', phase: 3, colorVar: '--violet', hint: 'Plan mensual' },
+  // Estados TERMINALES (no tocan el ciclo de vida ni el cobro): el desarrollo ya no
+  // corre. `terminal:true` los saca de los recordatorios y del contador de fase.
+  { key: 'finalizado', label: 'Finalizado',  group: 'cerrado', phase: 9, colorVar: '--green',      hint: 'Desarrollo terminado, sin mantenimiento vendido', terminal: true, offerMaintenance: true },
+  { key: 'pausado',    label: 'Pausado',     group: 'cerrado', phase: 9, colorVar: '--yellow',     hint: 'Pausado por el cliente', terminal: true },
+  { key: 'cancelado',  label: 'Cancelado',   group: 'cerrado', phase: 9, colorVar: '--red',        hint: 'Cancelado por el cliente o por nosotros', terminal: true },
 ]
 
 export const STAGE_GROUPS = [
   { key: 'obra',          label: 'En obra' },
   { key: 'mantenimiento', label: 'Mantenimiento' },
+  { key: 'cerrado',       label: 'Cerrados' },
 ]
+
+/** ¿La etapa implica que el desarrollo ya terminó? (mantenimiento o finalizado → 100%). */
+export const isDevelopmentDone = (key) => ['free', 'starter', 'kaizen', 'scale', 'finalizado'].includes(key)
 
 /** Metadatos de una etapa por clave. Cualquier cosa rara cae en Desarrollo. */
 export const stageMeta = (key) => PROJECT_STAGES.find((s) => s.key === key) || PROJECT_STAGES[0]
@@ -68,6 +77,9 @@ export const isPaidStage = (key) => stageMeta(key).phase === 3
  */
 export function applyStage(project, key, now = new Date()) {
   const meta = stageMeta(key)
+  // Estados terminales (finalizado/pausado/cancelado): solo marcan la etapa; NO
+  // tocan el ciclo de vida ni sellan fechas de cobro. El desarrollo dejó de correr.
+  if (meta.terminal) return { stage: meta.key }
   return { stage: meta.key, lifecycle: advancePhase(project, meta.phase, now) }
 }
 
