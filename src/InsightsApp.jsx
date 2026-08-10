@@ -1007,6 +1007,7 @@ function seedProjects() {
     },
     {
       id: 'p12', clientId: 'c11', name: 'YExamPrep', stage: 'finalizado',
+      assignments: { pm: { userId: 'u7', roleLabel: 'Project Manager' }, dev: { userId: 'u2', roleLabel: 'Developer' } },
       productionUrl: '', devUrl: '', testingUrl: '', whatsappUrl: '',
       githubRepo: '',
       kickoff: 'App para contratistas (preparación de exámenes de licencia). Desarrollo terminado; no se vendió mantenimiento — candidato a ofrecerle un plan.',
