@@ -804,7 +804,7 @@ function seedClients() {
 /* miembros dados de baja (se eliminan del equipo aunque estén guardados en la data) */
 const REMOVED_MEMBER_IDS = ['u4']   // Nicolas Arditi
 /* email de login (Supabase) por miembro — para auto-vincular al iniciar sesión sin duplicar */
-const SEED_EMAILS = { u1: 'federicog@insightsapps.tech', u2: 'lisandropiva@insightsapps.tech', u3: 'manuelnavarro@insightsapps.tech', u5: 'juanp@insightsapps.tech', u7: 'nachocachaza@insightsapps.tech' }
+const SEED_EMAILS = { u1: 'federicog@insightsapps.tech', u2: 'lisandropiva@insightsapps.tech', u3: 'manuelnavarro@insightsapps.tech', u5: 'juanp@insightsapps.tech', u7: 'nachocachaza@insightsapps.tech', u8: 'agustinromero@insightsapps.tech' }
 /* rango de cada miembro: 'pm' | 'dev' | '' (vacío = Otro, ej. CEO o Closer) — determina en qué filtro de Proyectos aparece */
 const SEED_ROLES = { u1: '', u2: 'dev', u3: 'dev', u5: '', u6: 'dev', u7: 'pm' }
 const TEAM_ROLES = [{ key: '', label: 'Otro' }, { key: 'pm', label: 'PM' }, { key: 'dev', label: 'Dev' }]
@@ -816,6 +816,7 @@ function seedTeam() {
     { id: 'u5', name: 'Juan Pamies', email: SEED_EMAILS.u5, color: '#38BDF8', initials: 'JP', role: SEED_ROLES.u5 },
     { id: 'u6', name: 'Valentin Toledo', color: '#A855F7', initials: 'VT', role: SEED_ROLES.u6 },
     { id: 'u7', name: 'Nacho Cachaza', email: SEED_EMAILS.u7, color: '#F43F5E', initials: 'NC', role: SEED_ROLES.u7 },
+    { id: 'u8', name: 'Agustin Romero', email: SEED_EMAILS.u8, color: '#0EA5E9', initials: 'AR', role: 'dev' },
   ]
 }
 /* default demo assignments for the original 5 projects (rol por proyecto) */
@@ -7628,7 +7629,12 @@ function Login() {
         if (error) throw error
         if (!data.session) setMsg('Cuenta creada. Si Supabase pide confirmación, revisá tu email para activarla.')
       }
-    } catch (e2) { setErr(e2.message) } finally { setBusy(false) }
+    } catch (e2) {
+      const m = String(e2.message || '')
+      if (/email not confirmed/i.test(m)) setErr('Ese usuario todavía no está confirmado en Supabase. Confirmalo en Authentication → Users (o desactivá “Confirm email” en el proveedor Email).')
+      else if (/invalid login credentials/i.test(m)) setErr('Email o contraseña incorrectos — o el usuario aún no está confirmado en Supabase. Revisá la contraseña y que el usuario figure como confirmado en Authentication → Users.')
+      else setErr(m)
+    } finally { setBusy(false) }
   }
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
