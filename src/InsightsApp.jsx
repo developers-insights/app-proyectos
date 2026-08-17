@@ -36,6 +36,7 @@ import {
   TASK_ESTADOS, TASK_ESTADO_CHOICES, RIESGOS, EVIDENCIA_TIPOS, RESPONSABLES,
 } from './plan/planModel.js'
 import { projectProgress, progressBreakdown, progressColorVar } from './lib/progress.js'
+import { buildContextMarkdown } from './lib/contextExport.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
 
@@ -7591,12 +7592,30 @@ function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, on
 }
 
 function Settings({ open, onClose, onManageTeam }) {
+  const { data, plans } = useApp()
   const [keys, setKeys] = useState({ anthropic_key: '', gh_token: '', fathom_token: '' })
   useEffect(() => { if (open) setKeys({ anthropic_key: localStorage.getItem('anthropic_key') || '', gh_token: localStorage.getItem('gh_token') || '', fathom_token: localStorage.getItem('fathom_token') || '' }) }, [open])
   const save = () => { Object.entries(keys).forEach(([k, v]) => v ? localStorage.setItem(k, v) : localStorage.removeItem(k)); onClose() }
+  const exportContext = () => {
+    const md = buildContextMarkdown({ projects: data.projects || [], clients: data.clients || [], team: data.team || [], activity: data.activity || [], plans: plans || [], now: new Date() })
+    const stamp = new Date().toISOString().slice(0, 10)
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `insights-contexto-${stamp}.md`; document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
   return (
     <Modal open={open} onClose={onClose} title="Ajustes & integraciones" sub="Las claves se guardan solo en tu navegador (localStorage)" width={560}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <div className="label" style={{ marginBottom: 8 }}>Segundo cerebro · exportar contexto</div>
+          <div className="surface" style={{ padding: 14, background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', flexShrink: 0 }}><I2.doc width={19} height={19} /></div>
+            <div style={{ flex: 1, minWidth: 160 }}><div style={{ fontWeight: 700, fontSize: 14 }}>Snapshot en Markdown (para RAW)</div><div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.45 }}>Descarga un .md con todo el contexto en vivo: proyectos, avances, etapas, mantenimientos, tiempos y clientes.</div></div>
+            <button className="btn btn-accent" onClick={exportContext}><I2.download width={15} height={15} /> Descargar .md</button>
+          </div>
+        </div>
+        <hr className="divider" />
         <div>
           <div className="label" style={{ marginBottom: 8 }}>Sistema · usuarios de la plataforma</div>
           <div className="surface" style={{ padding: 14, background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
