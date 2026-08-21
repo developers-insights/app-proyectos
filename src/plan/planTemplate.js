@@ -35,6 +35,12 @@ import {
   HREF_RE,
   planProgress,
   currentWeekNumber,
+  RIESGOS,
+  EVIDENCIA_TIPOS,
+  normalizeBloqueo,
+  normalizeEvidencia,
+  RESPONSABLES,
+  planPendingCliente,
 } from './planModel.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -130,6 +136,9 @@ export function sanitizePlan(plan) {
   /** Un color opcional: si no es hex válido devolvemos '' y no emitimos el inline. */
   const optColor = (c) => (COLOR_RE.test(String(c ?? '')) ? String(c) : '')
 
+  /** El id de una tarea va a un data-attr y a la RPC de aceptación: charset acotado. */
+  const safeId = (s) => String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)
+
   const brand = p.brand && typeof p.brand === 'object' ? p.brand : {}
   const footer = p.footer && typeof p.footer === 'object' ? p.footer : {}
 
@@ -154,11 +163,46 @@ export function sanitizePlan(plan) {
       n: Number.isFinite(n) ? n : i + 1,
       title: e(w.title),
       type: hasOwn(WEEK_TYPES, w.type) ? w.type : 'info',
-      // TaskLike[] → {text,done}[]. Retrocompat: un string viejo se lee como
-      // texto con done:false. NUNCA perder el done acá (es lo que ve el cliente).
+      // TaskLike[] → {text,done, ...operativo}[]. Retrocompat: un string viejo se
+      // lee como texto con done:false. NUNCA perder el done acá (es lo que ve el
+      // cliente). Los campos de seguimiento (RDEX) se escapan una sola vez, igual
+      // que todo el resto; el JSON embebido → innerHTML des-escapa una vez → literal.
       tasks: arr(w.tasks).map((t) => {
         const isObj = t && typeof t === 'object'
-        return { text: e(isObj ? t.text : t), done: isObj ? !!t.done : false }
+        const out = { text: e(isObj ? t.text : t), done: isObj ? !!t.done : false }
+        if (!isObj) return out
+        out.id = safeId(t.id)
+        if (t.responsable === 'cliente' || t.responsable === 'ambos') out.responsable = t.responsable
+        if (Number.isFinite(t.avance)) out.avance = Math.max(0, Math.min(100, Math.round(t.avance)))
+        if (t.modulo) out.modulo = e(t.modulo)
+        // Explicación en criollo de qué se hace en esta tarea. Es lo único del
+        // desplegable pensado para el cliente (el resto es seguimiento interno).
+        // OJO: "criterio" (Criterio de aceptación) NO se propaga a propósito acá —
+        // pedido explícito de Manuel, no tiene que aparecer nunca en el link público.
+        if (t.detalle) out.detalle = e(t.detalle)
+        if (t.prev) out.prev = e(t.prev)
+        if (t.hoy) out.hoy = e(t.hoy)
+        if (t.fecha) out.fecha = e(t.fecha)
+        if (t.dev) out.dev = e(t.dev)
+        if (t.rev) out.rev = e(t.rev)
+        if (t.dueno) out.dueno = e(t.dueno)
+        if (t.acept) out.acept = e(t.acept)
+        if (t.riesgo && RIESGOS[t.riesgo]) out.riesgo = t.riesgo
+        if (t.impacto) out.impacto = e(t.impacto)
+        const b = normalizeBloqueo(t.bloqueo)
+        if (b) out.bloqueo = { detalle: e(b.detalle), desde: e(b.desde), quien: e(b.quien), limite: e(b.limite), decision: e(b.decision) }
+        const ev = normalizeEvidencia(t.evidencia)
+        if (ev.length) out.evidencia = ev.map((x) => ({
+          tipo: x.tipo,
+          tipoLabel: e(EVIDENCIA_TIPOS[x.tipo] || 'Documento'),
+          label: e(x.label),
+          // Sólo http(s) absoluto entra como link; lo demás queda como texto sin href.
+          url: (HREF_RE.test(String(x.url)) && /^https?:\/\//.test(String(x.url))) ? e(String(x.url)) : '',
+        }))
+        out.hasDetail = !!(out.detalle || out.modulo || out.prev || out.hoy || out.dev || out.rev ||
+          out.dueno || out.acept || out.impacto || out.fecha || out.riesgo || ('avance' in out) ||
+          out.bloqueo || out.evidencia)
+        return out
       }),
       deliver: {
         kind: hasOwn(DELIVER_KINDS, kind) ? kind : 'doc',
@@ -367,6 +411,58 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
   .pp-fill{height:100%;border-radius:999px;background:var(--c-accent);transition:width .8s var(--ease-2)}
   .pp-label{margin-top:10px;font-size:12.5px;color:var(--ink-3);letter-spacing:.03em;font-variant-numeric:tabular-nums}
 
+  /* ---------- "Lo que necesitamos de <cliente>" + avance del plan ----------
+     Split editorial: mitad izquierda lo que depende del cliente, mitad derecha
+     el anillo de avance — centrado en SU mitad, no pegado a la tarjeta. */
+  .nc-row{margin:0 0 54px;display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}
+  .nc-row-solo{grid-template-columns:minmax(0,420px)}
+  .needsclient{min-width:0;background:var(--glass);
+    border:1px solid color-mix(in srgb,#6db3f2 30%,var(--line));border-radius:20px;padding:6px}
+  .nc-core{background:color-mix(in srgb,#6db3f2 7%,rgba(255,255,255,.015));border:1px solid var(--line-2);
+    border-radius:15px;padding:18px 20px}
+  .nc-head{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:500;
+    font-size:1rem;color:#6db3f2;letter-spacing:-.01em}
+  .nc-dot{width:8px;height:8px;border-radius:50%;background:#6db3f2;box-shadow:0 0 10px #6db3f2;flex:0 0 auto}
+  .nc-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex:0 0 auto}
+  .nc-count{font-size:12px;font-variant-numeric:tabular-nums;color:#6db3f2;
+    border:1px solid color-mix(in srgb,#6db3f2 40%,transparent);border-radius:999px;padding:2px 9px}
+  .nc-list{list-style:none;margin:14px 0 0;display:grid;gap:9px}
+  .nc-list li{font-size:.92rem;color:var(--ink);line-height:1.45;padding-left:16px;position:relative}
+  .nc-list li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;
+    background:color-mix(in srgb,#6db3f2 70%,transparent)}
+  .nc-list li b{color:#6db3f2;font-weight:500;font-size:12px;letter-spacing:.02em}
+
+  /* Anillo de avance de TODO el plan: panel propio (doble bisel, igual que la
+     tarjeta de al lado) con el anillo centrado adentro. */
+  .plan-ring-panel{min-width:0;background:var(--glass);
+    border:1px solid color-mix(in srgb,#3ddc97 26%,var(--line));border-radius:20px;padding:6px}
+  .prp-core{position:relative;overflow:hidden;
+    background:color-mix(in srgb,#3ddc97 6%,rgba(255,255,255,.015));
+    border:1px solid var(--line-2);border-radius:15px;padding:36px 24px 30px;
+    display:grid;justify-items:center;gap:24px;
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.05)}
+  .prp-core::before{content:"";position:absolute;inset:-40% 5% auto;height:150%;pointer-events:none;
+    background:radial-gradient(46% 42% at 50% 42%,color-mix(in srgb,#3ddc97 17%,transparent),transparent 72%)}
+  .plan-ring{position:relative;width:clamp(180px,20vw,258px);aspect-ratio:1;display:grid;place-items:center}
+  .plan-ring svg{width:100%;height:100%;transform:rotate(-90deg);overflow:visible}
+  .plan-ring circle{fill:none;stroke-width:7}
+  .plan-ring-track{stroke:color-mix(in srgb,#3ddc97 13%,transparent)}
+  .plan-ring-bar{stroke:url(#prg);stroke-linecap:round;
+    stroke-dasharray:var(--dash-full);stroke-dashoffset:var(--dash-target);
+    filter:drop-shadow(0 0 9px color-mix(in srgb,#3ddc97 45%,transparent));
+    transition:stroke-dashoffset 1.4s var(--ease-2)}
+  /* Arranca vacío y se llena cuando la sección entra en pantalla. Sin JS de
+     reveal (preview, print) muestra directo el valor final. */
+  .reveal:not(.in) .plan-ring-bar{stroke-dashoffset:var(--dash-full)}
+  .preview .reveal:not(.in) .plan-ring-bar{stroke-dashoffset:var(--dash-target)}
+  .plan-ring-text{position:absolute;display:flex;align-items:baseline;line-height:1;
+    font-family:var(--font-display);color:var(--ink);letter-spacing:-.035em}
+  .plan-ring-pct{font-size:clamp(2.4rem,3.6vw,3.15rem);font-weight:500;font-variant-numeric:tabular-nums}
+  .plan-ring-sign{font-size:.42em;font-weight:500;color:var(--ink-3);margin-left:.1em;letter-spacing:0}
+  .prp-meta{position:relative;display:grid;justify-items:center;gap:7px;text-align:center}
+  .prp-cap{font-size:10px;text-transform:uppercase;letter-spacing:.22em;color:#3ddc97}
+  .prp-sub{font-size:.9rem;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
   /* ---------- COMMS BENTO ---------- */
   .bento{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
   .shell{background:var(--glass);border:1px solid var(--line);border-radius:26px;padding:7px}
@@ -440,14 +536,69 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
 
   .week-core h3.wt{font-size:clamp(1.7rem,3.4vw,2.7rem);margin:18px 0 26px;letter-spacing:-.03em;max-width:680px}
   .week-core h3.wt .wn{color:var(--col)}
-  .tasks{display:grid;gap:13px;max-width:680px}
-  .task{display:flex;gap:14px;align-items:flex-start}
+  .tasks{display:grid;gap:11px;max-width:720px}
+  .task{display:block}
+  .task-head{display:flex;gap:14px;align-items:flex-start}
+  .task.has-detail .task-head{cursor:pointer}
   .task .tick{flex:0 0 auto;width:22px;height:22px;border-radius:50%;margin-top:1px;
-    border:1px solid color-mix(in srgb,var(--col) 45%,var(--line));display:grid;place-items:center;color:var(--col)}
+    border:1px solid color-mix(in srgb,var(--col) 45%,var(--line));display:grid;place-items:center;color:var(--col);
+    transition:color .4s var(--ease),border-color .4s var(--ease)}
   .task .tick .ic{width:12px;height:12px;stroke-width:2}
-  .task span{color:var(--ink);font-size:1rem;line-height:1.5;opacity:.92}
-  .task.done span{text-decoration:line-through;opacity:.5}
+  .task .tx{color:var(--ink);font-size:1rem;line-height:1.5;opacity:.92;flex:1;min-width:0}
+  .task.done .tx{text-decoration:line-through;opacity:.5}
   .task.done .tick{opacity:.6}
+  .task-meta{display:inline-flex;align-items:center;gap:9px;flex:0 0 auto;margin-top:2px}
+  .resp-chip{display:inline-flex;align-items:center;font-size:11px;letter-spacing:.02em;white-space:nowrap;font-weight:500;
+    color:var(--rc,#6db3f2);border:1px solid color-mix(in srgb,var(--rc,#6db3f2) 42%,transparent);
+    background:color-mix(in srgb,var(--rc,#6db3f2) 14%,transparent);border-radius:999px;padding:3px 10px}
+  .rdot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 8px currentColor}
+  .ev-count{font-size:11px;color:var(--ink-3);display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
+  .ev-count .ic{width:13px;height:13px}
+  .chev{width:16px;height:16px;color:var(--ink-3);transition:transform .5s var(--ease);flex:0 0 auto}
+  .chev .ic{width:16px;height:16px}
+  .task.open .chev{transform:rotate(90deg)}
+  /* panel de detalle: alto animado con grid-rows (sin animar layout props) */
+  .task-detail{display:grid;grid-template-rows:0fr;transition:grid-template-rows .5s var(--ease)}
+  .task.open .task-detail{grid-template-rows:1fr}
+  .td-inner{overflow:hidden;min-height:0}
+  .td-pad{margin:12px 0 2px 36px;padding:18px 20px;border-radius:16px;
+    background:color-mix(in srgb,var(--col) 7%,rgba(255,255,255,.015));
+    border:1px solid color-mix(in srgb,var(--col) 20%,var(--line-2))}
+  .td-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px 22px}
+  .td-field{min-width:0}
+  .td-field .k{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+  .td-field .v{font-size:.92rem;color:var(--ink);line-height:1.45;opacity:.92;overflow-wrap:anywhere}
+  .td-field.full{grid-column:1/-1}
+  .td-crit{grid-column:1/-1;padding:12px 14px;border-radius:12px;background:var(--glass);border:1px solid var(--line-2)}
+  .td-crit .k{color:var(--c-accent)}
+  .roles{display:flex;flex-wrap:wrap;gap:8px}
+  .role{display:inline-flex;align-items:baseline;gap:7px;font-size:12.5px;color:var(--ink);
+    border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:var(--glass)}
+  .role b{color:var(--ink-3);font-weight:500;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+  .evid{display:flex;flex-direction:column;gap:7px}
+  .evid a,.evid .ev-item{display:inline-flex;align-items:center;gap:9px;font-size:.9rem;color:var(--ink);
+    text-decoration:none;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--glass);
+    transition:border-color .4s var(--ease),transform .4s var(--ease);max-width:100%}
+  .evid a:hover{border-color:color-mix(in srgb,var(--col) 50%,transparent);transform:translateX(2px)}
+  .evid .et{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--col);flex:0 0 auto;
+    border:1px solid color-mix(in srgb,var(--col) 30%,transparent);border-radius:5px;padding:2px 6px}
+  .evid .eu{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .blk{grid-column:1/-1;padding:13px 15px;border-radius:12px;
+    background:color-mix(in srgb,#f2789f 9%,transparent);border:1px solid color-mix(in srgb,#f2789f 30%,transparent)}
+  .blk .bk{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:#f2789f;margin-bottom:6px;display:flex;align-items:center;gap:7px}
+  .blk .bv{font-size:.92rem;color:var(--ink);line-height:1.45}
+  .blk .bmeta{margin-top:8px;font-size:11.5px;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:14px}
+  .blk .bmeta b{color:var(--ink-2);font-weight:500}
+  @media (max-width:620px){
+    .td-grid{grid-template-columns:1fr}
+    .td-pad{margin-left:0}
+    .task-meta{gap:7px}
+    /* El chip de responsable ("Insights + <cliente>") puede ser larguísimo y
+       .task-meta no encoge (flex:0 0 auto): en mobile se comía casi todo el
+       ancho de la fila y el texto de la tarea quedaba partido palabra por
+       palabra. Se sigue viendo entero en "Lo que necesitamos de <cliente>". */
+    .resp-chip{display:none}
+  }
 
   .deliver{margin-top:30px;display:flex;gap:16px;align-items:flex-start;
     background:color-mix(in srgb,var(--col) 9%,transparent);
@@ -491,6 +642,8 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     .nav-links{display:none}
     .bento{grid-template-columns:1fr}
     .phases{grid-template-columns:repeat(${tabletCols},1fr)}
+    .nc-row,.nc-row-solo{grid-template-columns:minmax(0,1fr)}
+    .plan-ring{width:clamp(168px,38vw,220px)}
   }
   @media(max-width:620px){
     .wrap{padding:0 18px}
@@ -507,6 +660,7 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     .deliver{flex-direction:column;gap:12px}
     .foot{flex-direction:column;align-items:flex-start}
     .foot .meta{text-align:left}
+    .prp-core{padding:30px 18px 26px;gap:20px}
   }
   @media(prefers-reduced-motion:reduce){
     *{animation:none!important;transition-duration:.01ms!important}
@@ -526,6 +680,8 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     .print-only{display:block!important}
     /* reveal animations never run in headless print -> force everything visible */
     .reveal{opacity:1!important;transform:none!important;filter:none!important}
+    /* ...y el anillo tiene que salir en su valor real, no vacío */
+    .plan-ring-bar{stroke-dashoffset:var(--dash-target)!important}
     section{padding:15px 0!important;break-inside:auto}
     .sec-head{break-inside:avoid;break-after:avoid}
     .sec-head{margin-bottom:15px}
@@ -571,11 +727,18 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
 // <script> embebido — portado textual del original (index.html:483–638)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildScript({ phasesObj, weeksData, hasWeeks, preview }) {
+function buildScript({ phasesObj, weeksData, hasWeeks, preview, clientName }) {
   const consts = `const PHASES=${jsonForScript(phasesObj)};
 const ICONS=${jsonForScript(UI_ICONS)};
 const DK=${jsonForScript(DELIVER_KINDS)};
 const TYPE=${jsonForScript(WEEK_TYPES)};
+const RIESGOS_C=${jsonForScript(RIESGOS)};
+const RESP=${jsonForScript(RESPONSABLES)};
+// Mismo salmón que usa el tablero interno (INSIGHTS_ONLY_COLOR en InsightsApp.jsx)
+// para el chip de "Insights" por defecto — RESP.insights.color es otro verde que
+// ya está en uso en el resto de la página (hitos, schema), así que se pisa acá.
+const INSIGHTS_CHIP_COLOR='#e0897c';
+const CLIENT_NAME=${jsonForScript(clientName || 'Cliente')};
 
 const WEEKS=${jsonForScript(weeksData)};`
 
@@ -599,12 +762,77 @@ WEEKS.forEach((w,i)=>{
 });
 const pillNodes=[...pillsEl.children];
 
+const IC_TICK=ICONS.tick, IC_CHECK=(ICONS.check||ICONS.tick);
+const IC_CHEV='<svg class="ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+const IC_LINK='<svg class="ic" viewBox="0 0 24 24"><path d="M10.6 13.4a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 0 0-5.7-5.7l-1.1 1.1"/><path d="M13.4 10.6a4 4 0 0 0-5.7 0l-2.3 2.3a4 4 0 0 0 5.7 5.7l1.1-1.1"/></svg>';
+const IC_LOCK='<svg class="ic" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+
+function fieldHTML(k,v){return v?('<div class="td-field"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>'):'';}
+
+function taskDetail(x){
+  let rows='';
+  if(x.detalle) rows+='<div class="td-crit"><div class="k">En qué consiste</div><div class="v">'+x.detalle+'</div></div>';
+  // "Criterio de aceptación" NO se renderiza más — pedido explícito de Manuel.
+  if(x.hoy) rows+=fieldHTML('Trabajo actual',x.hoy);
+  if(x.prev) rows+=fieldHTML('Trabajo anterior',x.prev);
+  if(x.fecha) rows+=fieldHTML('Fecha pronosticada',x.fecha);
+  if(typeof x.avance==='number') rows+=fieldHTML('Avance','<b style="color:var(--c-accent)">'+x.avance+'%</b>');
+  if(x.modulo) rows+=fieldHTML('Módulo',x.modulo);
+  if(x.impacto) rows+=fieldHTML('Impacto',x.impacto);
+  if(x.riesgo&&RIESGOS_C[x.riesgo]) rows+=fieldHTML('Riesgo','<span style="color:'+RIESGOS_C[x.riesgo].color+'">'+RIESGOS_C[x.riesgo].label+'</span>');
+  let roles='';
+  if(x.dev) roles+='<span class="role"><b>Dev</b> '+x.dev+'</span>';
+  if(x.rev) roles+='<span class="role"><b>Revisor</b> '+x.rev+'</span>';
+  if(x.dueno) roles+='<span class="role"><b>Dueño</b> '+x.dueno+'</span>';
+  if(x.acept) roles+='<span class="role"><b>Acepta RDEX</b> '+x.acept+'</span>';
+  if(roles) rows+='<div class="td-field full"><div class="k">Responsables</div><div class="roles">'+roles+'</div></div>';
+  if(x.evidencia&&x.evidencia.length){
+    const ev=x.evidencia.map(function(e){
+      const inner='<span class="et">'+e.tipoLabel+'</span><span class="eu">'+(e.label||e.url||'')+'</span>';
+      return e.url?('<a href="'+e.url+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>'):('<span class="ev-item">'+inner+'</span>');
+    }).join('');
+    rows+='<div class="td-field full"><div class="k">Evidencia</div><div class="evid">'+ev+'</div></div>';
+  }
+  if(x.bloqueo&&x.bloqueo.detalle){
+    const b=x.bloqueo; let meta='';
+    if(b.desde) meta+='<span>Desde <b>'+b.desde+'</b></span>';
+    if(b.quien) meta+='<span>Resuelve <b>'+b.quien+'</b></span>';
+    if(b.limite) meta+='<span>Límite <b>'+b.limite+'</b></span>';
+    rows+='<div class="blk"><div class="bk">'+IC_LOCK+' Bloqueo</div><div class="bv">'+b.detalle+'</div>'+
+      (meta?('<div class="bmeta">'+meta+'</div>'):'')+
+      (b.decision?('<div class="bmeta"><span>Decisión requerida: <b>'+b.decision+'</b></span></div>'):'')+'</div>';
+  }
+  return '<div class="task-detail"><div class="td-inner"><div class="td-pad"><div class="td-grid">'+rows+'</div></div></div></div>';
+}
+
 function buildHTML(w){
   const t=TYPE[w.type];
-  const tasks=w.tasks.map(x=>{
-    const done=x&&typeof x==='object'?x.done:false;
-    const txt=x&&typeof x==='object'?x.text:x;
-    return '<div class="task'+(done?' done':'')+'"><span class="tick">'+(done?(ICONS.check||ICONS.tick):ICONS.tick)+'</span><span>'+txt+'</span></div>';
+  const tasks=w.tasks.map(function(x){
+   try{
+    const isObj=x&&typeof x==='object';
+    const done=isObj?!!x.done:false;
+    const txt=isObj?x.text:x;
+    const id=isObj?(x.id||''):'';
+    const hasDetail=isObj&&!!x.hasDetail;
+    const resp=(isObj&&(x.responsable==='cliente'||x.responsable==='ambos'))?x.responsable:'insights';
+    let meta='';
+    var rc=RESP[resp]||RESP.insights;
+    var rcColor=resp==='insights'?INSIGHTS_CHIP_COLOR:rc.color;
+    var rl=resp==='ambos'?('Insights + '+CLIENT_NAME):(resp==='cliente'?CLIENT_NAME:rc.label);
+    meta+='<span class="resp-chip" style="--rc:'+rcColor+'">'+rl+'</span>';
+    if(isObj&&x.riesgo&&x.riesgo==='alto'&&!done) meta+='<span class="rdot" style="color:'+((RIESGOS_C.alto&&RIESGOS_C.alto.color)||'#f2789f')+'" title="Riesgo alto"></span>';
+    if(isObj&&x.evidencia&&x.evidencia.length) meta+='<span class="ev-count">'+IC_LINK+x.evidencia.length+'</span>';
+    if(hasDetail) meta+='<span class="chev">'+IC_CHEV+'</span>';
+    const cls='task'+(done?' done':'')+(hasDetail?' has-detail':'');
+    const head='<div class="task-head"><span class="tick">'+(done?IC_CHECK:IC_TICK)+'</span>'+
+      '<span class="tx">'+txt+'</span><span class="task-meta">'+meta+'</span></div>';
+    return '<div class="'+cls+'"'+(id?(' data-tid="'+id+'"'):'')+'>'+head+(hasDetail?taskDetail(x):'')+'</div>';
+   }catch(err){
+    // Red de seguridad: pase lo que pase con el detalle operativo, la tarea SIEMPRE
+    // se ve (texto + tilde). Un plan nunca queda en blanco por un dato raro.
+    const io=x&&typeof x==='object'; const tx2=io?(x.text||''):String(x==null?'':x); const dn2=io&&!!x.done;
+    return '<div class="task'+(dn2?' done':'')+'"><div class="task-head"><span class="tick">'+(dn2?IC_CHECK:IC_TICK)+'</span><span class="tx">'+tx2+'</span></div></div>';
+   }
   }).join('');
   const del=(w.deliver&&w.deliver.text)?'<div class="deliver"><span class="dic">'+ICONS[w.deliver.kind]+'</span><div><div class="dk">'+DK[w.deliver.kind]+'</div><div class="dt">'+w.deliver.text+'</div></div></div>':'';
   return ''+
@@ -653,6 +881,19 @@ document.addEventListener('keydown',e=>{
 shellEl.style.setProperty('--col',PHASES[WEEKS[0].phase].col);
 swapEl.innerHTML=buildHTML(WEEKS[0]);
 syncControls();
+
+// ── seguimiento operativo: expandir/cerrar el detalle de una tarea ───────────
+// Acordeón: como máximo una tarea abierta a la vez dentro de la semana visible.
+// Tocar la que ya está abierta la cierra; tocar otra cierra la anterior y abre la nueva.
+swapEl.addEventListener('click',function(e){
+  const head=e.target.closest('.task-head');
+  if(!head) return;
+  const tt=head.parentElement;
+  if(!tt||!tt.classList.contains('has-detail')) return;
+  const wasOpen=tt.classList.contains('open');
+  swapEl.querySelectorAll('.task.open').forEach(function(t){ t.classList.remove('open'); });
+  if(!wasOpen) tt.classList.add('open');
+});
 
 // print version: all weeks expanded
 document.getElementById('printAll').innerHTML=WEEKS.map(w=>{
@@ -1017,17 +1258,6 @@ ${bentoHtml}
   const hasWeeks = weeks.length > 0
   const firstWeekToken = hasWeeks ? tokenOf(hitoForWeek(sp, weeks[0].n)) : ''
 
-  // Barra de % global (avance del plan). Se calcula server-side sobre el plan
-  // CRUDO (no sp): son solo conteos, no texto que vaya a innerHTML — no hace
-  // falta escapar. Oculta si el plan todavía no tiene ninguna tarea.
-  const progress = planProgress(plan)
-  const progressHtml = progress.total > 0
-    ? `\n      <div class="plan-progress reveal">
-        <div class="pp-track"><div class="pp-fill" style="width:${progress.pct}%"></div></div>
-        <div class="pp-label">${progress.pct}% · ${progress.done}/${progress.total} tareas</div>
-      </div>`
-    : ''
-
   const weekNavHtml = !hasWeeks
     ? ''
     : `
@@ -1087,7 +1317,51 @@ ${bentoHtml}
     deliver: { kind: w.deliver.kind, text: w.deliver.text },
   }))
 
-  const script = buildScript({ phasesObj, weeksData, hasWeeks, preview })
+  // "Lo que necesitamos de <cliente>": tareas del cliente todavía pendientes.
+  // El texto viene del plan CRUDO → escapar acá. clientName ya viene escapado de sp.
+  const pendClienteAll = planPendingCliente(plan)
+  const pendCliente = pendClienteAll.filter((x) => !x.done)
+  const clientLabel = sp.clientName || 'el cliente'
+
+  // Anillo de avance de TODO el plan (todas las semanas, no solo lo del cliente).
+  // Vive en su propia mitad, con panel propio — no cuelga del encabezado de la tarjeta.
+  const planProg = planProgress(plan)
+  const prR = 50
+  const prCirc = 2 * Math.PI * prR
+  const prTarget = prCirc * (1 - (planProg.total ? planProg.done / planProg.total : 0))
+  const planRingHtml = `<aside class="plan-ring-panel"><div class="prp-core">
+        <div class="plan-ring" style="--dash-full:${prCirc.toFixed(2)};--dash-target:${prTarget.toFixed(2)}">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <defs><linearGradient id="prg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#3ddc97"></stop><stop offset="1" stop-color="#9df0c8"></stop>
+            </linearGradient></defs>
+            <circle class="plan-ring-track" cx="60" cy="60" r="${prR}"></circle>
+            <circle class="plan-ring-bar" cx="60" cy="60" r="${prR}"></circle>
+          </svg>
+          <span class="plan-ring-text"><span class="plan-ring-pct">${planProg.pct}</span><span class="plan-ring-sign">%</span></span>
+        </div>
+        <div class="prp-meta">
+          <span class="prp-cap">Avance del plan</span>
+          <span class="prp-sub">${planProg.done} de ${planProg.total} tareas completadas</span>
+        </div>
+      </div></aside>`
+
+  const clientCardHtml = pendCliente.length
+    ? `<div class="needsclient"><div class="nc-core">
+        <div class="nc-head"><span class="nc-dot"></span> Lo que necesitamos de ${clientLabel}
+          <span class="nc-right"><span class="nc-count">${pendCliente.length}</span></span>
+        </div>
+        <ul class="nc-list">${pendCliente.map((x) => `<li><b>Semana ${x.week}</b> · ${escapeHtml(x.text)}</li>`).join('')}</ul>
+      </div></div>`
+    : ''
+
+  // El anillo sigue estando aunque el cliente ya no deba nada — que es justo
+  // cuando el 100% importa. En ese caso la fila queda de una sola columna.
+  const clientBlockHtml = (pendCliente.length || planProg.total)
+    ? `\n      <div class="nc-row reveal${clientCardHtml ? '' : ' nc-row-solo'}">${clientCardHtml}${planRingHtml}</div>`
+    : ''
+
+  const script = buildScript({ phasesObj, weeksData, hasWeeks, preview, clientName: sp.clientName || 'Cliente' })
 
   // Botón "Descargar PDF": genera el MISMO PDF premium que la app (makePlanPdfDoc),
   // cargando jsPDF on-demand desde CDN al primer clic. En preview no hace falta.
@@ -1161,8 +1435,8 @@ ${schemaSection}
     <div class="sec-head reveal">
       <span class="eyebrow"><span class="dot"></span> ${sp.sections.weeks.eyebrow}</span>
       <h2>${sp.sections.weeks.title}</h2>
-      <p class="np">${sp.sections.weeks.lead}</p>${progressHtml}
-    </div>
+      <p class="np">${sp.sections.weeks.lead}</p>
+    </div>${clientBlockHtml}
 ${weekNavHtml}  </div>
 </section>
 

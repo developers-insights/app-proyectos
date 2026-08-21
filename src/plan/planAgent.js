@@ -460,7 +460,7 @@ SEMANAS (weeks)
 · "n" numera desde 1, correlativo, sin saltos.
 · La semana 1 es SIEMPRE de arranque y discovery: kickoff, accesos, definiciones, validación del alcance y setup. Nunca se arranca programando funcionalidad en la semana 1.
 · "title": de 3 a 6 palabras con el foco real de la semana. Ej: "Modelo de datos y autenticación".
-· "tasks": entre 4 y 7 tareas por semana. Concretas y verificables: mirando algo se tiene que poder decir "esto está hecho".
+· "tasks": entre 3 y 5 tareas por semana. NUNCA más de 5. Concretas y verificables: mirando algo se tiene que poder decir "esto está hecho".
     Bien: "Modelado de datos y migraciones en Supabase" · "Alta y edición de miembros con validaciones" · "Deploy del entorno de staging".
     Mal: "trabajar en el backend" · "avanzar con el front" · "reuniones de equipo" · "varios".
 · "type": exactamente uno de info, doc, gate, formal.
@@ -472,8 +472,16 @@ SEMANAS (weeks)
     "kind" tiene que ser coherente con "type": info va con live, doc con doc, gate con gate, formal con formal.
     "text": una frase concreta de qué recibe. Ej: "Entorno de staging navegable con el alta de miembros funcionando". Nunca "avances varios" ni "lo trabajado en la semana".
 
+POCAS TAREAS, Y QUE IMPORTEN
+· Menos es más. Una semana con 4 tareas que el cliente entiende vale más que una con 8 que lo abruman. Si dudás entre poner una tarea o no ponerla: no la pongas.
+· Cada tarea tiene que contestar "¿esto para qué me sirve a mí?" desde donde está sentado el cliente. Si la respuesta es "para que el código quede prolijo", no va: eso es trabajo nuestro, no una promesa de entrega.
+· Fusioná lo que es una sola cosa vista de afuera. "Modelo de datos", "migraciones" y "seeds" son una sola tarea para el cliente, no tres.
+· No desagregues el trabajo interno: refactors, configuración de herramientas, tipados, linters, tests unitarios, convenciones y limpiezas NO son tareas del plan. Se dan por incluidas.
+· Preferí la tarea que nombra el resultado visible ("El cliente reserva un turno y le llega el mail de confirmación") por sobre la que nombra la pieza técnica ("Endpoint de reservas + cola de mails").
+· Sí van siempre, aunque sean pocas: lo que depende del cliente, las decisiones que traban el avance y las entregas que él va a ver.
+
 DETALLE (tasks[].detalle)
-· Obligatorio en TODAS las tareas, sin excepción.
+· Obligatorio en TODAS las tareas, sin excepción — también en las que te parezcan obvias. En la página del cliente el desplegable de una tarea aparece SOLO si tiene detalle: una tarea sin detalle queda muda y rompe la lectura del documento.
 · Es la explicación de la tarea en criollo, para alguien que no sabe nada de software ni del rubro: qué se hace puntualmente y para qué sirve. Es lo que el cliente lee al abrir el desplegable de esa tarea.
 · 1 a 3 frases. Cero jerga técnica sin explicar, cero siglas sueltas. Si mencionás algo técnico (staging, base de datos, wireframe), explicalo en la misma frase con una analogía simple.
 · No repitas el texto de la tarea con otras palabras: agregá contexto real. Ej. tarea "Deploy del entorno de staging" → detalle "Staging es una copia privada de la app, con su propio link, donde vas viendo el avance sin que nadie más pueda entrar."
