@@ -808,8 +808,13 @@ const REMOVED_MEMBER_IDS = ['u4']   // Nicolas Arditi
 /* email de login (Supabase) por miembro — para auto-vincular al iniciar sesión sin duplicar */
 const SEED_EMAILS = { u1: 'federicog@insightsapps.tech', u2: 'lisandropiva@insightsapps.tech', u3: 'manuelnavarro@insightsapps.tech', u5: 'juanp@insightsapps.tech', u7: 'nachocachaza@insightsapps.tech', u8: 'agustinromero@insightsapps.tech' }
 /* rango de cada miembro: 'pm' | 'dev' | '' (vacío = Otro, ej. CEO o Closer) — determina en qué filtro de Proyectos aparece */
-const SEED_ROLES = { u1: '', u2: 'dev', u3: 'dev', u5: '', u6: 'dev', u7: 'pm' }
-const TEAM_ROLES = [{ key: '', label: 'Otro' }, { key: 'pm', label: 'PM' }, { key: 'dev', label: 'Dev' }]
+const SEED_ROLES = { u1: 'fundador', u2: 'dev', u3: 'dev', u5: 'fundador', u6: 'dev', u7: 'pm' }
+const TEAM_ROLES = [{ key: '', label: 'Otro' }, { key: 'fundador', label: 'Fundador' }, { key: 'pm', label: 'PM' }, { key: 'dev', label: 'Dev' }]
+/* Fundadores: únicos con permiso para borrar usuarios. Se reconocen por id o email
+   (no dependemos solo del campo role, que se puede editar a mano). */
+const FOUNDER_IDS = ['u1', 'u5']
+const FOUNDER_EMAILS = ['federicog@insightsapps.tech', 'juanp@insightsapps.tech']
+const isFounder = (u) => !!u && (FOUNDER_IDS.includes(u.id) || FOUNDER_EMAILS.includes(String(u.email || '').toLowerCase()))
 function seedTeam() {
   return [
     { id: 'u1', name: 'Federico Garbarino', email: SEED_EMAILS.u1, color: '#F97316', initials: 'FG', role: SEED_ROLES.u1 },
@@ -1942,6 +1947,8 @@ function normalizeTeamMember(u) {
   let m = u
   if (!m.email && SEED_EMAILS[m.id]) m = { ...m, email: SEED_EMAILS[m.id] }
   if (m.role === undefined) m = { ...m, role: SEED_ROLES[m.id] ?? '' }
+  // los fundadores siempre quedan con rol 'fundador' (no depende del valor guardado)
+  if (isFounder(m) && m.role !== 'fundador') m = { ...m, role: 'fundador' }
   // Aprobación + tipo de acceso. Los miembros existentes (seed / dados de alta por
   // un admin) quedan aprobados con acceso completo. Los que se registran solos por
   // la app entran como 'pending' + access 'project' (solo ven su proyecto asignado).
@@ -8195,7 +8202,9 @@ function MemberPortal({ me, onLogout }) {
 
 /* Sección "Usuarios": tabla + aprobación de registros pendientes + asignación de proyecto. */
 function UsuariosView({ onOpenProject }) {
-  const { data, teamStore } = useApp()
+  const { data, teamStore, myId } = useApp()
+  const meFounder = isFounder((data.team || []).find((u) => u.id === myId))
+  const deleteUser = (u) => { if (window.confirm(`¿Borrar a ${u.name}? Pierde el acceso a la app. (Para bloquearlo del todo, borralo también en Supabase → Authentication.)`)) teamStore.remove(u.id) }
   const team = data.team || []
   const projects = data.projects || []
   const [assign, setAssign] = useState({})
@@ -8208,7 +8217,7 @@ function UsuariosView({ onOpenProject }) {
   const reject = (u) => { if (window.confirm(`¿Rechazar y quitar el acceso de ${u.name}?`)) teamStore.remove(u.id) }
   const fmtDur = (ms) => { const m = Math.round((Number(ms) || 0) / 60000); if (m < 1) return '—'; if (m < 60) return `${m} min`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ${m % 60}m`; const d = Math.floor(h / 24); return `${d}d ${h % 24}h` }
   const fmtSeen = (iso) => { if (!iso) return '—'; const diff = Date.now() - new Date(iso).getTime(); const min = Math.floor(diff / 60000); if (min < 1) return 'recién'; if (min < 60) return `hace ${min} min`; const h = Math.floor(min / 60); if (h < 24) return `hace ${h} h`; const d = Math.floor(h / 24); return d === 1 ? 'ayer' : `hace ${d} días` }
-  const roleLabel = (u) => u.access === 'project' ? 'Cliente' : (u.role === 'pm' ? 'PM' : u.role === 'dev' ? 'Dev' : (u.role || 'Equipo'))
+  const roleLabel = (u) => u.role === 'fundador' ? 'Fundador' : u.access === 'project' ? 'Cliente' : (u.role === 'pm' ? 'PM' : u.role === 'dev' ? 'Dev' : (u.role || 'Equipo'))
   const projCol = (u) => u.access === 'project' ? (u.assignedProjectId ? projName(u.assignedProjectId) : '— sin asignar —') : projects.filter((p) => p.assignments?.pm?.userId === u.id || p.assignments?.dev?.userId === u.id).length
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
@@ -8249,7 +8258,12 @@ function UsuariosView({ onOpenProject }) {
                 <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{projCol(u)}</td>
                 <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{fmtSeen(u.lastSeenAt)}</td>
                 <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }} className="mono">{fmtDur(u.usageMs)}</td>
-                <td style={{ padding: '12px 16px' }}>{u.access === 'project' && u.assignedProjectId && <button className="btn btn-sm btn-ghost" onClick={() => onOpenProject && onOpenProject(u.assignedProjectId)}>Ver proyecto</button>}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                    {u.access === 'project' && u.assignedProjectId && <button className="btn btn-sm btn-ghost" onClick={() => onOpenProject && onOpenProject(u.assignedProjectId)}>Ver proyecto</button>}
+                    {meFounder && u.id !== myId && <button className="btn btn-sm btn-ghost" title="Borrar usuario" onClick={() => deleteUser(u)} style={{ padding: 6, color: 'var(--red)' }}><I2.trash width={15} height={15} /></button>}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
