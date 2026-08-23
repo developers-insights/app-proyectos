@@ -1942,6 +1942,11 @@ function normalizeTeamMember(u) {
   let m = u
   if (!m.email && SEED_EMAILS[m.id]) m = { ...m, email: SEED_EMAILS[m.id] }
   if (m.role === undefined) m = { ...m, role: SEED_ROLES[m.id] ?? '' }
+  // Aprobación + tipo de acceso. Los miembros existentes (seed / dados de alta por
+  // un admin) quedan aprobados con acceso completo. Los que se registran solos por
+  // la app entran como 'pending' + access 'project' (solo ven su proyecto asignado).
+  if (m.status === undefined) m = { ...m, status: 'approved' }
+  if (m.access === undefined) m = { ...m, access: 'full' }
   return m
 }
 const normalizeCall = (c) => ({ ...c, priority: c.priority || 'normal', type: c.type || 'soporte', summary: c.summary || '', transcript: c.transcript || '' })
@@ -7113,6 +7118,7 @@ function UserProfile({ session, myId, setMyId, onLogout, open, onClose }) {
 function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClose, email, onProfile }) {
   const { data, myId } = useApp()
   const me = (data.team || []).find((u) => u.id === myId) || null
+  const pendingUsers = (data.team || []).filter((u) => u.status === 'pending').length
   const items = [
     { key: 'projects', label: 'Projects', icon: I2.folder },
     { key: 'tasks', label: 'Tareas', icon: I2.tasks },
@@ -7120,6 +7126,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'calls', label: 'Calls', icon: I2.phone },
     { key: 'sops', label: 'SOP', icon: I2.doc },
     { key: 'videos', label: 'Videos explicativos', icon: I2.film },
+    { key: 'usuarios', label: 'Usuarios', icon: I2.users, badge: pendingUsers },
   ]
   const tools = [
     { key: 'planner', label: 'Planificador', icon: I2.calendar },
@@ -7175,10 +7182,14 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
           const active = route.view === it.key || (route.view === 'project' && it.key === 'projects')
           return (
             <button key={it.key} onClick={() => go(it.key)} title={mini ? it.label : undefined}
-              className={cls()} data-on={active ? '1' : '0'} aria-current={active ? 'page' : undefined}>
+              className={cls()} data-on={active ? '1' : '0'} aria-current={active ? 'page' : undefined} style={{ position: 'relative' }}>
               {active && <span className="rail" aria-hidden="true" />}
-              <it.icon width={18} height={18} />
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
+                <it.icon width={18} height={18} />
+                {it.badge > 0 && mini && <span style={{ position: 'absolute', top: -4, right: -5, minWidth: 8, height: 8, borderRadius: 99, background: 'var(--accent)', border: '1.5px solid var(--bg-elevated)' }} />}
+              </span>
               {!mini && <span className="lbl">{it.label}</span>}
+              {!mini && it.badge > 0 && <span style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 99, background: 'var(--accent)', color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'grid', placeItems: 'center' }}>{it.badge}</span>}
             </button>
           )
         })}
@@ -7548,7 +7559,7 @@ function UpdateButton() {
    · SISTEMA (izq. del bloque derecho): estado de sync + versión. Informan, no son tuyos.
    · USUARIO: notificaciones, ajustes, tema y salir. Todos icon-buttons de 32px. */
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', videos: 'Videos explicativos', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
+  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', videos: 'Videos explicativos', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
   const dark = theme === 'dark'
   return (
     <header className="hd">
@@ -7645,25 +7656,28 @@ function Settings({ open, onClose, onManageTeam }) {
 ============================================================================ */
 /* login screen (Supabase Auth) */
 function Login() {
-  const [mode, setMode] = useState('signin')
+  const wantsRegister = typeof window !== 'undefined' && /(?:^|[?&])(registro|register|signup)=1/.test(window.location.search)
+  const [mode, setMode] = useState(wantsRegister ? 'signup' : 'signin')
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const [msg, setMsg] = useState(null)
+  const [registered, setRegistered] = useState(null)   // { name } cuando el alta salió ok
   const submit = async (e) => {
     e?.preventDefault()
-    if (!email || !pw) return
+    if (!email || !pw || (mode === 'signup' && !name.trim())) return
     setBusy(true); setErr(null); setMsg(null)
     try {
       if (mode === 'signin') {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pw })
         if (error) throw error
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password: pw })
+        const { data, error } = await supabase.auth.signUp({ email, password: pw, options: { data: { name: name.trim() } } })
         if (error) throw error
-        if (!data.session) setMsg('Cuenta creada. Si Supabase pide confirmación, revisá tu email para activarla.')
+        setRegistered({ name: name.trim() })   // muestra la pantalla de "en aprobación"
       }
     } catch (e2) {
       const m = String(e2.message || '')
@@ -7672,16 +7686,31 @@ function Login() {
       else setErr(m)
     } finally { setBusy(false) }
   }
+  if (registered) {
+    const first = (registered.name || '').split(' ')[0] || registered.name
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="surface" style={{ width: '100%', maxWidth: 420, padding: 30, boxShadow: 'var(--shadow)', textAlign: 'center' }}>
+          <div style={{ width: 64, height: 64, borderRadius: 999, margin: '0 auto 18px', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><I2.clock width={30} height={30} /></div>
+          <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 22, marginBottom: 10 }}>¡Hola {first}! 👋</h2>
+          <p style={{ fontSize: 14.5, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 8 }}>Tu cuenta quedó <strong style={{ color: 'var(--text)' }}>en proceso de aprobación</strong>.</p>
+          <p style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.6 }}>Cuando te aprobemos te confirmamos por <strong style={{ color: 'var(--text)' }}>email o WhatsApp</strong> y vas a poder ver tu proyecto.</p>
+          <button className="btn btn-ghost" onClick={() => { setRegistered(null); setMode('signin'); setPw('') }} style={{ marginTop: 22, justifyContent: 'center', width: '100%' }}>Volver al inicio</button>
+        </motion.div>
+      </div>
+    )
+  }
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
       <motion.form onSubmit={submit} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
         className="surface" style={{ width: '100%', maxWidth: 380, padding: 28, boxShadow: 'var(--shadow)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18 }}>
           <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: 18 }}>I</div>
-          <div><div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 17, lineHeight: 1 }}>Insights · Project OS</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{mode === 'signin' ? 'Iniciá sesión para continuar' : 'Creá tu cuenta'}</div></div>
+          <div><div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 17, lineHeight: 1 }}>Insights · Project OS</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{mode === 'signin' ? 'Iniciá sesión para continuar' : 'Registrate para acceder'}</div></div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Field label="Email"><input className="input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vos@insights.software" /></Field>
+          {mode === 'signup' && <Field label="Nombre y apellido"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Tu nombre" /></Field>}
+          <Field label="Email"><input className="input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vos@empresa.com" /></Field>
           <Field label="Contraseña">
             <div style={{ position: 'relative' }}>
               <input className="input" type={showPw ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" style={{ paddingRight: 40 }} />
@@ -7818,6 +7847,8 @@ function AppShell({ session, onLogout }) {
         String(a.id).localeCompare(String(b.id))
       )[0]
       if (myId !== best.id) setMyId(best.id)
+      // marca el último acceso (una vez por sesión) sin pisar otros campos
+      if (!best.lastSeenAt || Date.now() - new Date(best.lastSeenAt).getTime() > 300000) teamStore.patch(best.id, (u) => ({ ...u, lastSeenAt: new Date().toISOString() }))
       return
     }
     // 2) ya elegiste tu nombre ("Sos:") pero ese miembro no tiene email → completárselo (evita duplicar)
@@ -7833,9 +7864,21 @@ function AppShell({ session, onLogout }) {
     const meta = session.user.user_metadata || {}
     const name = meta.name || meta.full_name || session.user.email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     const nid = 'auto-' + email.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-    teamStore.upsert({ id: nid, name, email: session.user.email, initials: autoInitials(name), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length] })
+    // Registro público: queda PENDIENTE de aprobación y con acceso solo a su proyecto
+    // (que se le asigna al aprobarlo). No es parte del equipo interno.
+    teamStore.upsert({ id: nid, name, email: session.user.email, initials: autoInitials(name), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length], role: '', status: 'pending', access: 'project', assignedProjectId: '', createdAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(), usageMs: 0 })
     setMyId(nid)
   }, [session, teamStore.items, teamStore.ready, myId])
+
+  // Contador de tiempo en la app: suma al usageMs del miembro actual cada minuto activo.
+  useEffect(() => {
+    if (!teamStore.ready || !myId) return
+    const iv = setInterval(() => {
+      if (document.hidden) return
+      teamStore.patch(myId, (u) => ({ ...u, usageMs: (Number(u.usageMs) || 0) + 60000, lastSeenAt: new Date().toISOString() }))
+    }, 60000)
+    return () => clearInterval(iv)
+  }, [teamStore.ready, myId])
 
   const openProject = (id) => setRoute({ view: 'project', projectId: id })
   const logActivity = (entry) => {
@@ -7865,8 +7908,22 @@ function AppShell({ session, onLogout }) {
   const carouselEverOpenedRef = useRef(route.view === 'carousel')
   if (route.view === 'carousel') carouselEverOpenedRef.current = true
 
+  // Gate de acceso: los registros públicos entran pendientes (pantalla de aprobación)
+  // y, una vez aprobados, solo ven su proyecto asignado (portal, sin el resto de la app).
+  const me = teamStore.items.find((u) => u.id === myId) || null
+  let gate = 'full'
+  if (cloudEnabled) {
+    if (!teamStore.ready || !myId || !me) gate = 'loading'
+    else if (me.status === 'pending') gate = 'pending'
+    else if (me.access === 'project') gate = 'portal'
+  }
+
   return (
     <AppCtx.Provider value={{ data: dataView, myId, logActivity, supabase, botComms, ...planStore, ...taskStore, ...collectionStores }}>
+      {gate === 'loading' ? <CenterScreen>Cargando tu acceso…</CenterScreen>
+        : gate === 'pending' ? <PendingApproval me={me} onLogout={onLogout} />
+          : gate === 'portal' ? <MemberPortal me={me} onLogout={onLogout} />
+            : (
       <div className="app-shell">
         <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} onProfile={() => setProfileOpen(true)} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
@@ -7883,6 +7940,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'assistant' && <AssistantView />}
               {route.view === 'planner' && <PlannerView />}
               {route.view === 'bot' && <BotView />}
+              {route.view === 'usuarios' && <UsuariosView onOpenProject={openProject} />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
             </motion.div>
             {/* el iframe del editor NO se desmonta al navegar: solo se oculta (ver editorEverOpenedRef) */}
@@ -7904,6 +7962,7 @@ function AppShell({ session, onLogout }) {
         <UserProfile session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} open={profileOpen} onClose={() => setProfileOpen(false)} />
         <PmStartupAlert open={!pmAlertSeen && pmProjects.length > 0} projects={pmProjects} clients={clientStore.items} onClose={() => setPmAlertSeen(true)} onOpenProject={openProject} />
       </div>
+            )}
     </AppCtx.Provider>
   )
 }
@@ -8040,6 +8099,159 @@ function ClientView({ shareId }) {
             </div>
           )})}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================================
+   20b · APROBACIÓN DE ACCESO · PORTAL DEL USUARIO EXTERNO · SECCIÓN USUARIOS
+============================================================================ */
+const Mark = ({ size = 40 }) => <div style={{ width: size, height: size, borderRadius: size * 0.26, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: size * 0.5, flexShrink: 0 }}>I</div>
+
+/* Pantalla que ve un registro público mientras está pendiente de aprobación. */
+function PendingApproval({ me, onLogout }) {
+  const first = (me?.name || '').split(' ')[0] || 'ahí'
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg)' }}>
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="surface" style={{ width: '100%', maxWidth: 440, padding: 32, textAlign: 'center', boxShadow: 'var(--shadow)' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}><Mark size={44} /></div>
+        <div style={{ width: 60, height: 60, borderRadius: 999, margin: '0 auto 16px', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><I2.clock width={28} height={28} /></div>
+        <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 22, marginBottom: 10 }}>¡Hola {first}! 👋</h2>
+        <p style={{ fontSize: 14.5, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 8 }}>Tu cuenta quedó <strong style={{ color: 'var(--text)' }}>en proceso de aprobación</strong>.</p>
+        <p style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.6 }}>Cuando te aprobemos te confirmamos por <strong style={{ color: 'var(--text)' }}>email o WhatsApp</strong> y vas a poder ver tu proyecto.</p>
+        {onLogout && <button className="btn btn-ghost" onClick={onLogout} style={{ marginTop: 22, justifyContent: 'center', width: '100%' }}>Cerrar sesión</button>}
+      </motion.div>
+    </div>
+  )
+}
+
+/* Portal de solo-lectura de un usuario externo aprobado: ve SOLO su proyecto asignado. */
+function MemberPortal({ me, onLogout }) {
+  const { data, plans } = useApp()
+  const project = (data.projects || []).find((p) => p.id === me?.assignedProjectId) || null
+  const client = project ? (data.clients || []).find((c) => c.id === project.clientId) : null
+  const plan = project ? (plans || []).find((pl) => pl.id === project.planId) : null
+  const pct = project ? projectProgress(project, plan) : 0
+  const sMeta = project ? stageMeta(projectStage(project)) : null
+  const weeks = plan && Array.isArray(plan.weeks) ? [...plan.weeks].sort((a, b) => (a.n || 0) - (b.n || 0)) : []
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 20px', borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Mark size={28} /><span style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 15 }}>Insights · Tu proyecto</span></div>
+        {onLogout && <button className="btn btn-sm btn-ghost" onClick={onLogout}>Cerrar sesión</button>}
+      </div>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '30px 22px 70px' }}>
+        {!project ? (
+          <div className="surface" style={{ padding: 40, textAlign: 'center' }}>
+            <div style={{ width: 56, height: 56, borderRadius: 999, margin: '0 auto 14px', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><I2.check width={26} height={26} /></div>
+            <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 22, marginBottom: 8 }}>¡Acceso aprobado!</h2>
+            <p style={{ color: 'var(--text-dim)', fontSize: 14.5, lineHeight: 1.6, maxWidth: 420, margin: '0 auto' }}>Todavía no te asignaron un proyecto para previsualizar. Te avisamos apenas esté listo.</p>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 26 }}>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div className="label" style={{ marginBottom: 6 }}>{client?.company || 'Tu proyecto'}</div>
+                <h1 style={{ fontSize: 30, fontFamily: 'Bricolage Grotesque', lineHeight: 1.1 }}>{project.name}</h1>
+                {sMeta && <span className="tag" style={{ marginTop: 10, display: 'inline-flex', color: `var(${sMeta.colorVar})`, borderColor: 'var(--border)' }}>{sMeta.label}</span>}
+              </div>
+              <ProgressRing pct={pct} colorVar="--green" />
+            </div>
+            {weeks.length === 0 ? (
+              <div className="surface" style={{ padding: 28, textAlign: 'center', color: 'var(--text-dim)' }}>El equipo está preparando tu tablero. Volvé pronto para ver el avance.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {weeks.map((w) => {
+                  const tasks = Array.isArray(w.tasks) ? w.tasks : []
+                  const done = tasks.filter((t) => t.done).length
+                  return (
+                    <div key={w.n} className="surface" style={{ padding: 16 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <strong style={{ fontSize: 15 }}>Semana {w.n}{w.title ? ` · ${w.title}` : ''}</strong>
+                        <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>{done}/{tasks.length}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {tasks.map((t, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, color: t.done ? 'var(--text-faint)' : 'var(--text-dim)' }}>
+                            <span style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0, display: 'grid', placeItems: 'center', border: '1.5px solid var(--border)', color: 'var(--green)', background: t.done ? 'var(--green-soft)' : 'transparent' }}>{t.done ? <I2.check width={11} height={11} /> : null}</span>
+                            <span style={{ textDecoration: t.done ? 'line-through' : 'none' }}>{t.title || t.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* Sección "Usuarios": tabla + aprobación de registros pendientes + asignación de proyecto. */
+function UsuariosView({ onOpenProject }) {
+  const { data, teamStore } = useApp()
+  const team = data.team || []
+  const projects = data.projects || []
+  const [assign, setAssign] = useState({})
+  const projName = (id) => projects.find((p) => p.id === id)?.name || '—'
+  const pending = team.filter((u) => u.status === 'pending')
+  const approve = (u) => {
+    const pid = assign[u.id] ?? u.assignedProjectId ?? ''
+    teamStore.patch(u.id, (x) => ({ ...x, status: 'approved', access: x.access || 'project', assignedProjectId: pid }))
+  }
+  const reject = (u) => { if (window.confirm(`¿Rechazar y quitar el acceso de ${u.name}?`)) teamStore.remove(u.id) }
+  const fmtDur = (ms) => { const m = Math.round((Number(ms) || 0) / 60000); if (m < 1) return '—'; if (m < 60) return `${m} min`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ${m % 60}m`; const d = Math.floor(h / 24); return `${d}d ${h % 24}h` }
+  const fmtSeen = (iso) => { if (!iso) return '—'; const diff = Date.now() - new Date(iso).getTime(); const min = Math.floor(diff / 60000); if (min < 1) return 'recién'; if (min < 60) return `hace ${min} min`; const h = Math.floor(min / 60); if (h < 24) return `hace ${h} h`; const d = Math.floor(h / 24); return d === 1 ? 'ayer' : `hace ${d} días` }
+  const roleLabel = (u) => u.access === 'project' ? 'Cliente' : (u.role === 'pm' ? 'PM' : u.role === 'dev' ? 'Dev' : (u.role || 'Equipo'))
+  const projCol = (u) => u.access === 'project' ? (u.assignedProjectId ? projName(u.assignedProjectId) : '— sin asignar —') : projects.filter((p) => p.assignments?.pm?.userId === u.id || p.assignments?.dev?.userId === u.id).length
+  return (
+    <div className="view" style={{ padding: '28px 34px 60px' }}>
+      <div style={{ marginBottom: 20 }}><div className="label" style={{ marginBottom: 6 }}>Plataforma</div><h1 style={{ fontSize: 32 }}>Usuarios</h1></div>
+
+      {pending.length > 0 && (
+        <div className="surface" style={{ padding: 16, marginBottom: 20, border: '1px solid var(--accent-line)', background: 'var(--accent-soft)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <I2.alert width={18} height={18} style={{ color: 'var(--accent)' }} />
+            <strong style={{ fontSize: 15 }}>{pending.length} usuario(s) pendiente(s) de aprobar</strong>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {pending.map((u) => (
+              <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '11px 13px' }}>
+                <div style={{ flex: 1, minWidth: 160 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div><div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>{u.email}</div></div>
+                <select className="input" value={assign[u.id] ?? u.assignedProjectId ?? ''} onChange={(e) => setAssign((s) => ({ ...s, [u.id]: e.target.value }))} style={{ width: 'auto', minWidth: 180, padding: '8px 10px', fontSize: 13 }}>
+                  <option value="">— Proyecto que puede ver —</option>
+                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <button className="btn btn-sm" onClick={() => reject(u)} style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>Rechazar</button>
+                <button className="btn btn-sm btn-accent" onClick={() => approve(u)}><I2.check width={14} height={14} /> Aprobar</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="surface tbl" style={{ overflow: 'hidden' }}>
+        <table>
+          <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
+            {['Usuario', 'Rol', 'Proyectos', 'Último acceso', 'Tiempo total', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {team.map((u) => (
+              <tr key={u.id} style={{ borderBottom: '1px solid var(--border)', opacity: u.status === 'pending' ? 0.75 : 1 }}>
+                <td style={{ padding: '12px 16px' }}><div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div><div className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{u.email || '—'}</div></td>
+                <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Badge tone={u.access === 'project' ? 'blue' : 'accent'}>{roleLabel(u)}</Badge>{u.status === 'pending' && <span className="tag" style={{ marginLeft: 6, color: 'var(--yellow)', borderColor: 'var(--yellow)' }}>pendiente</span>}</td>
+                <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{projCol(u)}</td>
+                <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{fmtSeen(u.lastSeenAt)}</td>
+                <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }} className="mono">{fmtDur(u.usageMs)}</td>
+                <td style={{ padding: '12px 16px' }}>{u.access === 'project' && u.assignedProjectId && <button className="btn btn-sm btn-ghost" onClick={() => onOpenProject && onOpenProject(u.assignedProjectId)}>Ver proyecto</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
