@@ -7681,8 +7681,10 @@ function Login() {
       }
     } catch (e2) {
       const m = String(e2.message || '')
-      if (/email not confirmed/i.test(m)) setErr('Ese usuario todavía no está confirmado en Supabase. Confirmalo en Authentication → Users (o desactivá “Confirm email” en el proveedor Email).')
+      if (/rate limit/i.test(m)) setErr('Supabase limitó el envío de emails de confirmación. Desactivá “Confirm email” en Supabase → Authentication → Providers → Email (el registro no necesita confirmación por mail; la aprobación es manual). Después probá de nuevo.')
+      else if (/email not confirmed/i.test(m)) setErr('Ese usuario todavía no está confirmado en Supabase. Confirmalo en Authentication → Users (o desactivá “Confirm email” en el proveedor Email).')
       else if (/invalid login credentials/i.test(m)) setErr('Email o contraseña incorrectos — o el usuario aún no está confirmado en Supabase. Revisá la contraseña y que el usuario figure como confirmado en Authentication → Users.')
+      else if (/user already registered|already registered/i.test(m)) setErr('Ya existe una cuenta con ese email. Probá iniciar sesión.')
       else setErr(m)
     } finally { setBusy(false) }
   }
