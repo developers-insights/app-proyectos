@@ -8275,7 +8275,14 @@ function UsuariosView({ onOpenProject }) {
               <tr key={u.id} style={{ borderBottom: '1px solid var(--border)', opacity: u.status === 'pending' ? 0.75 : 1 }}>
                 <td style={{ padding: '12px 16px' }}><div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div><div className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{u.email || '—'}</div></td>
                 <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Badge tone={u.access === 'project' ? 'blue' : 'accent'}>{roleLabel(u)}</Badge>{u.status === 'pending' && <span className="tag" style={{ marginLeft: 6, color: 'var(--yellow)', borderColor: 'var(--yellow)' }}>pendiente</span>}</td>
-                <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{projCol(u)}</td>
+                <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>
+                  {u.access === 'project' && meCanApprove ? (
+                    <select className="input" value={u.assignedProjectId || ''} onChange={(e) => teamStore.patch(u.id, (x) => ({ ...x, access: 'project', assignedProjectId: e.target.value }))} style={{ width: 'auto', minWidth: 190, padding: '6px 9px', fontSize: 13 }}>
+                      <option value="">— sin asignar —</option>
+                      {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  ) : projCol(u)}
+                </td>
                 <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{fmtSeen(u.lastSeenAt)}</td>
                 <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }} className="mono">{fmtDur(u.usageMs)}</td>
                 <td style={{ padding: '12px 16px' }}>
