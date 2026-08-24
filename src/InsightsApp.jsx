@@ -7682,16 +7682,22 @@ function Login() {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pw })
         if (error) throw error
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password: pw, options: { data: { name: name.trim() } } })
+        // Registro vía Edge Function (service_role): crea el usuario YA confirmado,
+        // SIN mandar mail → sin "email rate limit". Después lo logueamos solo.
+        const { data: res, error } = await supabase.functions.invoke('register-user', { body: { name: name.trim(), email: email.trim().toLowerCase(), password: pw } })
         if (error) throw error
-        setRegistered({ name: name.trim() })   // muestra la pantalla de "en aprobación"
+        if (res && res.error === 'already_registered') { setErr('Ya existe una cuenta con ese email. Iniciá sesión.'); setMode('signin'); return }
+        if (res && res.error) throw new Error(res.error)
+        // login automático → la app muestra la pantalla de "en aprobación"
+        const { error: sErr } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pw })
+        if (sErr) setRegistered({ name: name.trim() })   // si por algo no logueó, igual mostramos el mensaje
       }
     } catch (e2) {
       const m = String(e2.message || '')
-      if (/rate limit/i.test(m)) setErr('Supabase limitó el envío de emails de confirmación. Desactivá “Confirm email” en Supabase → Authentication → Providers → Email (el registro no necesita confirmación por mail; la aprobación es manual). Después probá de nuevo.')
-      else if (/email not confirmed/i.test(m)) setErr('Ese usuario todavía no está confirmado en Supabase. Confirmalo en Authentication → Users (o desactivá “Confirm email” en el proveedor Email).')
-      else if (/invalid login credentials/i.test(m)) setErr('Email o contraseña incorrectos — o el usuario aún no está confirmado en Supabase. Revisá la contraseña y que el usuario figure como confirmado en Authentication → Users.')
-      else if (/user already registered|already registered/i.test(m)) setErr('Ya existe una cuenta con ese email. Probá iniciar sesión.')
+      if (/failed to (send|fetch)|not found|404|non-2xx|edge function/i.test(m)) setErr('Falta desplegar la función “register-user” en Supabase (Edge Functions). En cuanto la subas, el registro funciona.')
+      else if (/rate limit/i.test(m)) setErr('Supabase está limitando el registro por unos minutos. Volvé a intentar en un rato.')
+      else if (/invalid login credentials/i.test(m)) setErr('Email o contraseña incorrectos.')
+      else if (/user already registered|already registered/i.test(m)) setErr('Ya existe una cuenta con ese email. Iniciá sesión.')
       else setErr(m)
     } finally { setBusy(false) }
   }
