@@ -815,6 +815,11 @@ const TEAM_ROLES = [{ key: '', label: 'Otro' }, { key: 'fundador', label: 'Funda
 const FOUNDER_IDS = ['u1', 'u5']
 const FOUNDER_EMAILS = ['federicog@insightsapps.tech', 'juanp@insightsapps.tech']
 const isFounder = (u) => !!u && (FOUNDER_IDS.includes(u.id) || FOUNDER_EMAILS.includes(String(u.email || '').toLowerCase()))
+/* Aprobadores de usuarios: los fundadores + Nacho Cachaza. Únicos que ven la sección
+   Usuarios y pueden aprobar/rechazar registros. Borrar sigue siendo solo fundadores. */
+const APPROVER_IDS = ['u7']
+const APPROVER_EMAILS = ['nachocachaza@insightsapps.tech']
+const canApproveUsers = (u) => isFounder(u) || (!!u && (APPROVER_IDS.includes(u.id) || APPROVER_EMAILS.includes(String(u.email || '').toLowerCase())))
 function seedTeam() {
   return [
     { id: 'u1', name: 'Federico Garbarino', email: SEED_EMAILS.u1, color: '#F97316', initials: 'FG', role: SEED_ROLES.u1 },
@@ -7126,6 +7131,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
   const { data, myId } = useApp()
   const me = (data.team || []).find((u) => u.id === myId) || null
   const pendingUsers = (data.team || []).filter((u) => u.status === 'pending').length
+  const meCanApprove = canApproveUsers(me)
   const items = [
     { key: 'projects', label: 'Projects', icon: I2.folder },
     { key: 'tasks', label: 'Tareas', icon: I2.tasks },
@@ -7133,7 +7139,8 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'calls', label: 'Calls', icon: I2.phone },
     { key: 'sops', label: 'SOP', icon: I2.doc },
     { key: 'videos', label: 'Videos explicativos', icon: I2.film },
-    { key: 'usuarios', label: 'Usuarios', icon: I2.users, badge: pendingUsers },
+    // Usuarios/aprobación: solo fundadores + Nacho Cachaza
+    ...(meCanApprove ? [{ key: 'usuarios', label: 'Usuarios', icon: I2.users, badge: pendingUsers }] : []),
   ]
   const tools = [
     { key: 'planner', label: 'Planificador', icon: I2.calendar },
@@ -8214,7 +8221,9 @@ function MemberPortal({ me, onLogout }) {
 /* Sección "Usuarios": tabla + aprobación de registros pendientes + asignación de proyecto. */
 function UsuariosView({ onOpenProject }) {
   const { data, teamStore, myId } = useApp()
-  const meFounder = isFounder((data.team || []).find((u) => u.id === myId))
+  const me = (data.team || []).find((u) => u.id === myId)
+  const meFounder = isFounder(me)
+  const meCanApprove = canApproveUsers(me)
   const deleteUser = (u) => { if (window.confirm(`¿Borrar a ${u.name}? Pierde el acceso a la app. (Para bloquearlo del todo, borralo también en Supabase → Authentication.)`)) teamStore.remove(u.id) }
   const team = data.team || []
   const projects = data.projects || []
@@ -8234,7 +8243,7 @@ function UsuariosView({ onOpenProject }) {
     <div className="view" style={{ padding: '28px 34px 60px' }}>
       <div style={{ marginBottom: 20 }}><div className="label" style={{ marginBottom: 6 }}>Plataforma</div><h1 style={{ fontSize: 32 }}>Usuarios</h1></div>
 
-      {pending.length > 0 && (
+      {meCanApprove && pending.length > 0 && (
         <div className="surface" style={{ padding: 16, marginBottom: 20, border: '1px solid var(--accent-line)', background: 'var(--accent-soft)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <I2.alert width={18} height={18} style={{ color: 'var(--accent)' }} />
