@@ -26,12 +26,15 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
     const b = await req.json().catch(() => ({}))
+    // Respondemos SIEMPRE con 200 (con `error` adentro si algo falla): `functions.invoke`
+    // trata cualquier código != 2xx como excepción y no deja leer el cuerpo, así que
+    // devolvemos 200 y el cliente decide según `ok`/`error`.
     const name = String(b.name || '').trim()
     const email = String(b.email || '').trim().toLowerCase()
     const password = String(b.password || '')
-    if (!name || !email || !password) return json({ error: 'Faltan datos: nombre, email y contraseña.' }, 400)
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'El email no tiene un formato válido.' }, 400)
-    if (password.length < 6) return json({ error: 'La contraseña tiene que tener al menos 6 caracteres.' }, 400)
+    if (!name || !email || !password) return json({ error: 'Faltan datos: nombre, email y contraseña.' })
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'El email no tiene un formato válido.' })
+    if (password.length < 6) return json({ error: 'La contraseña tiene que tener al menos 6 caracteres.' })
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
@@ -41,8 +44,8 @@ Deno.serve(async (req) => {
     })
     if (cErr) {
       const m = String(cErr.message || '')
-      if (/already|exists|registered/i.test(m)) return json({ error: 'already_registered' }, 409)
-      return json({ error: m }, 400)
+      if (/already|exists|registered/i.test(m)) return json({ error: 'already_registered' })
+      return json({ error: m })
     }
 
     // 2) dejar la fila PENDIENTE en team_members (para que se pueda aprobar)
@@ -60,6 +63,6 @@ Deno.serve(async (req) => {
 
     return json({ ok: true })
   } catch (e) {
-    return json({ error: (e as Error).message }, 500)
+    return json({ error: (e as Error).message })
   }
 })

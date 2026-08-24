@@ -7685,9 +7685,14 @@ function Login() {
         // Registro vía Edge Function (service_role): crea el usuario YA confirmado,
         // SIN mandar mail → sin "email rate limit". Después lo logueamos solo.
         const { data: res, error } = await supabase.functions.invoke('register-user', { body: { name: name.trim(), email: email.trim().toLowerCase(), password: pw } })
-        if (error) throw error
-        if (res && res.error === 'already_registered') { setErr('Ya existe una cuenta con ese email. Iniciá sesión.'); setMode('signin'); return }
-        if (res && res.error) throw new Error(res.error)
+        let payload = res
+        if (error) {
+          // la función respondió con un código != 2xx → leemos el cuerpo real
+          try { if (error.context && typeof error.context.json === 'function') payload = await error.context.json() } catch (_) { /* ignore */ }
+          if (!payload) throw error   // error real (red / función no desplegada)
+        }
+        if (payload && payload.error === 'already_registered') { setErr('Ya existe una cuenta con ese email. Iniciá sesión.'); setMode('signin'); return }
+        if (payload && payload.error) throw new Error(payload.error)
         // login automático → la app muestra la pantalla de "en aprobación"
         const { error: sErr } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pw })
         if (sErr) setRegistered({ name: name.trim() })   // si por algo no logueó, igual mostramos el mensaje
