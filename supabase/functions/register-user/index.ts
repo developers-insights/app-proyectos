@@ -57,8 +57,11 @@ Deno.serve(async (req) => {
       role: '', status: 'pending', access: 'project', assignedProjectId: '',
       createdAt: now, lastSeenAt: now, usageMs: 0,
     }
-    // upsert en el formato del store (fila = { id, data, updated_at })
-    const { error: tErr } = await admin.from('team_members').upsert({ id, data: member, updated_at: now }, { onConflict: 'id' })
+    // upsert en el formato del store (fila = { id, data, updated_at }). `deleted_at: null`
+    // es clave: si ese email tuvo una fila dada de baja alguna vez, el upsert sin limpiar
+    // el tombstone la dejaba invisible para la app (la lista filtra por deleted_at null) y
+    // el usuario entraba a una pantalla de carga eterna. Un alta nueva es una fila viva.
+    const { error: tErr } = await admin.from('team_members').upsert({ id, data: member, updated_at: now, deleted_at: null }, { onConflict: 'id' })
     if (tErr) { /* el usuario ya quedó creado; si esto falla, igual entra y se auto-crea al loguear */ }
 
     return json({ ok: true })

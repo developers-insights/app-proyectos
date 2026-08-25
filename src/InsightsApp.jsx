@@ -7839,6 +7839,8 @@ function AppShell({ session, onLogout }) {
   const [teamOpen, setTeamOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [myId, setMyId] = useState(() => localStorage.getItem('my_team_id') || '')
+  const [revoked, setRevoked] = useState(false)      // a esta cuenta le dieron de baja el acceso
+  const altaRef = useRef('')                         // email cuya alta automática ya se intentó (no repetir)
   const isMobile = useIsMobile()
   const [navOpen, setNavOpen] = useState(false)
   useEffect(() => { if (!isMobile) setNavOpen(false) }, [isMobile])
@@ -7881,20 +7883,45 @@ function AppShell({ session, onLogout }) {
     // 2) ya elegiste tu nombre ("Sos:") pero ese miembro no tiene email → completárselo (evita duplicar)
     if (myId) {
       const mine = team.find((u) => u.id === myId)
-      if (mine && !mine.email) teamStore.patch(myId, (u) => ({ ...u, email: session.user.email }))
-      return
+      if (mine) {
+        if (!mine.email) teamStore.patch(myId, (u) => ({ ...u, email: session.user.email }))
+        return
+      }
+      // BLINDAJE #3: `myId` apunta a un miembro que YA NO EXISTE — lo borraron, o en
+      // este mismo navegador entraste antes con otra cuenta y quedó su id guardado.
+      // Antes acá se hacía `return` y la app se quedaba para siempre en "Cargando tu
+      // acceso…": el gate exige `me`, y `me` nunca iba a aparecer. Lo limpiamos y
+      // seguimos al alta de abajo, que es la que resuelve el caso.
+      localStorage.removeItem('my_team_id')
+      setMyId('')
     }
     // 3) nadie coincide → dar de alta al usuario en el equipo desde su sesión de Supabase.
     //    BLINDAJE #2: id DETERMINÍSTICO derivado del email (no uid() aleatorio). Si
     //    dos pestañas/dispositivos dan de alta "al mismo" usuario nuevo a la vez,
     //    upsertean la MISMA fila en lugar de crear dos. `upsert` crea si no existe.
+    //    BLINDAJE #4: "no coincide nadie" son DOS casos distintos que desde acá se ven
+    //    igual: un alta nueva, o alguien a quien DIERON DE BAJA (su fila tiene tombstone
+    //    y `loadRows` no la trae). Dar de alta a ciegas chocaba contra la fila borrada
+    //    (409 por id repetido) y, como el efecto corre en cada cambio de la lista, el
+    //    choque se repetía en loop mientras el usuario miraba "Cargando tu acceso…".
+    //    Preguntamos UNA vez por la baja y recién ahí decidimos: pantalla, o alta.
+    if (altaRef.current === email) return
+    altaRef.current = email
     const meta = session.user.user_metadata || {}
     const name = meta.name || meta.full_name || session.user.email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     const nid = 'auto-' + email.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
     // Registro público: queda PENDIENTE de aprobación y con acceso solo a su proyecto
     // (que se le asigna al aprobarlo). No es parte del equipo interno.
-    teamStore.upsert({ id: nid, name, email: session.user.email, initials: autoInitials(name), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length], role: '', status: 'pending', access: 'project', assignedProjectId: '', createdAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(), usageMs: 0 })
-    setMyId(nid)
+    const alta = () => {
+      teamStore.upsert({ id: nid, name, email: session.user.email, initials: autoInitials(name), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length], role: '', status: 'pending', access: 'project', assignedProjectId: '', createdAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(), usageMs: 0 })
+      setMyId(nid)
+    }
+    if (!cloudEnabled) { alta(); return }
+    supabase.from('team_members').select('id,data').not('deleted_at', 'is', null).then(({ data: tomb, error }) => {
+      if (error) { altaRef.current = ''; return }   // sin respuesta no decidimos nada; se reintenta
+      if ((tomb || []).some((r) => String(r.data?.email || '').toLowerCase() === email)) setRevoked(true)
+      else alta()
+    })
   }, [session, teamStore.items, teamStore.ready, myId])
 
   // Contador de tiempo en la app: suma al usageMs del miembro actual cada minuto activo.
@@ -7940,14 +7967,16 @@ function AppShell({ session, onLogout }) {
   const me = teamStore.items.find((u) => u.id === myId) || null
   let gate = 'full'
   if (cloudEnabled) {
-    if (!teamStore.ready || !myId || !me) gate = 'loading'
+    if (revoked) gate = 'revoked'
+    else if (!teamStore.ready || !myId || !me) gate = 'loading'
     else if (me.status === 'pending') gate = 'pending'
     else if (me.access === 'project') gate = 'portal'
   }
 
   return (
     <AppCtx.Provider value={{ data: dataView, myId, logActivity, supabase, botComms, ...planStore, ...taskStore, ...collectionStores }}>
-      {gate === 'loading' ? <CenterScreen>Cargando tu acceso…</CenterScreen>
+      {gate === 'loading' ? <AccessLoading onLogout={onLogout} />
+        : gate === 'revoked' ? <AccessRevoked onLogout={onLogout} />
         : gate === 'pending' ? <PendingApproval me={me} onLogout={onLogout} />
           : gate === 'portal' ? <MemberPortal me={me} onLogout={onLogout} />
             : (
@@ -8153,6 +8182,45 @@ function PendingApproval({ me, onLogout }) {
   )
 }
 
+/* Pantalla de carga del acceso. Nunca es un spinner eterno: si a los 8 segundos
+   todavía no resolvió, deja de girar en el vacío y ofrece salidas reales. Un
+   "Cargando…" sin escape deja al usuario encerrado sin poder ni cerrar sesión. */
+function AccessLoading({ onLogout }) {
+  const [slow, setSlow] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setSlow(true), 8000); return () => clearTimeout(t) }, [])
+  const salir = () => { localStorage.removeItem('my_team_id'); if (onLogout) onLogout(); else window.location.reload() }
+  if (!slow) return <CenterScreen>Cargando tu acceso…</CenterScreen>
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg)' }}>
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="surface" style={{ width: '100%', maxWidth: 420, padding: 30, textAlign: 'center', boxShadow: 'var(--shadow)' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}><Mark size={40} /></div>
+        <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 20, marginBottom: 10 }}>Esto está tardando de más</h2>
+        <p style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.6 }}>No pudimos cargar tu acceso. Probá de nuevo y, si sigue igual, volvé a entrar con tu cuenta.</p>
+        <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+          <button className="btn btn-ghost" onClick={() => window.location.reload()} style={{ flex: 1, justifyContent: 'center' }}>Reintentar</button>
+          <button className="btn btn-accent" onClick={salir} style={{ flex: 1, justifyContent: 'center' }}>Volver a entrar</button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+/* A esta cuenta le dieron de baja el acceso: se lo decimos, no la dejamos girando. */
+function AccessRevoked({ onLogout }) {
+  const salir = () => { localStorage.removeItem('my_team_id'); if (onLogout) onLogout(); else window.location.reload() }
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg)' }}>
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="surface" style={{ width: '100%', maxWidth: 440, padding: 32, textAlign: 'center', boxShadow: 'var(--shadow)' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}><Mark size={44} /></div>
+        <div style={{ width: 60, height: 60, borderRadius: 999, margin: '0 auto 16px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', color: 'var(--text-faint)' }}><I2.lock width={26} height={26} /></div>
+        <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 22, marginBottom: 10 }}>Tu acceso está dado de baja</h2>
+        <p style={{ fontSize: 14.5, color: 'var(--text-dim)', lineHeight: 1.6 }}>Esta cuenta ya no tiene acceso a la app. Si creés que es un error, escribinos y lo revisamos.</p>
+        <button className="btn btn-ghost" onClick={salir} style={{ marginTop: 22, justifyContent: 'center', width: '100%' }}>Cerrar sesión</button>
+      </motion.div>
+    </div>
+  )
+}
+
 /* Portal de solo-lectura de un usuario externo aprobado: ve SOLO su proyecto asignado. */
 function MemberPortal({ me, onLogout }) {
   const { data, plans } = useApp()
@@ -8224,7 +8292,7 @@ function UsuariosView({ onOpenProject }) {
   const me = (data.team || []).find((u) => u.id === myId)
   const meFounder = isFounder(me)
   const meCanApprove = canApproveUsers(me)
-  const deleteUser = (u) => { if (window.confirm(`¿Borrar a ${u.name}? Pierde el acceso a la app. (Para bloquearlo del todo, borralo también en Supabase → Authentication.)`)) teamStore.remove(u.id) }
+  const deleteUser = (u) => { if (window.confirm(`¿Borrar a ${u.name}? Pierde el acceso: si vuelve a entrar, ve un aviso de que su acceso está dado de baja.`)) teamStore.remove(u.id) }
   const team = data.team || []
   const projects = data.projects || []
   const [assign, setAssign] = useState({})
