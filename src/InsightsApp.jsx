@@ -27,7 +27,7 @@ import {
   PROJECT_STAGES, STAGE_GROUPS, stageMeta, projectStage, applyStage, stageIsRegression, isPaidStage,
 } from './lib/stages.js'
 import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
-import { isDev, canSeeAllToggle, visibleProjects } from './lib/visibility.js'
+import { isDev, isCollab, canSeeAllToggle, visibleProjects } from './lib/visibility.js'
 import {
   taskText, taskDone, weekProgress,
   toggleTaskDone, hitoForWeek,
@@ -6839,17 +6839,20 @@ function TaskDetailModal({ open, task, team, projects, onClose, onPatch, onDelet
 }
 
 function TasksView() {
-  const { data, createTask, patchTask, deleteTask, logActivity } = useApp()
+  const { data, createTask, patchTask, deleteTask, logActivity, myId } = useApp()
   const [view, setView] = useState('table')
   const [openId, setOpenId] = useState(null)
   const [dragId, setDragId] = useState(null)
   const [overCol, setOverCol] = useState(null)
-  const tasks = data.tasks || []
+  const me = (data.team || []).find((u) => u.id === myId) || null
+  const collab = isCollab(me)
+  // Colaborador: ve SOLO las tareas de su proyecto asignado (nada interno ni de otros).
+  const tasks = collab ? (data.tasks || []).filter((t) => t.projectId && t.projectId === me.assignedProjectId) : (data.tasks || [])
   const team = data.team || []
   const userOf = (id) => team.find((u) => u.id === id)
   // Mutaciones por fila contra la tabla `tasks` (nunca setData → nunca vuelven al
   // blob monolítico). createTask/patchTask/deleteTask vienen del store useTasks.
-  const addTask = () => { const id = uid(); createTask({ id, name: 'Nueva tarea', assigneeId: '', priority: 'normal', status: 'pendiente', scope: 'interno', projectId: '', notes: '', comments: [] }); setOpenId(id); logActivity && logActivity({ type: 'task-add', text: 'creó una tarea' }) }
+  const addTask = () => { const id = uid(); createTask({ id, name: 'Nueva tarea', assigneeId: collab ? myId : '', priority: 'normal', status: 'pendiente', scope: collab ? 'cliente' : 'interno', projectId: collab ? (me.assignedProjectId || '') : '', notes: '', comments: [] }); setOpenId(id); logActivity && logActivity({ type: 'task-add', text: 'creó una tarea' }) }
   const updateTask = (id, fields) => {
     const prev = tasks.find((t) => t.id === id)
     patchTask(id, (t) => ({ ...t, ...fields }))
@@ -7132,7 +7135,12 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
   const me = (data.team || []).find((u) => u.id === myId) || null
   const pendingUsers = (data.team || []).filter((u) => u.status === 'pending').length
   const meCanApprove = canApproveUsers(me)
-  const items = [
+  const meCollab = isCollab(me)
+  // Colaborador (dev externo restringido a un proyecto): solo Proyectos + Tareas + Planificador.
+  const items = meCollab ? [
+    { key: 'projects', label: 'Projects', icon: I2.folder },
+    { key: 'tasks', label: 'Tareas', icon: I2.tasks },
+  ] : [
     { key: 'projects', label: 'Projects', icon: I2.folder },
     { key: 'tasks', label: 'Tareas', icon: I2.tasks },
     { key: 'clients', label: 'Clients', icon: I2.users },
@@ -7142,7 +7150,9 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     // Usuarios/aprobación: solo fundadores + Nacho Cachaza
     ...(meCanApprove ? [{ key: 'usuarios', label: 'Usuarios', icon: I2.users, badge: pendingUsers }] : []),
   ]
-  const tools = [
+  const tools = meCollab ? [
+    { key: 'planner', label: 'Planificador', icon: I2.calendar },
+  ] : [
     { key: 'planner', label: 'Planificador', icon: I2.calendar },
     { key: 'bot', label: 'Bot', icon: I2.whatsapp },
     { key: 'editor', label: 'Editor', icon: I2.film },
@@ -8305,8 +8315,9 @@ function UsuariosView({ onOpenProject }) {
   const reject = (u) => { if (window.confirm(`¿Rechazar y quitar el acceso de ${u.name}?`)) teamStore.remove(u.id) }
   const fmtDur = (ms) => { const m = Math.round((Number(ms) || 0) / 60000); if (m < 1) return '—'; if (m < 60) return `${m} min`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ${m % 60}m`; const d = Math.floor(h / 24); return `${d}d ${h % 24}h` }
   const fmtSeen = (iso) => { if (!iso) return '—'; const diff = Date.now() - new Date(iso).getTime(); const min = Math.floor(diff / 60000); if (min < 1) return 'recién'; if (min < 60) return `hace ${min} min`; const h = Math.floor(min / 60); if (h < 24) return `hace ${h} h`; const d = Math.floor(h / 24); return d === 1 ? 'ayer' : `hace ${d} días` }
-  const roleLabel = (u) => u.role === 'fundador' ? 'Fundador' : u.access === 'project' ? 'Cliente' : (u.role === 'pm' ? 'PM' : u.role === 'dev' ? 'Dev' : (u.role || 'Equipo'))
-  const projCol = (u) => u.access === 'project' ? (u.assignedProjectId ? projName(u.assignedProjectId) : '— sin asignar —') : projects.filter((p) => p.assignments?.pm?.userId === u.id || p.assignments?.dev?.userId === u.id).length
+  const isExternal = (u) => u.access === 'project' || u.access === 'collab'
+  const roleLabel = (u) => u.role === 'fundador' ? 'Fundador' : u.access === 'collab' ? 'Colaborador' : u.access === 'project' ? 'Cliente' : (u.role === 'pm' ? 'PM' : u.role === 'dev' ? 'Dev' : (u.role || 'Equipo'))
+  const projCol = (u) => isExternal(u) ? (u.assignedProjectId ? projName(u.assignedProjectId) : '— sin asignar —') : projects.filter((p) => p.assignments?.pm?.userId === u.id || p.assignments?.dev?.userId === u.id).length
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
       <div style={{ marginBottom: 20 }}><div className="label" style={{ marginBottom: 6 }}>Plataforma</div><h1 style={{ fontSize: 32 }}>Usuarios</h1></div>
@@ -8342,20 +8353,26 @@ function UsuariosView({ onOpenProject }) {
             {team.map((u) => (
               <tr key={u.id} style={{ borderBottom: '1px solid var(--border)', opacity: u.status === 'pending' ? 0.75 : 1 }}>
                 <td style={{ padding: '12px 16px' }}><div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div><div className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{u.email || '—'}</div></td>
-                <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Badge tone={u.access === 'project' ? 'blue' : 'accent'}>{roleLabel(u)}</Badge>{u.status === 'pending' && <span className="tag" style={{ marginLeft: 6, color: 'var(--yellow)', borderColor: 'var(--yellow)' }}>pendiente</span>}</td>
+                <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}><Badge tone={u.access === 'project' ? 'blue' : u.access === 'collab' ? 'green' : 'accent'}>{roleLabel(u)}</Badge>{u.status === 'pending' && <span className="tag" style={{ marginLeft: 6, color: 'var(--yellow)', borderColor: 'var(--yellow)' }}>pendiente</span>}</td>
                 <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>
-                  {u.access === 'project' && meCanApprove ? (
-                    <select className="input" value={u.assignedProjectId || ''} onChange={(e) => teamStore.patch(u.id, (x) => ({ ...x, access: 'project', assignedProjectId: e.target.value }))} style={{ width: 'auto', minWidth: 190, padding: '6px 9px', fontSize: 13 }}>
-                      <option value="">— sin asignar —</option>
-                      {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
+                  {isExternal(u) && meCanApprove ? (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <select className="input" value={u.access} onChange={(e) => teamStore.patch(u.id, (x) => ({ ...x, access: e.target.value }))} style={{ width: 'auto', minWidth: 160, padding: '6px 9px', fontSize: 13 }} title="Tipo de acceso">
+                        <option value="project">Cliente · solo ve el proyecto</option>
+                        <option value="collab">Colaborador · dev del proyecto</option>
+                      </select>
+                      <select className="input" value={u.assignedProjectId || ''} onChange={(e) => teamStore.patch(u.id, (x) => ({ ...x, assignedProjectId: e.target.value }))} style={{ width: 'auto', minWidth: 190, padding: '6px 9px', fontSize: 13 }} title="Proyecto asignado">
+                        <option value="">— sin asignar —</option>
+                        {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
                   ) : projCol(u)}
                 </td>
                 <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{fmtSeen(u.lastSeenAt)}</td>
                 <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }} className="mono">{fmtDur(u.usageMs)}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
-                    {u.access === 'project' && u.assignedProjectId && <button className="btn btn-sm btn-ghost" onClick={() => onOpenProject && onOpenProject(u.assignedProjectId)}>Ver proyecto</button>}
+                    {isExternal(u) && u.assignedProjectId && <button className="btn btn-sm btn-ghost" onClick={() => onOpenProject && onOpenProject(u.assignedProjectId)}>Ver proyecto</button>}
                     {meFounder && u.id !== myId && <button className="btn btn-sm btn-ghost" title="Borrar usuario" onClick={() => deleteUser(u)} style={{ padding: 6, color: 'var(--red)' }}><I2.trash width={15} height={15} /></button>}
                   </div>
                 </td>
