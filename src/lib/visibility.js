@@ -30,11 +30,26 @@ export function isDev(member) {
 /**
  * Colaborador: usuario externo aprobado con acceso 'collab'. Usa la app real
  * (Proyectos, tareas, Planificador, detalle de proyecto con todas sus funciones)
- * pero SOLO ve su proyecto asignado (assignedProjectId). Distinto de 'project',
- * que es el portal de solo lectura.
+ * pero SOLO ve los proyectos que tiene asignados (assignedProjectIds). Distinto
+ * de 'project', que es el portal de solo lectura y sigue siendo un único
+ * proyecto (assignedProjectId, sin tocar).
  */
 export function isCollab(member) {
   return !!member && member.access === 'collab'
+}
+
+/**
+ * Proyectos asignados a un Colaborador. `assignedProjectIds` (array) es la
+ * fuente de verdad; si todavía no existe, cae al campo viejo `assignedProjectId`
+ * (string, pre-multi-proyecto) para no romper a nadie que no fue re-guardado
+ * desde la UI nueva.
+ */
+export function collabProjectIds(member) {
+  if (!member) return []
+  if (Array.isArray(member.assignedProjectIds) && member.assignedProjectIds.length) {
+    return member.assignedProjectIds
+  }
+  return member.assignedProjectId ? [member.assignedProjectId] : []
 }
 
 /** ¿Mostrarle el switch "Ver todos los proyectos"? Solo a los devs internos (no colaboradores). */
@@ -50,8 +65,8 @@ export function canSeeAllToggle(me) {
  */
 export function visibleProjects(projects, me, showAll) {
   const list = Array.isArray(projects) ? projects : []
-  // Colaborador: SOLO su proyecto asignado, sin importar el switch.
-  if (isCollab(me)) return list.filter((p) => p && p.id === me.assignedProjectId)
+  // Colaborador: SOLO sus proyectos asignados, sin importar el switch.
+  if (isCollab(me)) { const ids = collabProjectIds(me); return list.filter((p) => p && ids.includes(p.id)) }
   if (showAll || !me || !me.id || !isDev(me)) return list
   return list.filter((p) => {
     const dev = p && p.assignments && p.assignments.dev
