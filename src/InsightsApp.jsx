@@ -3822,7 +3822,7 @@ function LinkAdder({ onAdd, cta = 'Agregar link' }) {
 }
 
 /* CUENTAS del proyecto: checklist de accesos que hacen falta (Supabase, GitHub, Vercel…).
-   Los presets de alta rápida salen de la biblioteca de Videos (ver Videos()/AccountsModal). */
+   Los presets de alta rápida salen de la biblioteca de Videos (ver Videos()/AccountsPanel). */
 
 /* PDF prolijo del checklist de cuentas — mismo estilo visual que el resto de la
    app (banda oscura + acento). jsPDF se carga on-demand (import dinámico), igual
@@ -3885,10 +3885,25 @@ async function exportAccountsPdf(project, accounts) {
   var slug = (project.name || 'proyecto').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
   makeAccountsPdfDoc(project, accounts, JsPDF).save('cuentas-' + slug + '.pdf')
 }
-function AccountsModal({ open, project, onClose, patch }) {
+/* Servicios comunes que no siempre tienen un video tutorial propio en la
+   biblioteca de Videos, pero igual hacen falta como checklist. Si alguno de
+   estos consigue su video más adelante, el preset de la biblioteca gana
+   (mismo dedupe por nombre que ya hace `has()`). */
+const FIXED_ACCOUNT_PRESETS = [
+  { label: 'Twilio', color: '#f22f46' },
+  { label: 'Google Play', color: '#00c853' },
+  { label: 'Apple Developer', color: '#0a84ff' },
+  { label: 'Meta / WhatsApp Business', color: '#25D366' },
+]
+
+/* Checklist de cuentas del proyecto — antes vivía en un modal escondido
+   dentro de "Paneles"; ahora es una tarjeta fija en el detalle, siempre a
+   la vista. Misma lógica de datos que antes (project.accounts), solo cambió
+   dónde se renderiza. */
+function AccountsPanel({ project, patch }) {
   const { data, myId } = useApp()
+  const [addingCustom, setAddingCustom] = useState(false)
   const [draft, setDraft] = useState('')
-  if (!project) return <Modal open={open} onClose={onClose} title="Cuentas" />
   const accounts = project.accounts || []
   const videos = data.videos || []
   const videoById = (id) => videos.find((v) => v.id === id) || null
@@ -3908,74 +3923,65 @@ function AccountsModal({ open, project, onClose, patch }) {
     }),
   }))
   const remove = (id) => patch((p) => ({ ...p, accounts: (p.accounts || []).filter((a) => a.id !== id) }))
-  const addCustom = () => { add(draft); setDraft('') }
-  // Presets = cada servicio declarado en la biblioteca de Videos (un video puede
-  // aportar varios botones, ej. "GitHub" y "Supabase" desde un mismo Loom).
+  const addCustom = () => { add(draft); setDraft(''); setAddingCustom(false) }
+  // Presets = cada servicio de la biblioteca de Videos (con tutorial) + los fijos
+  // sin video. Si un mismo nombre está en los dos, gana el de video (tiene Loom).
   const videoPresets = videos.flatMap((v) => (v.services || []).map((s) => ({ label: s, videoId: v.id, color: v.color || 'var(--accent)' })))
-  const pending = videoPresets.filter((pr) => !has(pr.label))
+  const videoLabels = new Set(videoPresets.map((p) => p.label.trim().toLowerCase()))
+  const allPresets = [...videoPresets, ...FIXED_ACCOUNT_PRESETS.filter((p) => !videoLabels.has(p.label.trim().toLowerCase()))]
+  const pending = allPresets.filter((pr) => !has(pr.label))
   const doneCount = accounts.filter((a) => a.done).length
 
   return (
-    <Modal open={open} onClose={onClose} title="Cuentas del proyecto" sub={project.name} width={500}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.6 }}>
-          Cuentas y accesos que hacen falta para arrancar. Sumá las que vayas a necesitar y marcá las que el cliente ya tenga creadas.
-        </div>
-
-        {/* Lista de cuentas cargadas */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {accounts.length === 0 && <div className="surface" style={{ padding: 14, color: 'var(--text-faint)', fontSize: 13 }}>Todavía no agregaste cuentas. Sumá las que vas a necesitar con los botones de abajo.</div>}
-          {accounts.map((a) => {
-            const video = a.videoId ? videoById(a.videoId) : null
-            const doneTitle = a.done ? `Creada por ${teamName(a.doneBy) || 'alguien'} · ${fmtDate(a.doneAt)}` : 'Marcar como creada'
-            return (
-              <div key={a.id} className="surface surface-hover click" onClick={() => toggle(a.id)} title={doneTitle} style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-                <span style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (a.done ? 'var(--green)' : 'var(--border-strong)'), background: a.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{a.done && <I2.check width={13} height={13} style={{ color: '#fff' }} />}</span>
-                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, textDecoration: a.done ? 'line-through' : 'none', color: a.done ? 'var(--text-faint)' : 'var(--text)' }}>{a.label}</span>
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: a.done ? 'var(--green)' : 'var(--text-faint)' }}>{a.done ? 'Creada' : 'Falta'}</span>
-                {video && (
-                  <>
-                    <a href={video.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="btn btn-sm btn-ghost" title="Ver tutorial" style={{ padding: 4, color: 'var(--text-faint)' }}><I2.film width={13} height={13} /></a>
-                    <CopyBtn value={video.url} title="Copiar link del video" />
-                  </>
-                )}
-                <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); remove(a.id) }} title="Quitar" style={{ padding: 4, color: 'var(--text-faint)' }}><I2.x width={13} height={13} /></button>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Agregado rápido: un botón por servicio de la biblioteca de Videos */}
-        {pending.length > 0 && (
-          <div>
-            <div className="label" style={{ marginBottom: 8 }}>Agregar rápido</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {pending.map((pr) => (
-                <button key={pr.label} className="btn btn-sm" onClick={() => add(pr.label, pr.videoId)} title="Trae el tutorial de la biblioteca de Videos">
-                  <span style={{ width: 8, height: 8, borderRadius: 999, background: pr.color, display: 'inline-block', flexShrink: 0 }} /> {pr.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Cuenta personalizada */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input className="input" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustom() } }} placeholder="Otra cuenta (ej. Stripe, Cloudflare…)" style={{ flex: 1 }} />
-          <button className="btn btn-accent" onClick={addCustom} disabled={!draft.trim()}><I2.plus width={15} height={15} /> Agregar</button>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{accounts.length ? `${doneCount}/${accounts.length} creadas` : ''}</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-sm" onClick={() => exportAccountsPdf(project, accounts)} disabled={!accounts.length} title="Descarga un PDF prolijo con el estado actual, para compartir con el cliente">
-              <I2.pdf width={14} height={14} /> Exportar PDF
-            </button>
-            <button className="btn btn-accent" onClick={onClose}><I2.check width={15} height={15} /> Listo</button>
-          </div>
-        </div>
+    <section style={{ marginBottom: 26 }}>
+      <div className="pd-h">
+        <h2>Cuentas</h2>
+        <span className="sub">{accounts.length ? `${doneCount}/${accounts.length} creadas` : 'accesos que necesita el proyecto'}</span>
       </div>
-    </Modal>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+        {accounts.length === 0 && <div className="pd-hollow">Todavía no agregaste cuentas. Sumá las que vas a necesitar con los botones de abajo.</div>}
+        {accounts.map((a) => {
+          const video = a.videoId ? videoById(a.videoId) : null
+          const doneTitle = a.done ? `Creada por ${teamName(a.doneBy) || 'alguien'} · ${fmtDate(a.doneAt)}` : 'Marcar como creada'
+          return (
+            <div key={a.id} className="surface surface-hover click" onClick={() => toggle(a.id)} title={doneTitle} style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+              <span style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (a.done ? 'var(--green)' : 'var(--border-strong)'), background: a.done ? 'var(--green)' : 'transparent', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{a.done && <I2.check width={13} height={13} style={{ color: '#fff' }} />}</span>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, textDecoration: a.done ? 'line-through' : 'none', color: a.done ? 'var(--text-faint)' : 'var(--text)' }}>{a.label}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: a.done ? 'var(--green)' : 'var(--text-faint)' }}>{a.done ? 'Creada' : 'Falta'}</span>
+              {video && (
+                <>
+                  <a href={video.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="btn btn-sm btn-ghost" title="Ver tutorial" style={{ padding: 4, color: 'var(--text-faint)' }}><I2.film width={13} height={13} /></a>
+                  <CopyBtn value={video.url} title="Copiar link del video" />
+                </>
+              )}
+              <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); remove(a.id) }} title="Quitar" style={{ padding: 4, color: 'var(--text-faint)' }}><I2.x width={13} height={13} /></button>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        {pending.map((pr) => (
+          <button key={pr.label} className="btn btn-sm" onClick={() => add(pr.label, pr.videoId)} title={pr.videoId ? 'Trae el tutorial de la biblioteca de Videos' : undefined}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: pr.color, display: 'inline-block', flexShrink: 0 }} /> {pr.label}
+          </button>
+        ))}
+        {addingCustom ? (
+          <>
+            <input className="input" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustom() } if (e.key === 'Escape') setAddingCustom(false) }} placeholder="Nombre de la cuenta…" style={{ width: 'auto', minWidth: 180, padding: '6px 9px', fontSize: 13 }} />
+            <button className="btn btn-sm btn-accent" onClick={addCustom} disabled={!draft.trim()}><I2.check width={13} height={13} /> Agregar</button>
+          </>
+        ) : (
+          <button className="btn btn-sm" onClick={() => setAddingCustom(true)}><I2.plus width={13} height={13} /> Cuenta personalizada</button>
+        )}
+        {accounts.length > 0 && (
+          <button className="btn btn-sm btn-ghost" onClick={() => exportAccountsPdf(project, accounts)} title="Descarga un PDF prolijo con el estado actual, para compartir con el cliente" style={{ marginLeft: 'auto' }}>
+            <I2.pdf width={14} height={14} /> Exportar PDF
+          </button>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -4872,7 +4878,7 @@ function CuentasView() {
    Un video puede cubrir varios servicios a la vez (ej. "GitHub + Supabase" en
    una sola llamada) — por eso `services` es un array, no un label único. El
    checklist "Cuentas" de cada proyecto consume esta biblioteca (ver
-   AccountsModal): cada servicio se ofrece como botón de alta rápida y, si el
+   AccountsPanel): cada servicio se ofrece como botón de alta rápida y, si el
    proyecto lo suma, el item queda con `videoId` apuntando acá.
 ============================================================================ */
 function VideoCard({ v, onEdit, onDelete }) {
@@ -6184,7 +6190,6 @@ function ProjectDetail({ projectId, onBack }) {
   const [driveOpen, setDriveOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
-  const [accountsOpen, setAccountsOpen] = useState(false)
   const [vaultOpen, setVaultOpen] = useState(false)
 
   if (!project) return null
@@ -6248,8 +6253,6 @@ function ProjectDetail({ projectId, onBack }) {
   let planDashUrl = ''
   if (planUrl) { try { const u = new URL(planUrl); planDashUrl = `${u.origin}/dashboard${u.pathname}` } catch (e) { planDashUrl = '' } }
   const scopeN = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0)
-  const accounts = project.accounts || []
-  const accDone = accounts.filter((a) => a.done).length
   const vaultN = (project.vault || []).length
   const adv = lastAdvanceInfo(project)
   const me = (data.team || []).find((u) => u.id === myId)
@@ -6288,10 +6291,6 @@ function ProjectDetail({ projectId, onBack }) {
             ]} />
             <PanelsMenu items={[
               { Ico: I2.pdf, label: 'Alcance', count: scopeN, onClick: () => setScopeOpen(true), title: 'Propuesta, alcance firmado y links de venta' },
-              { Ico: I2.key, label: 'Cuentas', count: accounts.length ? `${accDone}/${accounts.length}` : 0,
-                tone: accounts.length && accDone < accounts.length ? 'accent' : undefined,
-                onClick: () => setAccountsOpen(true),
-                title: accounts.length ? `${accDone} de ${accounts.length} cuentas listas` : 'Cuentas y accesos que necesita el proyecto' },
               { Ico: I2.lock, label: 'Datos', count: vaultN, onClick: () => setVaultOpen(true), title: 'Datos y credenciales del cliente' },
               { Ico: I2.eye, label: 'Compartir', dot: project.shareEnabled ? 'var(--green)' : undefined, onClick: () => setShareOpen(true),
                 title: project.shareEnabled ? 'El cliente tiene acceso a la vista compartida' : 'Compartir la vista con el cliente' },
@@ -6349,6 +6348,9 @@ function ProjectDetail({ projectId, onBack }) {
             cliente. Tachar una tarea marca "último avance" del proyecto. */}
         <PlanProgress linkedPlan={linkedPlan} patchPlan={patchPlan} onAssociate={() => setPlanOpen(true)} markProgress={() => patch((p) => ({ ...p, lastProgressAt: new Date().toISOString() }))} />
 
+        {/* CUENTAS — antes escondido en "Paneles"; ahora siempre a la vista. */}
+        <AccountsPanel project={project} patch={patch} />
+
         {/* TAREAS DEL EQUIPO (sincronizadas con Tareas) + DEL CLIENTE (dependencias) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 16, marginBottom: 26 }}>
           <section>
@@ -6404,7 +6406,7 @@ function ProjectDetail({ projectId, onBack }) {
       </div>
 
       {/* ── RAIL DERECHO — REGISTRO DE ACTIVIDAD (calls · notas · looms) ──── */}
-      <ActivityRegistry project={project} patch={patch} />
+      <ActivityRegistry project={project} client={client} patch={patch} />
 
       {/* KPI MODAL — el detalle de las 4 tarjetas: las tareas del plan, por semana */}
       <Modal open={kpiModal === 'plan'} onClose={() => setKpiModal(null)} title="Avance del plan" sub={linkedPlan?.title || ''} width={640}>
@@ -6447,7 +6449,6 @@ function ProjectDetail({ projectId, onBack }) {
       <StageConfirmModal open={!!stageAsk} to={stageAsk} project={project}
         onClose={() => setStageAsk(null)} onConfirm={commitStage} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
-      <AccountsModal open={accountsOpen} project={project} onClose={() => setAccountsOpen(false)} patch={patch} />
       <VaultModal open={vaultOpen} project={project} onClose={() => setVaultOpen(false)} patch={patch} />
       <Modal open={driveOpen} onClose={() => setDriveOpen(false)} title="Drive del proyecto" sub={project.name} width={440}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -6504,7 +6505,110 @@ const ACTIVITY_TYPES = [
 ]
 const actTypeMeta = (t) => ACTIVITY_TYPES.find((x) => x.key === t) || ACTIVITY_TYPES[0]
 
-function ActivityRegistry({ project, patch }) {
+/* Fila de solo-lectura: ícono + valor mono + (opcional) WhatsApp + copiar. */
+function ContactRow({ Ico, value, waDigits, copyTitle }) {
+  if (!value) return null
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
+      <Ico width={13} height={13} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+      <span className="mono" style={{ flex: 1, fontSize: 12, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+      {waDigits && <a href={`https://wa.me/${waDigits}`} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost" title="Abrir WhatsApp" style={{ padding: 5, color: 'var(--text-faint)' }}><I2.whatsapp width={13} height={13} /></a>}
+      <CopyBtn value={value} title={copyTitle} />
+    </div>
+  )
+}
+
+const emptyExtraContact = () => ({ id: uid(), role: '', email: '', phone: '' })
+
+/* Tarjeta de contacto del cliente, arriba del registro de actividad — antes
+   había que ir a la sección Clientes para encontrar el email/teléfono, y era
+   de solo lectura. Ahora se edita acá mismo (lápiz) y soporta contactos
+   extra (rol libre + email + teléfono, ej. "Dueña"). Guarda en el Cliente
+   (clientStore), mismo registro que ve la sección Clientes — no es un dato
+   propio del proyecto. */
+function ClientContactCard({ client }) {
+  const { clientStore } = useApp()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(null)
+  if (!client) return null
+
+  const startEdit = () => { setDraft({ name: client.name || '', title: client.title || '', company: client.company || '', email: client.email || '', phone: client.phone || '', extraContacts: (client.extraContacts || []).map((c) => ({ ...c })) }); setEditing(true) }
+  const cancel = () => { setEditing(false); setDraft(null) }
+  const save = () => { clientStore.patch(client.id, (c) => ({ ...c, name: draft.name.trim(), title: draft.title.trim(), company: draft.company.trim(), email: draft.email.trim(), phone: draft.phone.trim(), extraContacts: draft.extraContacts.filter((x) => x.role.trim() || x.email.trim() || x.phone.trim()) })); setEditing(false); setDraft(null) }
+  const setD = (k, v) => setDraft((d) => ({ ...d, [k]: v }))
+  const addExtra = () => setDraft((d) => ({ ...d, extraContacts: [...d.extraContacts, emptyExtraContact()] }))
+  const setExtra = (id, k, v) => setDraft((d) => ({ ...d, extraContacts: d.extraContacts.map((c) => (c.id === id ? { ...c, [k]: v } : c)) }))
+  const removeExtra = (id) => setDraft((d) => ({ ...d, extraContacts: d.extraContacts.filter((c) => c.id !== id) }))
+
+  const extraContacts = client.extraContacts || []
+  const waDigits = (v) => (v || '').replace(/[^0-9]/g, '')
+
+  return (
+    <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--border)' }}>
+      {!editing ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
+            <span style={{ display: 'grid', placeItems: 'center', width: 26, height: 26, borderRadius: 9, flex: 'none', background: 'var(--accent-soft)', color: 'var(--accent)' }}><I2.user width={14} height={14} /></span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 13.5, letterSpacing: '-0.015em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{client.name || client.company || 'Sin nombre'}</strong>
+                {client.title && <span className="tag" style={{ fontSize: 10 }}>{client.title}</span>}
+              </div>
+              {client.name && client.company && <div style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{client.company}</div>}
+            </div>
+            <button className="btn btn-sm btn-ghost" onClick={startEdit} title="Editar contacto" style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}><I2.pencil width={13} height={13} /></button>
+          </div>
+          <ContactRow Ico={I2.mail} value={client.email} copyTitle="Copiar email" />
+          <ContactRow Ico={I2.phone} value={client.phone} waDigits={waDigits(client.phone)} copyTitle="Copiar teléfono" />
+
+          {extraContacts.length > 0 && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {extraContacts.map((c) => (
+                <div key={c.id}>
+                  {c.role && <span className="tag" style={{ fontSize: 10.5, marginBottom: 3 }}>{c.role}</span>}
+                  <ContactRow Ico={I2.mail} value={c.email} copyTitle="Copiar email" />
+                  <ContactRow Ico={I2.phone} value={c.phone} waDigits={waDigits(c.phone)} copyTitle="Copiar teléfono" />
+                </div>
+              ))}
+            </div>
+          )}
+          {!client.email && !client.phone && extraContacts.length === 0 && (
+            <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>Sin datos de contacto todavía.</div>
+          )}
+        </>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input className="input" value={draft.name} onChange={(e) => setD('name', e.target.value)} placeholder="Nombre" autoFocus style={{ fontSize: 12.5, padding: '6px 9px' }} />
+          <input className="input" value={draft.title} onChange={(e) => setD('title', e.target.value)} placeholder="Título (ej. Dueña, Programador…)" style={{ fontSize: 12.5, padding: '6px 9px' }} />
+          <input className="input" value={draft.company} onChange={(e) => setD('company', e.target.value)} placeholder="Empresa" style={{ fontSize: 12.5, padding: '6px 9px' }} />
+          <input className="input mono" value={draft.email} onChange={(e) => setD('email', e.target.value)} placeholder="Email" style={{ fontSize: 12.5, padding: '6px 9px' }} />
+          <input className="input mono" value={draft.phone} onChange={(e) => setD('phone', e.target.value)} placeholder="Teléfono" style={{ fontSize: 12.5, padding: '6px 9px' }} />
+
+          {draft.extraContacts.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+              {draft.extraContacts.map((c) => (
+                <div key={c.id} style={{ display: 'flex', flexDirection: 'column', gap: 5, position: 'relative', paddingRight: 20 }}>
+                  <input className="input" value={c.role} onChange={(e) => setExtra(c.id, 'role', e.target.value)} placeholder="Rol (ej. Dueña)" style={{ fontSize: 12, padding: '5px 8px' }} />
+                  <input className="input mono" value={c.email} onChange={(e) => setExtra(c.id, 'email', e.target.value)} placeholder="Email" style={{ fontSize: 12, padding: '5px 8px' }} />
+                  <input className="input mono" value={c.phone} onChange={(e) => setExtra(c.id, 'phone', e.target.value)} placeholder="Teléfono" style={{ fontSize: 12, padding: '5px 8px' }} />
+                  <button className="btn btn-sm btn-ghost" onClick={() => removeExtra(c.id)} title="Sacar contacto" style={{ position: 'absolute', top: 0, right: -2, padding: 4, color: 'var(--text-faint)' }}><I2.x width={12} height={12} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button className="btn btn-sm" onClick={addExtra} style={{ alignSelf: 'flex-start' }}><I2.plus width={12} height={12} /> Agregar contacto</button>
+
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+            <button className="btn btn-sm" onClick={cancel}>Cancelar</button>
+            <button className="btn btn-sm btn-accent" onClick={save}><I2.check width={13} height={13} /> Guardar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ActivityRegistry({ project, client, patch }) {
   const { data } = useApp()
   const team = data.team || []
   const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
@@ -6544,6 +6648,7 @@ function ActivityRegistry({ project, patch }) {
 
   return (
     <div className="pd-rail">
+      <ClientContactCard client={client} />
       <div style={{ padding: '16px 16px 13px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
           <span style={{ display: 'grid', placeItems: 'center', width: 26, height: 26, borderRadius: 9, flex: 'none', background: 'var(--accent-soft)', color: 'var(--accent)' }}>
