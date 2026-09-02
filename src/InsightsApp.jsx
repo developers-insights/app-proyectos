@@ -4681,6 +4681,192 @@ function SopCatModal({ cat, cats, onClose, onSave }) {
 }
 
 /* ============================================================================
+   13a-bis · CUENTAS DE LA AGENCIA — vault de credenciales internas del equipo
+   (GitHub, Supabase, Resend, hosting, dominio…). Distinto de `project.vault`
+   (datos del CLIENTE, por proyecto): esto es a nivel agencia, uno solo para
+   todo el equipo interno. Reutiliza CopyBtn / VaultRow / genPassword de arriba.
+============================================================================ */
+const AGENCY_ACCOUNT_PRESETS = [
+  { key: 'github', label: 'GitHub', Ico: I2.github, color: '#a3adba' },
+  { key: 'supabase', label: 'Supabase', Ico: I2.database, color: '#3ecf8e' },
+  { key: 'resend', label: 'Resend', Ico: I2.mail, color: '#7C3AED' },
+  { key: 'hosting', label: 'Vercel / Render', Ico: I2.server, color: '#38BDF8' },
+  { key: 'domain', label: 'Dominio', Ico: I2.globe, color: '#2DD4BF' },
+]
+const CUSTOM_AGENCY_PRESET = { key: 'custom', label: 'Otra cuenta', Ico: I2.key, color: '#9CA3AF' }
+const agencyPresetMeta = (key) => AGENCY_ACCOUNT_PRESETS.find((p) => p.key === key) || CUSTOM_AGENCY_PRESET
+const ACCESS_METHODS = [
+  { key: 'password', label: 'Contraseña propia' },
+  { key: 'google', label: 'Login con Google' },
+  { key: 'github', label: 'Login con GitHub' },
+  { key: 'other', label: 'Otro' },
+]
+const accessMethodLabel = (key) => (ACCESS_METHODS.find((m) => m.key === key) || ACCESS_METHODS[0]).label
+const normalizeAgencyAccount = (a) => ({ ...a, preset: a.preset || 'custom', accessMethod: a.accessMethod || 'password' })
+const emptyAgencyAccount = (preset = 'custom', label = '') => ({ id: '', preset, label, accessMethod: 'password', username: '', password: '', url: '', notes: '' })
+
+function AgencyAccountCard({ a, onEdit, onDelete }) {
+  const m = agencyPresetMeta(a.preset)
+  return (
+    <div className="surface" style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 11, background: m.color + '22', border: '1px solid ' + m.color, display: 'grid', placeItems: 'center', color: m.color, flexShrink: 0 }}><m.Ico width={19} height={19} /></div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{a.label}</div>
+          <span className="tag" style={{ fontSize: 11 }}>{accessMethodLabel(a.accessMethod)}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 2 }}>
+          <button className="btn btn-sm btn-ghost" onClick={() => onEdit(a)} title="Editar" style={{ padding: 5 }}><I2.pencil width={13} height={13} /></button>
+          <button className="btn btn-sm btn-ghost" onClick={() => onDelete(a)} title="Eliminar" style={{ padding: 5, color: 'var(--red)' }}><I2.trash width={13} height={13} /></button>
+        </div>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <VaultRow Ico={I2.user} value={a.username} mono />
+        <VaultRow Ico={I2.lock} value={a.password} secret />
+        <VaultRow Ico={I2.link} value={a.url} isLink mono={false} />
+        {a.notes && <div style={{ display: 'flex', gap: 8, padding: '5px 0' }}><I2.comment width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0, marginTop: 2 }} /><span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{a.notes}</span></div>}
+        {!a.username && !a.password && !a.url && !a.notes && <div style={{ fontSize: 12.5, color: 'var(--text-faint)', padding: '5px 0' }}>Sin datos cargados todavía.</div>}
+      </div>
+    </div>
+  )
+}
+
+function AgencyAccountEditor({ account, onClose, onSave }) {
+  const [preset, setPreset] = useState(account.preset || 'custom')
+  const [label, setLabel] = useState(account.label || '')
+  const [accessMethod, setAccessMethod] = useState(account.accessMethod || 'password')
+  const [username, setUsername] = useState(account.username || '')
+  const [password, setPassword] = useState(account.password || '')
+  const [pwShow, setPwShow] = useState(false)
+  const [url, setUrl] = useState(account.url || '')
+  const [notes, setNotes] = useState(account.notes || '')
+  const canSave = label.trim().length > 0
+  const save = () => {
+    if (!canSave) return
+    onSave({ ...account, preset, label: label.trim(), accessMethod, username: username.trim(), password, url: url.trim(), notes: notes.trim() })
+  }
+  return (
+    <Modal open onClose={onClose} title={account.id ? 'Editar cuenta' : 'Nueva cuenta'} sub="Acceso interno de la agencia" width={480}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Field label="Servicio">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+            {[...AGENCY_ACCOUNT_PRESETS, CUSTOM_AGENCY_PRESET].map((p) => {
+              const on = preset === p.key
+              return (
+                <button key={p.key} type="button" onClick={() => { setPreset(p.key); if (!label.trim() || AGENCY_ACCOUNT_PRESETS.some((x) => x.label === label)) setLabel(p.key === 'custom' ? '' : p.label) }} className="tag" style={{ cursor: 'pointer', color: on ? '#fff' : p.color, background: on ? p.color : p.color + '1f', borderColor: 'transparent', fontWeight: 600 }}>
+                  <p.Ico width={12} height={12} /> {p.label}
+                </button>
+              )
+            })}
+          </div>
+        </Field>
+        <Field label="Nombre"><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ej: GitHub org insights-software" autoFocus /></Field>
+        <Field label="Método de acceso">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+            {ACCESS_METHODS.map((m) => (
+              <button key={m.key} type="button" onClick={() => setAccessMethod(m.key)} className="tag" style={{ cursor: 'pointer', color: accessMethod === m.key ? 'var(--accent)' : 'var(--text-dim)', background: accessMethod === m.key ? 'var(--accent-soft)' : 'transparent', borderColor: accessMethod === m.key ? 'var(--accent-line)' : 'var(--border)' }}>{m.label}</button>
+            ))}
+          </div>
+        </Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="Usuario / correo"><input className="input mono" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="usuario@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+          <Field label="Contraseña">
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="input mono" type={pwShow ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
+              <button type="button" className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>
+              <button type="button" className="btn btn-sm" onClick={() => { setPassword(genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I2.spark width={14} height={14} /></button>
+            </div>
+          </Field>
+        </div>
+        <Field label="URL / enlace (opcional)"><input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+        <Field label="Notas (opcional)"><textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="2FA, PIN, datos de recuperación, etc." style={{ resize: 'none' }} /></Field>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+          <button className="btn" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" onClick={save} disabled={!canSave}><I2.check width={15} height={15} /> Guardar cuenta</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function AgencyAccountsTab() {
+  const { data, agencyAccountStore } = useApp()
+  const accounts = data.agencyAccounts || []
+  const [q, setQ] = useState('')
+  const [editAccount, setEditAccount] = useState(null)
+
+  const query = q.trim().toLowerCase()
+  const filtered = query
+    ? accounts.filter((a) => (a.label + ' ' + (a.notes || '') + ' ' + (a.username || '')).toLowerCase().includes(query))
+    : accounts
+
+  const saveAccount = (a) => {
+    const now = new Date().toISOString()
+    const exists = a.id && agencyAccountStore.items.some((x) => x.id === a.id)
+    if (exists) agencyAccountStore.patch(a.id, (x) => ({ ...x, ...a, updatedAt: now }))
+    else agencyAccountStore.create({ ...a, id: 'acc-' + uid(), createdAt: now, updatedAt: now })
+    setEditAccount(null)
+  }
+  const deleteAccount = (a) => { if (window.confirm(`¿Eliminar la cuenta "${a.label}"? No se puede deshacer.`)) agencyAccountStore.remove(a.id) }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.6, maxWidth: 560 }}>Accesos internos de la agencia: GitHub, Supabase, Resend, hosting, dominio… Solo lo ve el equipo interno.</div>
+        <button className="btn btn-accent" onClick={() => setEditAccount(emptyAgencyAccount())}><I2.plus width={15} height={15} /> Nueva cuenta</button>
+      </div>
+
+      <div>
+        <div className="label" style={{ marginBottom: 8 }}>Agregar rápido</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+          {AGENCY_ACCOUNT_PRESETS.map((p) => (
+            <button key={p.key} className="btn btn-sm" onClick={() => setEditAccount(emptyAgencyAccount(p.key, p.label))}>
+              <p.Ico width={13} height={13} style={{ color: p.color }} /> {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ position: 'relative', maxWidth: 460, marginBottom: 18 }}>
+        <I2.search width={15} height={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)' }} />
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar cuentas…" style={{ paddingLeft: 34 }} />
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="surface" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-faint)' }}>
+          <I2.lock width={30} height={30} style={{ opacity: .5 }} />
+          <div style={{ marginTop: 10, fontSize: 14 }}>{query ? 'No se encontraron cuentas.' : 'Todavía no hay cuentas cargadas. Sumá la primera con los accesos rápidos de arriba.'}</div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {filtered.map((a) => <AgencyAccountCard key={a.id} a={a} onEdit={setEditAccount} onDelete={deleteAccount} />)}
+        </div>
+      )}
+
+      {editAccount && <AgencyAccountEditor account={editAccount} onClose={() => setEditAccount(null)} onSave={saveAccount} />}
+    </div>
+  )
+}
+
+function CuentasView() {
+  const [tab, setTab] = useState('cuentas')
+  return (
+    <div className="view" style={{ padding: '28px 34px 60px' }}>
+      <div style={{ marginBottom: 18 }}>
+        <div className="label" style={{ marginBottom: 6 }}>Plataforma</div>
+        <h1 style={{ fontSize: 32 }}>Cuentas</h1>
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 22, borderBottom: '1px solid var(--border)' }}>
+        {[{ key: 'cuentas', label: 'Cuentas' }, { key: 'videos', label: 'Videos' }].map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)} className="btn btn-sm" style={{ border: 'none', borderRadius: 0, borderBottom: '2px solid ' + (tab === t.key ? 'var(--accent)' : 'transparent'), color: tab === t.key ? 'var(--text)' : 'var(--text-faint)', background: 'transparent', fontWeight: 600, padding: '8px 14px' }}>{t.label}</button>
+        ))}
+      </div>
+      {tab === 'cuentas' ? <AgencyAccountsTab /> : <Videos />}
+    </div>
+  )
+}
+
+/* ============================================================================
    13b · VIDEOS — biblioteca de tutoriales Loom (creación de cuentas)
    Lista plana de videos explicativos, reutilizable en todos los proyectos.
    Un video puede cubrir varios servicios a la vez (ej. "GitHub + Supabase" en
@@ -4771,13 +4957,9 @@ function Videos() {
   const deleteVideo = (v) => { if (window.confirm(`¿Eliminar el video "${v.title}"?`)) videoStore.remove(v.id) }
 
   return (
-    <div className="view" style={{ padding: '28px 34px 60px' }}>
+    <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
-        <div>
-          <div className="label" style={{ marginBottom: 6 }}>Biblioteca de tutoriales</div>
-          <h1 style={{ fontSize: 32 }}>Videos explicativos</h1>
-          <div style={{ fontSize: 13.5, color: 'var(--text-dim)', marginTop: 4 }}>Looms de creación de cuentas (GitHub, Supabase, dominio…). Se usan desde el checklist "Cuentas" de cada proyecto.</div>
-        </div>
+        <div style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.6, maxWidth: 560 }}>Looms de creación de cuentas (GitHub, Supabase, dominio…). Se usan desde el checklist "Cuentas" de cada proyecto.</div>
         <button className="btn btn-accent" onClick={() => setEditVideo({ id: '', title: '', services: [], url: '', note: '', color: '' })}><I2.plus width={15} height={15} /> Nuevo video</button>
       </div>
 
@@ -7161,7 +7343,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'clients', label: 'Clients', icon: I2.users },
     { key: 'calls', label: 'Calls', icon: I2.phone },
     { key: 'sops', label: 'SOP', icon: I2.doc },
-    { key: 'videos', label: 'Videos explicativos', icon: I2.film },
+    { key: 'cuentas', label: 'Cuentas', icon: I2.key },
     // Usuarios/aprobación: solo fundadores + Nacho Cachaza
     ...(meCanApprove ? [{ key: 'usuarios', label: 'Usuarios', icon: I2.users, badge: pendingUsers }] : []),
   ]
@@ -7598,7 +7780,7 @@ function UpdateButton() {
    · SISTEMA (izq. del bloque derecho): estado de sync + versión. Informan, no son tuyos.
    · USUARIO: notificaciones, ajustes, tema y salir. Todos icon-buttons de 32px. */
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', videos: 'Videos explicativos', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
+  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
   const dark = theme === 'dark'
   return (
     <header className="hd">
@@ -7833,6 +8015,7 @@ function AppShell({ session, onLogout }) {
   const sopProcStore = useRowCollection({ table: 'sops_processes', normalize: normalizeSopProcess, seed: () => seedSops().processes, cacheKey: 'rc_sopproc_v1' })
   const chatStore = useRowCollection({ table: 'assistant_chats', normalize: normalizeChat, seed: () => [], cacheKey: 'rc_chats_v1' })
   const videoStore = useRowCollection({ table: 'videos', normalize: normalizeVideo, seed: seedVideos, cacheKey: 'rc_videos_v1' })
+  const agencyAccountStore = useRowCollection({ table: 'agency_accounts', normalize: normalizeAgencyAccount, seed: () => [], cacheKey: 'rc_agencyaccounts_v1' })
 
   // Vista de solo lectura con la forma histórica de `data` — para que TODOS los
   // reads `data.projects`/`data.team`/… sigan funcionando sin tocarlos. Toda
@@ -7848,12 +8031,13 @@ function AppShell({ session, onLogout }) {
     sops,
     tasks: taskStore.tasks,
     videos: videoStore.items,
-  }), [teamStore.items, clientStore.items, projectStore.items, callStore.items, activityStore.items, chatStore.items, sops, taskStore.tasks, videoStore.items])
-  const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore }
+    agencyAccounts: agencyAccountStore.items,
+  }), [teamStore.items, clientStore.items, projectStore.items, callStore.items, activityStore.items, chatStore.items, sops, taskStore.tasks, videoStore.items, agencyAccountStore.items])
+  const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore }
   const botComms = useBotComms()   // proyecto → último mensaje del equipo en WhatsApp (del bot)
 
   // Badge de sync: agregado del estado de todas las tablas.
-  const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore]
+  const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore]
   const anyLoading = !planStore.plansReady || !taskStore.tasksReady || allStores.some((s) => !s.ready)
   const anySaving = allStores.some((s) => s.saving)
   const sync = !cloudEnabled ? 'local' : anyLoading ? 'loading' : anySaving ? 'saving' : 'saved'
@@ -8017,7 +8201,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'clients' && <Clients />}
               {route.view === 'calls' && <Calls />}
               {route.view === 'sops' && <Sops />}
-              {route.view === 'videos' && <Videos />}
+              {route.view === 'cuentas' && <CuentasView />}
               {route.view === 'assistant' && <AssistantView />}
               {route.view === 'planner' && <PlannerView />}
               {route.view === 'bot' && <BotView />}
