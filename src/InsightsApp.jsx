@@ -18,6 +18,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@supabase/supabase-js'
 import OnboardingLanding from './Onboarding'
 import OnboardingV2 from './OnboardingV2'
+import ClientIntake from './ClientIntake.jsx'
 import { uid, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
 import { I2 } from './ui/icons2.jsx'
 import {
@@ -8395,6 +8396,12 @@ function ClientView({ shareId }) {
         </div>
         <h1 style={{ fontSize: 30 }}>{p.name}</h1>
         <div style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 22 }}>{p.client}</div>
+
+        {/* Lo que necesitamos del cliente va ARRIBA del avance, no abajo: si queda
+            debajo de los KPIs y del plan, se lee después de haber decidido que ya
+            vio lo importante. Se dibuja sola cuando el proyecto tiene cuestionario
+            (ver src/lib/intake.js); en el resto de los proyectos no aparece nada. */}
+        <ClientIntake supabase={supabase} shareId={shareId} password={savedPw.current} projectName={p.name} />
 
         {kpis && (
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
