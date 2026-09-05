@@ -388,6 +388,16 @@ function QuestionBody({ q, value, onAnswer, onSaveOnly }) {
             Tocá de nuevo si lo marcaste por error.
           </p>
         )}
+        {/* La ayuda de un `action` es la que saca al cliente del pozo cuando no
+            puede hacer el paso —«no tengo Android»—, así que va en tarjeta y no
+            como pie de página gris. */}
+        {q.hint && (
+          <div className="surface" style={{ padding: '13px 15px', marginTop: 18, borderColor: 'var(--border)' }}>
+            <p style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.6, margin: 0 }}>
+              <RichText>{q.hint}</RichText>
+            </p>
+          </div>
+        )}
         {footNote}
       </div>
     )

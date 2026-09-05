@@ -63,6 +63,12 @@ const IROWING = {
       why:
         'Google no nos deja ni crear la app hasta que la cuenta esté verificada. Es el único ' +
         'motivo por el que hoy está todo frenado.',
+      hint:
+        '**¿No tenés un Android?** No hace falta que sea tuyo. Pedile el teléfono prestado a ' +
+        'cualquiera cinco minutos —un familiar, alguien del club, un empleado—, entrá con tu ' +
+        'cuenta, tocá Verificar y cerrá sesión. La verificación queda en tu cuenta, no en ese ' +
+        'teléfono. Lo que no podemos hacer nosotros es entrar en tu lugar: Google exige que sea ' +
+        'el titular. Si no conseguís ninguno, decinos y lo resolvemos.',
       doneLabel: 'Ya lo hice',
     },
     {
@@ -161,7 +167,11 @@ const IROWING = {
       body:
         'Tienen que ser cuentas de **Gmail** reales, y cada persona va a instalar la app y usarla. ' +
         'Sirven remeros del club, familia, amigos — no hace falta que sean técnicos.',
-      hint: 'Cargá 14 o 15 en vez de 12: siempre hay alguien que se olvida de instalar.',
+      hint:
+        'Cargá 14 o 15 en vez de 12: siempre hay alguien que se olvida de instalar. **Y si no ' +
+        'llegás a 12, decinos: nosotros ponemos los que falten.** Google no exige que sean ' +
+        'conocidos tuyos. Lo que sí exige es que usen la app de verdad, así que para iRowing lo ' +
+        'ideal es gente con acceso a un remo Concept2 — si no, avisanos y lo pensamos juntos.',
       placeholder: 'nombre@gmail.com',
     },
     {
@@ -267,6 +277,12 @@ const MAREX = {
         'Instalá la app **Google Play Console** desde la Play Store e iniciá sesión con ' +
         '`admin@marexcleaningsolution.com`. Con abrirla una vez alcanza.',
       why: 'Google no nos deja ni crear las apps hasta que la cuenta esté verificada.',
+      hint:
+        '**¿No tenés un Android?** No hace falta que sea tuyo. Pedile el teléfono prestado a ' +
+        'cualquiera cinco minutos, entrá con tu cuenta, tocá Verificar y cerrá sesión. La ' +
+        'verificación queda en tu cuenta, no en ese teléfono. Lo que no podemos hacer nosotros ' +
+        'es entrar en tu lugar: Google exige que sea el titular. Si no conseguís ninguno, ' +
+        'decinos y lo resolvemos.',
       doneLabel: 'Ya lo hice',
     },
     {
@@ -432,7 +448,10 @@ const MAREX = {
         'de dejarnos publicar. Tu cuenta es personal, así que aplica sí o sí. Son dos apps, pero ' +
         'las mismas personas sirven para las dos: conviene arrancar los dos relojes el mismo día.',
       body: 'Tienen que ser cuentas de **Gmail** reales, y cada persona va a instalar la app y usarla.',
-      hint: 'Cargá 14 o 15 en vez de 12: si el grupo baja de 12, el contador vuelve a cero.',
+      hint:
+        'Cargá 14 o 15 en vez de 12: si el grupo baja de 12, el contador vuelve a cero. **Y si ' +
+        'no llegás a 12, decinos: nosotros ponemos los que falten.** Google no exige que sean ' +
+        'conocidos tuyos, pero sí que usen la app de verdad.',
       placeholder: 'nombre@gmail.com',
     },
     {
