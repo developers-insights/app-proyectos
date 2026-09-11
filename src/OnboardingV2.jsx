@@ -12,39 +12,41 @@ import { PROJECT_MANAGER, assignDeveloper } from './onboardingTeam'
 ============================================================================ */
 
 const ONBX_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 .ob2, .ob2 *{box-sizing:border-box}
 .ob2{
-  --bg:#0f0f0d; --surface:#18160f; --surface-2:#1c1a13; --border:rgba(255,255,255,.08);
-  --text:#f0ede8; --text-2:#9a9289; --orange:#e57300; --orange-2:#f08c1f; --gold:#f5d080;
-  font-family:'Inter',system-ui,-apple-system,sans-serif; color:var(--text); background:var(--bg);
+  /* --orange/--orange-2/--gold quedaron con esos nombres por no tocar cada punto de uso,
+     pero ahora son azules de marca (insights) — no naranjas. */
+  --bg:#0A0A0B; --surface:#101012; --surface-2:#18181B; --border:rgba(255,255,255,.09);
+  --text:#F5F5F7; --text-2:#8E8E93; --orange:#5AC8FA; --orange-2:#8FDBFF; --gold:#D6E6FF;
+  font-family:-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,'Inter',system-ui,sans-serif; color:var(--text); background:var(--bg);
   min-height:100vh; min-height:100dvh; position:relative; overflow-x:hidden;
 }
 .ob2-blob{position:fixed;border-radius:50%;filter:blur(100px);opacity:.5;pointer-events:none;z-index:0;will-change:transform}
 .ob2-grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.04;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 .ob2-vignette{position:fixed;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse 90% 70% at 50% 42%, transparent 46%, rgba(0,0,0,.55) 100%)}
-.ob2-mono{font-family:'DM Mono',monospace}
-.ob2-eyebrow{font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--orange-2)}
+.ob2-mono{font-family:'JetBrains Mono',monospace}
+.ob2-eyebrow{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--orange-2)}
 .ob2-h{font-weight:700;letter-spacing:-.035em;line-height:1.04;font-size:clamp(30px,6.6vw,52px);margin:0}
 .ob2-sub{color:var(--text-2);font-size:clamp(15px,2.4vw,18px);line-height:1.6;margin:0}
-.ob2-label{font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.08em;color:var(--text-2);margin-bottom:9px;display:block;text-transform:uppercase}
+.ob2-label{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.08em;color:var(--text-2);margin-bottom:9px;display:block;text-transform:uppercase}
 .ob2-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;font-size:17px;color:var(--text);font-family:inherit;outline:none;transition:border-color .18s, box-shadow .18s}
-.ob2-input::placeholder{color:#6b655c}
-.ob2-input:focus{border-color:var(--orange);box-shadow:0 0 0 4px rgba(229,115,0,.18)}
-.ob2-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:15px 30px;border-radius:999px;border:none;cursor:pointer;font-family:inherit;font-weight:600;font-size:16px;background:linear-gradient(180deg,var(--orange-2),var(--orange));color:#fff;transition:transform .16s, box-shadow .16s, filter .16s;box-shadow:0 8px 26px rgba(229,115,0,.34)}
-.ob2-btn:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(229,115,0,.5)}
+.ob2-input::placeholder{color:#6E6E73}
+.ob2-input:focus{border-color:var(--orange);box-shadow:0 0 0 4px rgba(90,200,250,.18)}
+.ob2-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:15px 30px;border-radius:999px;border:none;cursor:pointer;font-family:inherit;font-weight:600;font-size:16px;background:linear-gradient(180deg,var(--orange-2),var(--orange));color:#0A0A0B;transition:transform .16s, box-shadow .16s, filter .16s;box-shadow:0 8px 22px rgba(0,0,0,.4)}
+.ob2-btn:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(0,0,0,.5)}
 .ob2-btn:active{transform:translateY(0)}
 .ob2-btn:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;transform:none;filter:grayscale(.35)}
 .ob2-btn-ghost{background:transparent;color:var(--text-2);border:1px solid var(--border);box-shadow:none;font-weight:500}
 .ob2-btn-ghost:hover{background:var(--surface);color:var(--text);transform:none;box-shadow:none}
-.ob2-err{color:#ff8a6b;font-size:13px;margin-top:9px;font-family:'DM Mono',monospace}
+.ob2-err{color:#F87171;font-size:13px;margin-top:9px;font-family:'JetBrains Mono',monospace}
 .ob2-steplink{cursor:default}
 .ob2-steplink.done{cursor:pointer}
 /* selector de teléfono con país — dark */
 .ob2 .PhoneInput{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:5px 14px;transition:border-color .18s, box-shadow .18s}
-.ob2 .PhoneInput--focus{border-color:var(--orange);box-shadow:0 0 0 4px rgba(229,115,0,.18)}
+.ob2 .PhoneInput--focus{border-color:var(--orange);box-shadow:0 0 0 4px rgba(90,200,250,.18)}
 .ob2 .PhoneInputInput{background:transparent;border:none;outline:none;color:var(--text);font-size:17px;font-family:inherit;padding:11px 0}
-.ob2 .PhoneInputInput::placeholder{color:#6b655c}
+.ob2 .PhoneInputInput::placeholder{color:#6E6E73}
 .ob2 .PhoneInputCountry{margin-right:2px}
 .ob2 .PhoneInputCountryIcon{box-shadow:none;border-radius:3px;overflow:hidden}
 .ob2 .PhoneInputCountryIcon--border{background:transparent;box-shadow:none}
@@ -82,9 +84,11 @@ function useInjectCss() {
   }, [])
 }
 
+/* Wordmark de texto, no PNG: el logo viejo (serif itálica) no es la marca actual. */
 const Logo = ({ h = 32 }) => (
-  <img src="/insights-logo-white.png" alt="Insights Apps" style={{ height: h, width: 'auto', display: 'inline-block', opacity: 1 }}
-    onError={(e) => { e.target.style.display = 'none' }} />
+  <span style={{ fontSize: h * 0.78, lineHeight: 1, fontWeight: 700, letterSpacing: '-.045em', color: 'var(--text)', display: 'inline-block' }}>
+    insights<span style={{ color: 'var(--orange)' }}>.</span>
+  </span>
 )
 
 /* ---------- fondo premium: blobs naranjas que respiran + grano + viñeta ---------- */
@@ -93,9 +97,9 @@ function Blobs() {
   const drift = (dur, xk, yk, sk) => reduce ? {} : { animate: { x: xk, y: yk, scale: sk }, transition: { duration: dur, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' } }
   return (
     <>
-      <motion.div className="ob2-blob" style={{ width: 560, height: 560, top: -180, left: -140, background: 'radial-gradient(circle, rgba(229,115,0,.32), transparent 70%)' }} {...drift(26, [0, 60, 0], [0, 40, 0], [1, 1.14, 1])} />
-      <motion.div className="ob2-blob" style={{ width: 440, height: 440, bottom: -150, right: -110, background: 'radial-gradient(circle, rgba(240,140,31,.24), transparent 70%)' }} {...drift(32, [0, -50, 0], [0, -30, 0], [1, 1.18, 1])} />
-      <motion.div className="ob2-blob" style={{ width: 380, height: 380, top: '42%', left: '54%', background: 'radial-gradient(circle, rgba(245,208,128,.12), transparent 70%)' }} {...drift(38, [0, 40, 0], [0, -50, 0], [1.08, 1, 1.08])} />
+      <motion.div className="ob2-blob" style={{ width: 560, height: 560, top: -180, left: -140, background: 'radial-gradient(circle, rgba(90,200,250,.28), transparent 70%)' }} {...drift(26, [0, 60, 0], [0, 40, 0], [1, 1.14, 1])} />
+      <motion.div className="ob2-blob" style={{ width: 440, height: 440, bottom: -150, right: -110, background: 'radial-gradient(circle, rgba(143,219,255,.20), transparent 70%)' }} {...drift(32, [0, -50, 0], [0, -30, 0], [1, 1.18, 1])} />
+      <motion.div className="ob2-blob" style={{ width: 380, height: 380, top: '42%', left: '54%', background: 'radial-gradient(circle, rgba(214,230,255,.12), transparent 70%)' }} {...drift(38, [0, 40, 0], [0, -50, 0], [1.08, 1, 1.08])} />
       <div className="ob2-grain" />
       <div className="ob2-vignette" />
     </>
@@ -120,9 +124,9 @@ function DesktopRail({ current, onGo }) {
               <button key={s.key} onClick={() => done && onGo(i + 1)} className={`ob2-steplink ${done ? 'done' : ''}`}
                 style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'transparent', border: 'none', padding: 0, textAlign: 'left' }}>
                 <span style={{ width: 32, height: 32, borderRadius: 999, flexShrink: 0, display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 700,
-                  background: active ? 'var(--orange)' : done ? 'rgba(229,115,0,.15)' : 'var(--surface)',
+                  background: active ? 'var(--orange)' : done ? 'rgba(90,200,250,.15)' : 'var(--surface)',
                   border: `1.5px solid ${active ? 'var(--orange)' : done ? 'var(--orange)' : 'var(--border)'}`,
-                  color: active ? '#fff' : done ? 'var(--orange-2)' : 'var(--text-2)', transition: 'all .2s' }}>
+                  color: active ? '#0A0A0B' : done ? 'var(--orange-2)' : 'var(--text-2)', transition: 'all .2s' }}>
                   {done ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg> : i + 1}
                 </span>
                 <span style={{ fontSize: 14.5, fontWeight: active ? 600 : 500, color: active ? 'var(--text)' : done ? 'var(--text-2)' : 'var(--text-2)' }}>{s.label}</span>
@@ -140,9 +144,9 @@ function DesktopRail({ current, onGo }) {
 function MobileProgress({ current }) {
   const pct = (current / STEPS.length) * 100
   return (
-    <div className="ob2-progress-mobile" style={{ position: 'fixed', left: 16, right: 16, bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))', zIndex: 4, display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', borderRadius: 999, background: 'rgba(24,22,15,.78)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', border: '1px solid var(--border)', boxShadow: '0 12px 40px rgba(0,0,0,.5)' }}>
+    <div className="ob2-progress-mobile" style={{ position: 'fixed', left: 16, right: 16, bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))', zIndex: 4, display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', borderRadius: 999, background: 'rgba(16,16,18,.78)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', border: '1px solid var(--border)', boxShadow: '0 12px 40px rgba(0,0,0,.5)' }}>
       <div style={{ flex: 1, height: 6, borderRadius: 999, background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
-        <motion.div animate={{ width: `${pct}%` }} transition={{ ease, duration: 0.5 }} style={{ height: '100%', borderRadius: 999, background: 'linear-gradient(90deg,var(--orange-2),var(--orange))', boxShadow: '0 0 12px rgba(229,115,0,.6)' }} />
+        <motion.div animate={{ width: `${pct}%` }} transition={{ ease, duration: 0.5 }} style={{ height: '100%', borderRadius: 999, background: 'linear-gradient(90deg,var(--orange-2),var(--orange))', boxShadow: '0 0 10px rgba(90,200,250,.5)' }} />
       </div>
       <span className="ob2-mono" style={{ fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>Paso {current} de {STEPS.length}</span>
       <style>{`@media(min-width:1024px){.ob2-progress-mobile{display:none!important}}`}</style>
@@ -162,9 +166,9 @@ function NavRow({ onBack, onNext, nextLabel = 'Continuar', nextDisabled, nextIco
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 30, flexWrap: 'wrap' }}>
       {back && <button className="ob2-btn ob2-btn-ghost" onClick={onBack} type="button">← Atrás</button>}
-      <button className="ob2-btn" onClick={onNext} disabled={nextDisabled} type="button" style={nextIcon ? { boxShadow: '0 8px 26px rgba(229,115,0,.34), 0 0 0 0 rgba(229,115,0,.4)' } : undefined}>
+      <button className="ob2-btn" onClick={onNext} disabled={nextDisabled} type="button" style={nextIcon ? { boxShadow: '0 8px 22px rgba(0,0,0,.4)' } : undefined}>
         {nextIcon && (
-          <motion.span animate={{ scale: [1, 1.18, 1], opacity: [.85, 1, .85] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }} style={{ display: 'inline-flex', color: '#fff' }}>
+          <motion.span animate={{ scale: [1, 1.18, 1], opacity: [.85, 1, .85] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }} style={{ display: 'inline-flex', color: '#0A0A0B' }}>
             <Sparkles size={17} />
           </motion.span>
         )}
@@ -182,16 +186,16 @@ function BuildingScene({ reduce }) {
   return (
     <div style={{ position: 'relative', width: 200, height: 200, margin: '0 auto' }}>
       <svg viewBox="0 0 200 200" width="200" height="200" style={{ position: 'absolute', inset: 0 }}>
-        <defs><radialGradient id="ob2orb" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#f5b25a" /><stop offset="60%" stopColor="#f08c1f" /><stop offset="100%" stopColor="#e57300" /></radialGradient></defs>
+        <defs><radialGradient id="ob2orb" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#D6E6FF" /><stop offset="60%" stopColor="#5AC8FA" /><stop offset="100%" stopColor="#0A63E8" /></radialGradient></defs>
         {nodes.map((n, i) => (
-          <motion.line key={'l' + i} x1="100" y1="100" x2={n.x} y2={n.y} stroke="#e57300" strokeWidth="1.4" strokeLinecap="round"
+          <motion.line key={'l' + i} x1="100" y1="100" x2={n.x} y2={n.y} stroke="#5AC8FA" strokeWidth="1.4" strokeLinecap="round"
             initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: reduce ? 1 : [0, 1, 0], opacity: reduce ? 0.45 : [0, 0.6, 0] }} {...loop(i * 0.18)} />
         ))}
         {nodes.map((n, i) => (
-          <motion.rect key={'r' + i} x={n.x - 6} y={n.y - 6} width="12" height="12" rx="3.5" fill="#e57300" style={svgAnim}
+          <motion.rect key={'r' + i} x={n.x - 6} y={n.y - 6} width="12" height="12" rx="3.5" fill="#5AC8FA" style={svgAnim}
             initial={{ scale: 0, opacity: 0 }} animate={{ scale: reduce ? 1 : [0, 1, 0.4], opacity: reduce ? 0.9 : [0, 1, 0.5] }} {...loop(i * 0.18 + 0.3)} />
         ))}
-        <motion.circle cx="100" cy="100" r="24" fill="url(#ob2orb)" style={{ ...svgAnim, filter: 'drop-shadow(0 0 20px rgba(229,115,0,.7))' }}
+        <motion.circle cx="100" cy="100" r="24" fill="url(#ob2orb)" style={{ ...svgAnim, filter: 'drop-shadow(0 0 20px rgba(90,200,250,.55))' }}
           animate={reduce ? {} : { scale: [1, 1.14, 1] }} transition={reduce ? {} : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }} />
       </svg>
       <motion.div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#fff' }}
@@ -212,8 +216,8 @@ function SuccessCheck({ reduce }) {
           style={{ position: 'absolute', top: 34, left: 34, width: 7, height: 7, borderRadius: 2, background: i % 2 ? 'var(--gold)' : 'var(--orange-2)' }} />
       })}
       <motion.div initial={reduce ? {} : { scale: 0, rotate: -25 }} animate={{ scale: 1, rotate: 0 }} transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 220, damping: 15 }}
-        style={{ width: 74, height: 74, borderRadius: 999, display: 'grid', placeItems: 'center', background: 'linear-gradient(180deg,var(--orange-2),var(--orange))', boxShadow: '0 14px 40px rgba(229,115,0,.5)' }}>
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+        style={{ width: 74, height: 74, borderRadius: 999, display: 'grid', placeItems: 'center', background: 'linear-gradient(180deg,var(--orange-2),var(--orange))', boxShadow: '0 14px 34px rgba(0,0,0,.45)' }}>
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0A0A0B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
       </motion.div>
     </div>
   )
@@ -225,7 +229,7 @@ function TeamCard({ i, name, role, reduce }) {
   return (
     <motion.div initial={reduce ? { opacity: 0 } : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.16, ease, duration: 0.5 }}
       style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--border)', textAlign: 'left' }}>
-      <div style={{ width: 46, height: 46, borderRadius: 12, flexShrink: 0, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 16, color: '#fff', background: 'linear-gradient(135deg,var(--orange-2),var(--orange))' }}>{initials}</div>
+      <div style={{ width: 46, height: 46, borderRadius: 12, flexShrink: 0, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 16, color: '#0A0A0B', background: 'linear-gradient(135deg,var(--orange-2),var(--orange))' }}>{initials}</div>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontWeight: 600, fontSize: 16 }}>{name}</div>
         <div className="ob2-mono" style={{ fontSize: 12.5, color: 'var(--orange-2)', marginTop: 2 }}>{role}</div>
@@ -346,7 +350,7 @@ export default function OnboardingV2({ supabase, cloudEnabled }) {
 
             {step === 0 && (
               <div style={{ textAlign: 'center' }}>
-                <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12, ease }} className="ob2-h" style={{ fontSize: 'clamp(40px,9vw,66px)', marginBottom: 18 }}>Bienvenido a<br /><span style={{ color: 'var(--orange)' }}>Insights</span></motion.h1>
+                <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12, ease }} className="ob2-h" style={{ fontSize: 'clamp(40px,9vw,66px)', marginBottom: 18 }}>Bienvenido a<br />insights<span style={{ color: 'var(--orange)' }}>.</span></motion.h1>
                 <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.26, ease }} className="ob2-sub" style={{ maxWidth: 460, margin: '0 auto 34px' }}>Comenzá acá el proceso para hacer realidad tu aplicación.</motion.p>
                 <motion.button initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36, ease }} className="ob2-btn" onClick={() => go(1)} style={{ padding: '16px 40px', fontSize: 17 }}>Comenzar →</motion.button>
               </div>

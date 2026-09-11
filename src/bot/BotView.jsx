@@ -274,7 +274,7 @@ export default function BotView() {
         <h1 style={{ fontSize: 32, marginBottom: 24 }}>Bot</h1>
         <div className="surface" style={{ padding: 48, textAlign: 'center', maxWidth: 520 }}>
           <EmptyIcon icon={I.whatsapp} />
-          <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>El bot necesita conexión a Supabase</div>
+          <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 700, fontSize: 18, marginBottom: 6 }}>El bot necesita conexión a Supabase</div>
           <div style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Configurá las variables de entorno de Supabase para ver los grupos, las conversaciones y los avisos del bot.</div>
         </div>
       </div>
@@ -401,7 +401,7 @@ function Resumen({ loading, st, status, hb, groups, alerts, recent, todayCount, 
         <span style={{ position: 'absolute', top: -90, left: -70, width: 380, height: 260, background: `radial-gradient(closest-side, var(--${st.tone}-soft), transparent)`, filter: 'blur(28px)', pointerEvents: 'none' }} />
         <Dot tone={st.tone} ping={st.tone === 'green'} size={13} />
         <div style={{ flex: 1, minWidth: 210, position: 'relative' }}>
-          <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: isMobile ? 20 : 24, color: `var(--${st.tone})`, letterSpacing: '-0.02em' }}>{st.label}</div>
+          <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 800, fontSize: isMobile ? 20 : 24, color: `var(--${st.tone})`, letterSpacing: '-0.02em' }}>{st.label}</div>
           <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 4 }}>{st.desc}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: isMobile ? 'flex-start' : 'flex-end', position: 'relative' }}>
@@ -423,7 +423,7 @@ function Resumen({ loading, st, status, hb, groups, alerts, recent, todayCount, 
               </span>
               <span className="label">{s.label}</span>
             </div>
-            <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: s.small ? 18 : 30, color: s.vc || 'var(--text)', lineHeight: 1.1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
+            <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 800, fontSize: s.small ? 18 : 30, color: s.vc || 'var(--text)', lineHeight: 1.1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
           </motion.div>
         ))}
       </motion.div>
@@ -454,7 +454,7 @@ function Resumen({ loading, st, status, hb, groups, alerts, recent, todayCount, 
         {recent.length === 0 && (
           <div style={{ padding: 42, textAlign: 'center' }}>
             <EmptyIcon icon={I.comment} />
-            <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 15, marginBottom: 5 }}>Todavía no llegaron mensajes</div>
+            <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 5 }}>Todavía no llegaron mensajes</div>
             <div style={{ fontSize: 13, color: 'var(--text-dim)', maxWidth: 380, margin: '0 auto', lineHeight: 1.55 }}>Apenas alguien escriba en un grupo vigilado, lo vas a ver acá en tiempo real.</div>
           </div>
         )}
@@ -570,7 +570,7 @@ function Conversaciones({ isMobile, groups, lastByGroup, groupTitle, overdueDays
               <div className="bw-chatbg" style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 30 }}>
                 <div style={{ textAlign: 'center' }}>
                   <EmptyIcon icon={I.comment} />
-                  <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 16, marginBottom: 5 }}>Elegí una conversación</div>
+                  <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 5 }}>Elegí una conversación</div>
                   <div style={{ fontSize: 13, color: 'var(--text-dim)', maxWidth: 300, lineHeight: 1.55 }}>Los mensajes de los grupos vigilados aparecen acá en tiempo real.</div>
                 </div>
               </div>
@@ -621,7 +621,7 @@ function ChatPane({ group, title, msgs, loading, isMobile, onBack, supabase, url
         )}
         <GAvatar name={title} jid={group?.group_jid} size={36} />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 15.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+          <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 700, fontSize: 15.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
           {group?.group_name && group.group_name !== title && <div style={{ fontSize: 11.5, color: 'var(--text-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{group.group_name}</div>}
         </div>
         {!isMobile && !loading && msgs.length > 0 && <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)' }}>{msgs.length} mensajes</span>}
@@ -779,7 +779,7 @@ function Grupos({ isMobile, groups, projects, clients, now, loading, groupTitle,
       {!loading && sorted.length === 0 && (
         <div className="surface" style={{ padding: 46, textAlign: 'center' }}>
           <EmptyIcon icon={I.whatsapp} />
-          <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 16, marginBottom: 5 }}>Todavía no hay grupos</div>
+          <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 5 }}>Todavía no hay grupos</div>
           <div style={{ fontSize: 13, color: 'var(--text-dim)', maxWidth: 400, margin: '0 auto', lineHeight: 1.55 }}>Cuando el bot entre a un grupo de WhatsApp, aparece acá para mapearlo a un proyecto.</div>
         </div>
       )}
@@ -856,7 +856,7 @@ function Avisos({ isMobile, alerts, projects, now, loading }) {
       {!loading && alerts.length === 0 && (
         <div className="surface" style={{ padding: 46, textAlign: 'center', maxWidth: 560 }}>
           <EmptyIcon icon={I.bell} />
-          <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 16, marginBottom: 5 }}>Todavía no se enviaron avisos</div>
+          <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 5 }}>Todavía no se enviaron avisos</div>
           <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.55, maxWidth: 420, margin: '0 auto' }}>El chequeo corre todos los días a las 9:00. Cuando un cliente quede sin respuesta más días que el umbral, el aviso llega al grupo de seguimiento y queda registrado acá.</div>
         </div>
       )}
