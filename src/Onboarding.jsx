@@ -100,7 +100,7 @@ function Wizard({ supabase, cloudEnabled }) {
         <motion.div key={step} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.28, ease }}>
           {step === 0 && (
             <motion.div key="0" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -18 }} transition={{ duration: 0.45, ease }}>
-              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, ease }} className="onb-kicker" style={{ marginBottom: 16 }}>Onboarding · insights</motion.div>
+              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, ease }} className="onb-kicker" style={{ marginBottom: 16 }}>Onboarding · InsightsApps</motion.div>
               <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18, ease }} className="onb-serif" style={{ fontSize: 'clamp(38px,8vw,64px)', lineHeight: 1.04, marginBottom: 18 }}>Bienvenido a<br />insights<span style={{ color: C.accent }}>.</span></motion.h1>
               <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28, ease }} style={{ fontSize: 18, color: C.dim, lineHeight: 1.6, maxWidth: 500, marginBottom: 30 }}>Vamos a crear tu proyecto en unos pasos rápidos. Contanos de vos y de tu negocio, y en minutos lo tenemos andando de nuestro lado.</motion.p>
               <motion.button initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38, ease }} className="onb-btn" onClick={() => go(1)}>Empezar →</motion.button>
@@ -248,7 +248,7 @@ function Gracias() {
             </motion.div>
           ))}
         </div>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 30, textAlign: 'center', color: C.faint, fontSize: 13.5 }} className="onb-mono">Nos vemos en la llamada. — insights</motion.div>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 30, textAlign: 'center', color: C.faint, fontSize: 13.5 }} className="onb-mono">Nos vemos en la llamada. — InsightsApps</motion.div>
       </div>
     </div>
   )

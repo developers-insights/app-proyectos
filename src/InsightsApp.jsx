@@ -1,5 +1,5 @@
 /* ============================================================================
-   INSIGHTS SOFTWARE — PROJECT OS
+   INSIGHTSAPPS — PROJECT OS
    Single-file React SPA · Dark/Light · GitHub + Fathom + Anthropic integrations
    Aesthetic: insights branding — SF Pro, blanco/carbón neutro + azul #0A63E8 (dark: #5AC8FA)
    ----------------------------------------------------------------------------
@@ -787,7 +787,7 @@ function useIsMobile(bp = 760) {
 const hexA = (hex, a) => { const h = (hex || '').replace('#', ''); const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16); return `rgba(${r},${g},${b},${a})` }
 
 /* ============================================================================
-   4 · SEED DATA — 5 proyectos reales de Insights Software
+   4 · SEED DATA — 5 proyectos reales de InsightsApps
 ============================================================================ */
 function seedClients() {
   return [
@@ -3879,7 +3879,7 @@ function makeAccountsPdfDoc(project, accounts, JsPDF) {
   var MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
   font('normal', 8.5, FAINT)
   doc.text('Generado el ' + dd.getDate() + ' de ' + MES[dd.getMonth()] + ' de ' + dd.getFullYear() + '.', M, FOOT_Y)
-  doc.text('Insights Software', PW - M, FOOT_Y, { align: 'right' })
+  doc.text('InsightsApps', PW - M, FOOT_Y, { align: 'right' })
   return doc
 }
 async function exportAccountsPdf(project, accounts) {
@@ -6790,7 +6790,7 @@ function buildSystemPrompt(project, client, plan) {
   const prog = progressBreakdown(project, plan)
   const pa = project.pendingAgency.map((p) => `  - [${p.priority}] ${p.title}: ${p.description}`).join('\n') || '  (ninguno)'
   const pc = project.pendingClient.map((p) => `  - [${p.priority}] ${p.title}: ${p.description}`).join('\n') || '  (ninguno)'
-  return `Sos el asistente IA del proyecto "${project.name}" de Insights Software para el cliente ${client?.company} (${client?.name}).
+  return `Sos el asistente IA del proyecto "${project.name}" de InsightsApps para el cliente ${client?.company} (${client?.name}).
 
 KICK-OFF:
 ${project.kickoff}
@@ -6939,7 +6939,7 @@ Riesgos: ${risks}`
   Resumen: ${c.summary}
   Transcript: ${c.transcript || '(sin transcript)'}`).join('\n\n') || '(sin reuniones cargadas)'
   const team = (data.team || []).map((u) => u.name).join(', ')
-  return `Sos el asistente IA de Insights Software, una agencia de desarrollo de software. Tenés acceso COMPLETO a todos los proyectos, sus planes (semanas y tareas), pendientes, riesgos y a las reuniones (calls) con transcripciones. Respondé SIEMPRE en español, de forma concisa, clara y accionable. Usá viñetas y datos concretos (estados, %, fechas). Si te preguntan por avances, basate en las tareas del plan (las marcadas con ✓ están terminadas) y el % de avance. Las tareas marcadas "(cliente)" dependen del cliente, no del equipo. Si te preguntan por reuniones, usá los resúmenes y transcripts. Si falta información, decilo explícitamente.
+  return `Sos el asistente IA de InsightsApps, una agencia de desarrollo de software. Tenés acceso COMPLETO a todos los proyectos, sus planes (semanas y tareas), pendientes, riesgos y a las reuniones (calls) con transcripciones. Respondé SIEMPRE en español, de forma concisa, clara y accionable. Usá viñetas y datos concretos (estados, %, fechas). Si te preguntan por avances, basate en las tareas del plan (las marcadas con ✓ están terminadas) y el % de avance. Las tareas marcadas "(cliente)" dependen del cliente, no del equipo. Si te preguntan por reuniones, usá los resúmenes y transcripts. Si falta información, decilo explícitamente.
 
 EQUIPO: ${team || '—'}
 
