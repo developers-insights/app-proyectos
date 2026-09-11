@@ -1,10 +1,10 @@
 /* ============================================================================
    INSIGHTSAPPS — PROJECT OS
    Single-file React SPA · Dark/Light · GitHub + Fathom + Anthropic integrations
-   Aesthetic: minimal-industrial · editorial type · deep black + orange #F97316
+   Aesthetic: insights branding — SF Pro, blanco/carbón neutro + azul #0A63E8 (dark: #5AC8FA)
    ----------------------------------------------------------------------------
    Stack: React 18 + framer-motion. Self-contained: styles injected at runtime,
-   state persisted to localStorage. Fonts: Bricolage Grotesque / DM Sans.
+   state persisted to localStorage. Fonts: -apple-system/SF Pro (fallback Inter).
 ============================================================================ */
 import React, {
   useState,
@@ -58,18 +58,19 @@ const APP_VERSION = '1.1.0'
 ============================================================================ */
 const THEMES = {
   dark: {
-    '--bg': '#0A0A0A',
-    '--bg-elevated': '#0E0E0E',
-    '--card': '#111111',
-    '--card-hover': '#161616',
-    '--border': '#1F1F1F',
-    '--border-strong': '#2A2A2A',
-    '--text': '#FAFAFA',
-    '--text-dim': '#A1A1A1',
-    '--text-faint': '#6B6B6B',
-    '--accent': '#F97316',
-    '--accent-soft': 'rgba(249,115,22,0.14)',
-    '--accent-line': 'rgba(249,115,22,0.32)',
+    '--bg': '#0A0A0B',
+    '--bg-elevated': '#101012',
+    '--card': '#101012',
+    '--card-hover': '#18181B',
+    '--border': 'rgba(255,255,255,0.09)',
+    '--border-strong': 'rgba(255,255,255,0.16)',
+    '--text': '#F5F5F7',
+    '--text-dim': '#8E8E93',
+    '--text-faint': '#6E6E73',
+    '--accent': '#5AC8FA',
+    '--accent-contrast': '#0A0A0B',
+    '--accent-soft': 'rgba(90,200,250,0.14)',
+    '--accent-line': 'rgba(90,200,250,0.32)',
     '--green': '#34D399',
     '--green-soft': 'rgba(52,211,153,0.14)',
     '--green-line': 'rgba(52,211,153,0.34)',
@@ -78,9 +79,9 @@ const THEMES = {
     '--yellow': '#FBBF24',
     '--yellow-soft': 'rgba(251,191,36,0.14)',
     '--yellow-line': 'rgba(251,191,36,0.36)',
-    '--blue': '#60A5FA',
-    '--blue-soft': 'rgba(96,165,250,0.14)',
-    '--blue-line': 'rgba(96,165,250,0.34)',
+    '--blue': '#818CF8',
+    '--blue-soft': 'rgba(129,140,248,0.14)',
+    '--blue-line': 'rgba(129,140,248,0.34)',
     /* violeta: el escalón más alto de mantenimiento (Scale). Es el único color
        que no estaba en la paleta y entra solo para eso, no para decorar. */
     '--violet': '#A78BFA',
@@ -92,18 +93,19 @@ const THEMES = {
     '--grid': 'rgba(255,255,255,0.025)',
   },
   light: {
-    '--bg': '#F8F8F6',
-    '--bg-elevated': '#FFFFFF',
-    '--card': '#FFFFFF',
-    '--card-hover': '#FCFBF9',
-    '--border': '#E7E5E1',
-    '--border-strong': '#D6D3CD',
-    '--text': '#0A0A0A',
-    '--text-dim': '#5C5A55',
-    '--text-faint': '#9B9892',
-    '--accent': '#EA6A00',
-    '--accent-soft': 'rgba(234,106,0,0.10)',
-    '--accent-line': 'rgba(234,106,0,0.28)',
+    '--bg': '#FFFFFF',
+    '--bg-elevated': '#F5F5F7',
+    '--card': '#F5F5F7',
+    '--card-hover': '#EDEDF0',
+    '--border': 'rgba(0,0,0,0.09)',
+    '--border-strong': 'rgba(0,0,0,0.16)',
+    '--text': '#1D1D1F',
+    '--text-dim': '#6E6E73',
+    '--text-faint': '#9A9AA0',
+    '--accent': '#0A63E8',
+    '--accent-contrast': '#FFFFFF',
+    '--accent-soft': 'rgba(10,99,232,0.10)',
+    '--accent-line': 'rgba(10,99,232,0.28)',
     '--green': '#0E9F6E',
     '--green-soft': 'rgba(14,159,110,0.10)',
     '--green-line': 'rgba(14,159,110,0.30)',
@@ -112,30 +114,32 @@ const THEMES = {
     '--yellow': '#B45309',
     '--yellow-soft': 'rgba(180,83,9,0.10)',
     '--yellow-line': 'rgba(180,83,9,0.30)',
-    '--blue': '#2563EB',
-    '--blue-soft': 'rgba(37,99,235,0.10)',
-    '--blue-line': 'rgba(37,99,235,0.28)',
+    '--blue': '#4F46E5',
+    '--blue-soft': 'rgba(79,70,229,0.10)',
+    '--blue-line': 'rgba(79,70,229,0.28)',
     '--violet': '#6D28D9',
     '--violet-soft': 'rgba(109,40,217,0.10)',
     '--violet-line': 'rgba(109,40,217,0.28)',
-    '--shadow': '0 1px 2px rgba(16,15,12,0.04), 0 12px 30px -18px rgba(16,15,12,0.18)',
-    '--shadow-lift': '0 2px 4px rgba(16,15,12,0.05), 0 24px 46px -20px rgba(16,15,12,0.28)',
-    '--track': 'rgba(10,10,10,0.075)',
-    '--grid': 'rgba(10,10,10,0.022)',
+    '--shadow': '0 1px 2px rgba(0,0,0,0.04), 0 12px 30px -18px rgba(0,0,0,0.14)',
+    '--shadow-lift': '0 2px 4px rgba(0,0,0,0.06), 0 24px 46px -20px rgba(0,0,0,0.22)',
+    '--track': 'rgba(0,0,0,0.075)',
+    '--grid': 'rgba(0,0,0,0.022)',
   },
 }
+
+const FONT_SANS = "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif"
 
 const GLOBAL_CSS = `
 *,*::before,*::after{box-sizing:border-box}
 html,body,#root{height:100%;margin:0}
 body{
-  font-family:'DM Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+  font-family:${FONT_SANS};
   background:var(--bg);color:var(--text);
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
   transition:background .35s ease,color .35s ease;
 }
 ::selection{background:var(--accent-soft);color:var(--text)}
-h1,h2,h3,h4{font-family:'Bricolage Grotesque',serif;margin:0;letter-spacing:-0.02em;font-weight:600}
+h1,h2,h3,h4{font-family:${FONT_SANS};margin:0;letter-spacing:-0.03em;font-weight:700}
 .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,textarea,select{font-family:inherit;color:inherit}
@@ -157,7 +161,7 @@ a{color:inherit;text-decoration:none}
   padding:8px 13px;border-radius:10px;border:1px solid var(--border);background:var(--bg-elevated);
   color:var(--text);transition:all .16s;white-space:nowrap}
 .btn:hover{border-color:var(--accent-line);background:var(--card-hover)}
-.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-accent{background:var(--accent);color:var(--accent-contrast);border-color:var(--accent)}
 .btn-accent:hover{filter:brightness(1.08);background:var(--accent)}
 .btn-ghost{background:transparent;border-color:transparent}
 .btn-ghost:hover{background:var(--card-hover);border-color:var(--border)}
@@ -222,13 +226,13 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pj-sel option{background:var(--bg-elevated);color:var(--text)}
 
 .pj-cta{display:inline-flex;align-items:center;gap:10px;height:40px;padding:0 5px 0 16px;border-radius:999px;
-  background:var(--accent);color:#fff;font-size:13.5px;font-weight:700;letter-spacing:-.012em;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.14);transition:transform .3s var(--e),box-shadow .3s var(--e),filter .3s var(--e)}
-.pj-cta:hover{transform:translateY(-1px);filter:brightness(1.035);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 8px 18px -12px rgba(0,0,0,.4)}
+  background:var(--accent);color:var(--accent-contrast);font-size:13.5px;font-weight:700;letter-spacing:-.012em;
+  box-shadow:inset 0 1px 0 color-mix(in srgb,var(--accent-contrast) 14%,transparent);transition:transform .3s var(--e),box-shadow .3s var(--e),filter .3s var(--e)}
+.pj-cta:hover{transform:translateY(-1px);filter:brightness(1.035);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--accent-contrast) 14%,transparent),0 8px 18px -12px rgba(0,0,0,.4)}
 .pj-cta:active{transform:translateY(0) scale(.98)}
-.pj-cta i{display:grid;place-items:center;width:30px;height:30px;border-radius:999px;background:rgba(255,255,255,.18);
+.pj-cta i{display:grid;place-items:center;width:30px;height:30px;border-radius:999px;background:color-mix(in srgb,var(--accent-contrast) 18%,transparent);
   transition:background .3s var(--e)}
-.pj-cta:hover i{background:rgba(255,255,255,.26)}
+.pj-cta:hover i{background:color-mix(in srgb,var(--accent-contrast) 26%,transparent)}
 
 .pj-switch{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;font-weight:600;color:var(--text-dim);
   padding:4px 10px 4px 4px;border-radius:999px;transition:color .26s var(--e),background .26s var(--e)}
@@ -349,7 +353,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pd-eyebrow{font-size:10px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--text-dim);
   white-space:nowrap}
 
-.pd-title{font-family:'Bricolage Grotesque',serif;font-weight:600;font-size:clamp(23px,2.5vw,30px);
+.pd-title{font-family:${FONT_SANS};font-weight:700;font-size:clamp(23px,2.5vw,30px);
   line-height:1.08;letter-spacing:-.032em;min-width:0;overflow-wrap:anywhere}
 .pd-meta{font-size:13.5px;color:var(--text-dim);margin-top:7px}
 .pd-meta i{font-style:normal;color:var(--text-faint);padding:0 7px}
@@ -383,8 +387,8 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 
 
 .pd-cta{display:inline-flex;align-items:center;gap:9px;height:34px;padding:0 5px 0 14px;border-radius:999px;
-  background:var(--accent);color:#fff;font-size:13px;font-weight:700;letter-spacing:-.012em;flex:none;
-  box-shadow:0 9px 20px -12px var(--accent);transition:transform .3s var(--e),filter .3s var(--e)}
+  background:var(--accent);color:var(--accent-contrast);font-size:13px;font-weight:700;letter-spacing:-.012em;flex:none;
+  box-shadow:0 9px 20px -14px rgba(0,0,0,.4);transition:transform .3s var(--e),filter .3s var(--e)}
 .pd-cta:hover{filter:brightness(1.08)}
 .pd-cta:active{transform:scale(.98)}
 .pd-cta i{display:grid;place-items:center;width:26px;height:26px;border-radius:999px;flex:none;
@@ -588,7 +592,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pj-filt[data-on="1"] > svg:first-child{color:var(--accent)}
 .pj-filt .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:10.5px;font-weight:700;
   min-width:17px;height:17px;padding:0 5px;border-radius:999px;display:grid;place-items:center;
-  background:var(--accent);color:#fff}
+  background:var(--accent);color:var(--accent-contrast)}
 .pj-filt .cd{transition:transform .3s var(--e)}
 .pj-filt[aria-expanded="true"] .cd{transform:rotate(180deg)}
 
@@ -628,12 +632,10 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
    la sombra es lo que lo despega y deja claro que es una capa temporal. */
 .sb[data-lift="1"]{box-shadow:var(--shadow-lift)}
 .sb-brand{display:flex;align-items:center;gap:11px;height:64px;padding:0 16px;flex:none}
-.sb-mark{width:32px;height:32px;border-radius:9px;flex:none;display:grid;place-items:center;
-  background:var(--accent);color:#fff;font-family:'Bricolage Grotesque',serif;font-weight:800;font-size:17px;
-  box-shadow:0 8px 18px -10px var(--accent)}
 .sb-wm{min-width:0;overflow:hidden}
-.sb-wm b{display:block;font-family:'Bricolage Grotesque',serif;font-weight:700;font-size:15px;line-height:1.05;
-  letter-spacing:-.02em}
+.sb-wm b{display:block;font-family:${FONT_SANS};font-weight:700;font-size:15px;line-height:1.05;
+  letter-spacing:-.03em}
+.sb-wm b i{color:var(--accent);font-style:normal}
 .sb-wm span{display:block;font-size:9.5px;font-weight:600;letter-spacing:.15em;color:var(--text-faint);margin-top:2px}
 .sb-pin{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;flex:none;margin-left:auto;
   color:var(--text-faint);transition:color .24s var(--e),background .24s var(--e)}
@@ -693,9 +695,9 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;
   color:var(--text-dim);transition:color .24s var(--e),background .24s var(--e)}
 .hd-ver:hover{color:var(--text);background:var(--card-hover)}
-.hd-ver[data-new="1"]{padding:0 12px;font-family:'DM Sans',sans-serif;font-size:12.5px;font-weight:700;
-  color:#fff;background:var(--accent);box-shadow:0 8px 18px -11px var(--accent)}
-.hd-ver[data-new="1"]:hover{filter:brightness(1.08);color:#fff;background:var(--accent)}
+.hd-ver[data-new="1"]{padding:0 12px;font-family:${FONT_SANS};font-size:12.5px;font-weight:700;
+  color:var(--accent-contrast);background:var(--accent);box-shadow:0 8px 18px -12px rgba(0,0,0,.4)}
+.hd-ver[data-new="1"]:hover{filter:brightness(1.08);color:var(--accent-contrast);background:var(--accent)}
 .hd-ib{position:relative;display:grid;place-items:center;width:32px;height:32px;border-radius:999px;flex:none;
   color:var(--text-dim);
   transition:color .24s var(--e),background .24s var(--e),transform .24s var(--e)}
@@ -2771,7 +2773,7 @@ function fileToAvatarDataURL(file, max = 160) {
 }
 
 function Avatar({ user, size = 28, ring = 'var(--card)', title, onClick, badge, empty }) {
-  const common = { width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: Math.round(size * 0.4), flexShrink: 0, position: 'relative', cursor: onClick ? 'pointer' : 'default', lineHeight: 1, padding: 0, overflow: 'hidden' }
+  const common = { width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center', fontFamily: FONT_SANS, fontWeight: 700, fontSize: Math.round(size * 0.4), flexShrink: 0, position: 'relative', cursor: onClick ? 'pointer' : 'default', lineHeight: 1, padding: 0, overflow: 'hidden' }
   const Tag = onClick ? 'button' : 'div'   // avoid <button> nested inside <button>
   if (empty || !user) {
     return (
@@ -2850,7 +2852,7 @@ function TeamAvatars({ assignments, team, onChange, size = 28, ring = 'var(--car
   const openSlot = (slot, e) => { e.stopPropagation(); if (menu === slot) { setMenu(null); return } capture(e); setDual(false); setMenu(slot) }
   const openDual = (e) => { e.stopPropagation(); if (dual) { setDual(false); return } capture(e); setMenu(null); setDual(true) }
   const dbadge = (
-    <span style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', fontSize: 7.5, fontWeight: 800, letterSpacing: '.02em', padding: '1px 4px', borderRadius: 6, background: 'var(--accent)', color: '#fff', border: '1.5px solid ' + ring, whiteSpace: 'nowrap', lineHeight: 1.3 }}>PM·DEV</span>
+    <span style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', fontSize: 7.5, fontWeight: 800, letterSpacing: '.02em', padding: '1px 4px', borderRadius: 6, background: 'var(--accent)', color: 'var(--accent-contrast)', border: '1.5px solid ' + ring, whiteSpace: 'nowrap', lineHeight: 1.3 }}>PM·DEV</span>
   )
   return (
     <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
@@ -2995,7 +2997,7 @@ function NewProjectModal({ open, clients, onClose, onCreate }) {
         <Field label="Tipo de proyecto">
           <div style={{ display: 'flex', gap: 8 }}>
             {kindBtn('cliente', 'De un cliente', <I2.users width={14} height={14} />)}
-            {kindBtn('interno', 'Interno (Insights)', <span style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 12, marginRight: 2 }}>I</span>)}
+            {kindBtn('interno', 'Interno (Insights)', <span style={{ fontFamily: FONT_SANS, fontWeight: 800, fontSize: 12, marginRight: 2 }}>I</span>)}
           </div>
         </Field>
         {kind === 'cliente' ? (
@@ -3495,7 +3497,7 @@ function Projects({ onOpenProject }) {
       {!loading && list.length === 0 && (
         <div className="pj-empty">
           <span className="ic"><I2.circleDash width={22} height={22} /></span>
-          <div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 600, fontSize: 16, letterSpacing: '-.02em' }}>
+          <div style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: 16, letterSpacing: '-.02em' }}>
             {q ? 'Nada coincide con la búsqueda' : filtersActive ? 'Ningún proyecto pasa estos filtros' : `No hay proyectos ${tabLabel}`}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-faint)', maxWidth: 380, lineHeight: 1.5 }}>
@@ -4353,7 +4355,7 @@ function sopInline(text, kp) {
 }
 function SopMarkdown({ text }) {
   const lines = (text || '').split('\n'); const out = []; let i = 0
-  const H = { color: 'var(--text)', fontFamily: 'Bricolage Grotesque' }
+  const H = { color: 'var(--text)', fontFamily: FONT_SANS }
   while (i < lines.length) {
     const t = lines[i].trim()
     if (!t) { i++; continue }
@@ -6855,7 +6857,7 @@ function ProjectChat({ project, client, patch }) {
   return (
     <div style={{ flex: '0 0 360px', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg-elevated)', minWidth: 320 }}>
       <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><I2.spark width={17} height={17} style={{ color: 'var(--accent)' }} /><strong style={{ fontFamily: 'Bricolage Grotesque', fontSize: 15 }}>Asistente del proyecto</strong></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><I2.spark width={17} height={17} style={{ color: 'var(--accent)' }} /><strong style={{ fontFamily: FONT_SANS, fontSize: 15 }}>Asistente del proyecto</strong></div>
         <div style={{ display: 'flex', gap: 4 }}>
           <button className="btn btn-sm btn-ghost" onClick={() => setShowHistory((v) => !v)} title="Historial"><I2.clock width={15} height={15} /></button>
           <button className="btn btn-sm btn-ghost" onClick={newChat} title="Nuevo chat"><I2.plus width={15} height={15} /></button>
@@ -6889,7 +6891,7 @@ function ProjectChat({ project, client, patch }) {
           <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
             style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '90%' }}>
             <div style={{ padding: '10px 13px', borderRadius: 13, fontSize: 13.5, lineHeight: 1.55, whiteSpace: 'pre-wrap',
-              background: m.role === 'user' ? 'var(--accent)' : 'var(--card)', color: m.role === 'user' ? '#fff' : 'var(--text)',
+              background: m.role === 'user' ? 'var(--accent)' : 'var(--card)', color: m.role === 'user' ? 'var(--accent-contrast)' : 'var(--text)',
               border: m.role === 'user' ? 'none' : '1px solid var(--border)' }}>{m.content}</div>
           </motion.div>
         ))}
@@ -7024,7 +7026,7 @@ function AssistantView() {
             )}
             {active?.messages.map((m, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'grid', placeItems: 'center', background: m.role === 'user' ? 'var(--border-strong)' : 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, fontFamily: 'Bricolage Grotesque' }}>{m.role === 'user' ? 'Vos' : <I2.spark width={15} height={15} />}</div>
+                <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'grid', placeItems: 'center', background: m.role === 'user' ? 'var(--border-strong)' : 'var(--accent)', color: m.role === 'user' ? 'var(--text)' : 'var(--accent-contrast)', fontSize: 12, fontWeight: 700, fontFamily: FONT_SANS }}>{m.role === 'user' ? 'Vos' : <I2.spark width={15} height={15} />}</div>
                 <div style={{ flex: 1, minWidth: 0, fontSize: 14.5, lineHeight: 1.65, whiteSpace: 'pre-wrap', paddingTop: 3, color: m.role === 'user' ? 'var(--text)' : 'var(--text-dim)' }}>{m.content}</div>
               </motion.div>
             ))}
@@ -7100,7 +7102,7 @@ function TaskDetailModal({ open, task, team, projects, onClose, onPatch, onDelet
         <Field label="¿De qué es esta tarea?">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-sm" onClick={() => onPatch({ scope: 'cliente' })} style={{ flex: '1 1 140px', justifyContent: 'center', background: taskScope(task) === 'cliente' ? 'var(--accent-soft)' : 'transparent', color: taskScope(task) === 'cliente' ? 'var(--accent)' : 'var(--text-dim)', borderColor: taskScope(task) === 'cliente' ? 'var(--accent-line)' : 'var(--border)' }}><I2.folder width={14} height={14} /> Proyecto de cliente</button>
-            <button type="button" className="btn btn-sm" onClick={() => onPatch({ scope: 'interno', projectId: '' })} style={{ flex: '1 1 140px', justifyContent: 'center', background: taskScope(task) === 'interno' ? 'var(--accent-soft)' : 'transparent', color: taskScope(task) === 'interno' ? 'var(--accent)' : 'var(--text-dim)', borderColor: taskScope(task) === 'interno' ? 'var(--accent-line)' : 'var(--border)' }}><span style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 800, fontSize: 12 }}>I</span> Interno (Insights)</button>
+            <button type="button" className="btn btn-sm" onClick={() => onPatch({ scope: 'interno', projectId: '' })} style={{ flex: '1 1 140px', justifyContent: 'center', background: taskScope(task) === 'interno' ? 'var(--accent-soft)' : 'transparent', color: taskScope(task) === 'interno' ? 'var(--accent)' : 'var(--text-dim)', borderColor: taskScope(task) === 'interno' ? 'var(--accent-line)' : 'var(--border)' }}><span style={{ fontFamily: FONT_SANS, fontWeight: 800, fontSize: 12 }}>I</span> Interno (Insights)</button>
           </div>
         </Field>
         {taskScope(task) === 'cliente' && (
@@ -7487,8 +7489,8 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
   const inner = (
     <>
       <div className="sb-brand">
-        <div className="sb-mark" aria-hidden="true">I</div>
-        {!mini && <div className="sb-wm"><b>Insights</b><span>SOFTWARE · OS</span></div>}
+        <Mark size={32} />
+        {!mini && <div className="sb-wm"><b>insights<i>.</i></b><span>PROYECTOS</span></div>}
         {mobile
           ? <button onClick={onClose} className="sb-pin" title="Cerrar menú" aria-label="Cerrar menú"><I2.x width={16} height={16} /></button>
           : !mini && (
@@ -7516,7 +7518,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
                 {it.badge > 0 && mini && <span style={{ position: 'absolute', top: -4, right: -5, minWidth: 8, height: 8, borderRadius: 99, background: 'var(--accent)', border: '1.5px solid var(--bg-elevated)' }} />}
               </span>
               {!mini && <span className="lbl">{it.label}</span>}
-              {!mini && it.badge > 0 && <span style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 99, background: 'var(--accent)', color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'grid', placeItems: 'center' }}>{it.badge}</span>}
+              {!mini && it.badge > 0 && <span style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 99, background: 'var(--accent)', color: 'var(--accent-contrast)', fontSize: 10.5, fontWeight: 700, display: 'grid', placeItems: 'center' }}>{it.badge}</span>}
             </button>
           )
         })}
@@ -7818,7 +7820,7 @@ function NotificationCenter() {
                   : <span style={{ color: 'var(--text-dim)' }}>{a.text}</span>
                 return (
                   <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '9px 8px', borderRadius: 9, background: mine ? 'var(--accent-soft, var(--bg-elevated))' : 'transparent', border: mine ? '1px solid var(--accent-line)' : '1px solid transparent' }} className="row-hover">
-                    {u ? <Avatar user={u} size={28} ring="var(--card)" badge={a.type === 'mention' ? <span style={{ position: 'absolute', bottom: -2, right: -2, width: 15, height: 15, borderRadius: 99, background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', border: '1.5px solid var(--card)' }}><I2.at width={9} height={9} /></span> : null} /> : <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-faint)', flexShrink: 0 }}><Ico width={14} height={14} /></div>}
+                    {u ? <Avatar user={u} size={28} ring="var(--card)" badge={a.type === 'mention' ? <span style={{ position: 'absolute', bottom: -2, right: -2, width: 15, height: 15, borderRadius: 99, background: 'var(--accent)', color: 'var(--accent-contrast)', display: 'grid', placeItems: 'center', border: '1.5px solid var(--card)' }}><I2.at width={9} height={9} /></span> : null} /> : <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-faint)', flexShrink: 0 }}><Ico width={14} height={14} /></div>}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, lineHeight: 1.45 }}><strong>{u ? u.name : 'Alguien'}</strong> {body}{mine && <span className="tag" style={{ marginLeft: 6, color: 'var(--accent)', background: 'transparent', borderColor: 'var(--accent-line)', fontSize: 10 }}>para vos</span>}</div>
                       <div className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2 }}>{fmtRelative(a.date)}</div>
@@ -8032,7 +8034,7 @@ function Login() {
       <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="surface" style={{ width: '100%', maxWidth: 420, padding: 30, boxShadow: 'var(--shadow)', textAlign: 'center' }}>
           <div style={{ width: 64, height: 64, borderRadius: 999, margin: '0 auto 18px', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><I2.clock width={30} height={30} /></div>
-          <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 22, marginBottom: 10 }}>¡Hola {first}! 👋</h2>
+          <h2 style={{ fontFamily: FONT_SANS, fontSize: 22, marginBottom: 10 }}>¡Hola {first}! 👋</h2>
           <p style={{ fontSize: 14.5, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 8 }}>Tu cuenta quedó <strong style={{ color: 'var(--text)' }}>en proceso de aprobación</strong>.</p>
           <p style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.6 }}>Cuando te aprobemos te confirmamos por <strong style={{ color: 'var(--text)' }}>email o WhatsApp</strong> y vas a poder ver tu proyecto.</p>
           <button className="btn btn-ghost" onClick={() => { setRegistered(null); setMode('signin'); setPw('') }} style={{ marginTop: 22, justifyContent: 'center', width: '100%' }}>Volver al inicio</button>
@@ -8045,8 +8047,8 @@ function Login() {
       <motion.form onSubmit={submit} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
         className="surface" style={{ width: '100%', maxWidth: 380, padding: 28, boxShadow: 'var(--shadow)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: 18 }}>I</div>
-          <div><div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 17, lineHeight: 1 }}>Insights · Project OS</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{mode === 'signin' ? 'Iniciá sesión para continuar' : 'Registrate para acceder'}</div></div>
+          <Mark size={34} />
+          <div><div style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: 17, lineHeight: 1, letterSpacing: '-.03em' }}>insights<span style={{ color: 'var(--accent)' }}>.</span></div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{mode === 'signin' ? 'Iniciá sesión para continuar' : 'Registrate para acceder'}</div></div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {mode === 'signup' && <Field label="Nombre y apellido"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Tu nombre" /></Field>}
@@ -8367,8 +8369,8 @@ function ClientView({ shareId }) {
       <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg)' }}>
         <form onSubmit={(e) => { e.preventDefault(); load(pw) }} className="surface" style={{ width: '100%', maxWidth: 380, padding: 28, boxShadow: 'var(--shadow)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: 18 }}>I</div>
-            <div><div style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 16, lineHeight: 1 }}>Seguimiento del proyecto</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Ingresá la contraseña para ver el avance</div></div>
+            <Mark size={34} />
+            <div><div style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: 16, lineHeight: 1 }}>Seguimiento del proyecto</div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Ingresá la contraseña para ver el avance</div></div>
           </div>
           <Field label="Contraseña"><input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" autoFocus /></Field>
           {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8, marginTop: 10 }}>{err}</div>}
@@ -8379,7 +8381,7 @@ function ClientView({ shareId }) {
   }
 
   const p = payload
-  const stat = (label, value, color) => <div className="surface" style={{ padding: '14px 16px', flex: 1, minWidth: 130 }}><div className="label" style={{ marginBottom: 6 }}>{label}</div><div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'Bricolage Grotesque', color: color || 'var(--text)' }}>{value}</div></div>
+  const stat = (label, value, color) => <div className="surface" style={{ padding: '14px 16px', flex: 1, minWidth: 130 }}><div className="label" style={{ marginBottom: 6 }}>{label}</div><div style={{ fontSize: 26, fontWeight: 700, fontFamily: FONT_SANS, color: color || 'var(--text)' }}>{value}</div></div>
   const actMeta = (t) => ACTIVITY_TYPES.find((x) => x.key === t) || ACTIVITY_TYPES[0]
   // El payload lo arma la Edge Function `project-share` (supabase/functions/project-share),
   // que ya manda el plan y sus KPIs. Igual se contempla el payload sin avance —un
@@ -8391,7 +8393,7 @@ function ClientView({ shareId }) {
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '30px 22px 70px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: 15 }}>I</div>
+          <Mark size={30} />
           <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>Seguimiento en tiempo real · solo lectura</span>
         </div>
         <h1 style={{ fontSize: 30 }}>{p.name}</h1>
@@ -8484,7 +8486,18 @@ function ClientView({ shareId }) {
 /* ============================================================================
    20b · APROBACIÓN DE ACCESO · PORTAL DEL USUARIO EXTERNO · SECCIÓN USUARIOS
 ============================================================================ */
-const Mark = ({ size = 40 }) => <div style={{ width: size, height: size, borderRadius: size * 0.26, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontFamily: 'Bricolage Grotesque', fontWeight: 800, color: '#fff', fontSize: size * 0.5, flexShrink: 0 }}>I</div>
+/* Isotipo "in" — campo claro (tinte del acento) + letra oscura, la versión
+   "principal" del manual de marca. Mismo trazo en claro y oscuro: no invierte
+   con el tema, así se reconoce igual en cualquier pantalla de la app. */
+const Mark = ({ size = 40 }) => (
+  <div style={{ width: size, height: size, borderRadius: size * 0.28, background: 'var(--accent-soft)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+    <svg viewBox="0 0 83 80" width={size * 0.52} height={size * 0.5} fill="none" aria-hidden="true">
+      <path d="M12.5 26V72" stroke="var(--text)" strokeWidth="13" />
+      <circle cx="12.5" cy="13" r="7.5" fill="var(--text)" />
+      <path d="M32 72V45a19 19 0 0 1 38 0v27" stroke="var(--text)" strokeWidth="13" fill="none" />
+    </svg>
+  </div>
+)
 
 /* Pantalla que ve un registro público mientras está pendiente de aprobación. */
 function PendingApproval({ me, onLogout }) {
@@ -8494,7 +8507,7 @@ function PendingApproval({ me, onLogout }) {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="surface" style={{ width: '100%', maxWidth: 440, padding: 32, textAlign: 'center', boxShadow: 'var(--shadow)' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}><Mark size={44} /></div>
         <div style={{ width: 60, height: 60, borderRadius: 999, margin: '0 auto 16px', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><I2.clock width={28} height={28} /></div>
-        <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 22, marginBottom: 10 }}>¡Hola {first}! 👋</h2>
+        <h2 style={{ fontFamily: FONT_SANS, fontSize: 22, marginBottom: 10 }}>¡Hola {first}! 👋</h2>
         <p style={{ fontSize: 14.5, color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 8 }}>Tu cuenta quedó <strong style={{ color: 'var(--text)' }}>en proceso de aprobación</strong>.</p>
         <p style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.6 }}>Cuando te aprobemos te confirmamos por <strong style={{ color: 'var(--text)' }}>email o WhatsApp</strong> y vas a poder ver tu proyecto.</p>
         {onLogout && <button className="btn btn-ghost" onClick={onLogout} style={{ marginTop: 22, justifyContent: 'center', width: '100%' }}>Cerrar sesión</button>}
@@ -8515,7 +8528,7 @@ function AccessLoading({ onLogout }) {
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg)' }}>
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="surface" style={{ width: '100%', maxWidth: 420, padding: 30, textAlign: 'center', boxShadow: 'var(--shadow)' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}><Mark size={40} /></div>
-        <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 20, marginBottom: 10 }}>Esto está tardando de más</h2>
+        <h2 style={{ fontFamily: FONT_SANS, fontSize: 20, marginBottom: 10 }}>Esto está tardando de más</h2>
         <p style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.6 }}>No pudimos cargar tu acceso. Probá de nuevo y, si sigue igual, volvé a entrar con tu cuenta.</p>
         <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
           <button className="btn btn-ghost" onClick={() => window.location.reload()} style={{ flex: 1, justifyContent: 'center' }}>Reintentar</button>
@@ -8534,7 +8547,7 @@ function AccessRevoked({ onLogout }) {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="surface" style={{ width: '100%', maxWidth: 440, padding: 32, textAlign: 'center', boxShadow: 'var(--shadow)' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}><Mark size={44} /></div>
         <div style={{ width: 60, height: 60, borderRadius: 999, margin: '0 auto 16px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', color: 'var(--text-faint)' }}><I2.lock width={26} height={26} /></div>
-        <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 22, marginBottom: 10 }}>Tu acceso está dado de baja</h2>
+        <h2 style={{ fontFamily: FONT_SANS, fontSize: 22, marginBottom: 10 }}>Tu acceso está dado de baja</h2>
         <p style={{ fontSize: 14.5, color: 'var(--text-dim)', lineHeight: 1.6 }}>Esta cuenta ya no tiene acceso a la app. Si creés que es un error, escribinos y lo revisamos.</p>
         <button className="btn btn-ghost" onClick={salir} style={{ marginTop: 22, justifyContent: 'center', width: '100%' }}>Cerrar sesión</button>
       </motion.div>
@@ -8554,14 +8567,14 @@ function MemberPortal({ me, onLogout }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 20px', borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Mark size={28} /><span style={{ fontFamily: 'Bricolage Grotesque', fontWeight: 700, fontSize: 15 }}>Insights · Tu proyecto</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Mark size={28} /><span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: 15 }}>Insights · Tu proyecto</span></div>
         {onLogout && <button className="btn btn-sm btn-ghost" onClick={onLogout}>Cerrar sesión</button>}
       </div>
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '30px 22px 70px' }}>
         {!project ? (
           <div className="surface" style={{ padding: 40, textAlign: 'center' }}>
             <div style={{ width: 56, height: 56, borderRadius: 999, margin: '0 auto 14px', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><I2.check width={26} height={26} /></div>
-            <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 22, marginBottom: 8 }}>¡Acceso aprobado!</h2>
+            <h2 style={{ fontFamily: FONT_SANS, fontSize: 22, marginBottom: 8 }}>¡Acceso aprobado!</h2>
             <p style={{ color: 'var(--text-dim)', fontSize: 14.5, lineHeight: 1.6, maxWidth: 420, margin: '0 auto' }}>Todavía no te asignaron un proyecto para previsualizar. Te avisamos apenas esté listo.</p>
           </div>
         ) : (
@@ -8569,7 +8582,7 @@ function MemberPortal({ me, onLogout }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 26 }}>
               <div style={{ flex: 1, minWidth: 220 }}>
                 <div className="label" style={{ marginBottom: 6 }}>{client?.company || 'Tu proyecto'}</div>
-                <h1 style={{ fontSize: 30, fontFamily: 'Bricolage Grotesque', lineHeight: 1.1 }}>{project.name}</h1>
+                <h1 style={{ fontSize: 30, fontFamily: FONT_SANS, lineHeight: 1.1 }}>{project.name}</h1>
                 {sMeta && <span className="tag" style={{ marginTop: 10, display: 'inline-flex', color: `var(${sMeta.colorVar})`, borderColor: 'var(--border)' }}>{sMeta.label}</span>}
               </div>
               <ProgressRing pct={pct} colorVar="--green" />

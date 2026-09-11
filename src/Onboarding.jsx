@@ -7,21 +7,23 @@ import { motion } from 'framer-motion'
    ?onb=presentacion → video + calendario para agendar la call
    ?onb=gracias → gracias + qué preparar (Supabase + GitHub)
 ============================================================================ */
-const C = { bg: '#FBFAF7', ink: '#241F1B', dim: '#6B635B', faint: '#A79E94', accent: '#E8742B', accentHi: '#C85A18', line: 'rgba(0,0,0,0.10)', line2: 'rgba(0,0,0,0.05)', card: '#FFFFFF', red: '#D93838', ok: '#1E9E5A' }
+const C = { bg: '#FFFFFF', ink: '#1D1D1F', dim: '#6E6E73', faint: '#9A9AA0', accent: '#0A63E8', accentHi: '#0C56C4', line: 'rgba(0,0,0,0.09)', line2: 'rgba(0,0,0,0.045)', card: '#F5F5F7', red: '#DC2626', ok: '#0E9F6E' }
 
 const ONB_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..800;1,6..72,300..700&family=Schibsted+Grotesk:wght@400..800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..800;1,14..32,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 .onb, .onb *{box-sizing:border-box}
-.onb{font-family:'Schibsted Grotesk',system-ui,-apple-system,sans-serif;color:${C.ink};background:${C.bg};min-height:100vh;position:relative;overflow-x:hidden}
+.onb{font-family:-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,'Inter',system-ui,sans-serif;color:${C.ink};background:${C.bg};min-height:100vh;position:relative;overflow-x:hidden}
 .onb::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.045;mix-blend-mode:multiply;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
-.onb-serif{font-family:'Newsreader',Georgia,serif;font-weight:500;letter-spacing:-.01em}
+/* .onb-serif: el nombre quedó del diseño anterior (era Newsreader) — la marca
+   prohíbe serifas, así que ahora es la misma sans del resto, solo más pesada. */
+.onb-serif{font-family:inherit;font-weight:700;letter-spacing:-.03em}
 .onb-mono{font-family:'JetBrains Mono',monospace}
 .onb-wrap{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:0 22px}
 .onb-input{width:100%;padding:13px 15px;border-radius:12px;border:1px solid ${C.line};background:${C.card};font-size:16px;font-family:inherit;color:${C.ink};outline:none;transition:border-color .16s, box-shadow .16s}
 .onb-input:focus{border-color:${C.accent};box-shadow:0 0 0 3px ${C.accent}22}
 .onb-input::placeholder{color:${C.faint}}
 textarea.onb-input{resize:vertical;min-height:80px;line-height:1.5}
-.onb-btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:14px 28px;border-radius:99px;border:none;cursor:pointer;font-family:inherit;font-weight:700;font-size:16px;background:${C.accent};color:#fff;transition:transform .14s, filter .14s;box-shadow:0 6px 20px ${C.accent}44}
+.onb-btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:14px 28px;border-radius:99px;border:none;cursor:pointer;font-family:inherit;font-weight:700;font-size:16px;background:${C.accent};color:#fff;transition:transform .14s, filter .14s;box-shadow:0 6px 18px rgba(0,0,0,.16)}
 .onb-btn:hover{filter:brightness(1.06)}
 .onb-btn:active{transform:scale(.98)}
 .onb-btn:disabled{opacity:.5;cursor:default;box-shadow:none}
@@ -41,7 +43,13 @@ function useInjectCss() {
   }, [])
 }
 const goTo = (step) => { const u = new URL(window.location.href); u.searchParams.set('onb', step); window.location.href = u.toString() }
-const Logo = ({ h = 30 }) => <img src="/insights-logo.png" alt="InsightsApps" style={{ height: h, width: 'auto', display: 'inline-block' }} onError={(e) => { e.target.style.display = 'none' }} />
+/* Wordmark de texto, no PNG: el logo viejo (serif itálica, "Insights" con
+   mayúscula) no es la marca actual — la marca es minúscula + punto en acento. */
+const Logo = ({ h = 30 }) => (
+  <span style={{ fontSize: h * 0.8, lineHeight: 1, fontWeight: 700, letterSpacing: '-.045em', color: C.ink, display: 'inline-block' }}>
+    insights<span style={{ color: C.accent }}>.</span>
+  </span>
+)
 const LogoBar = ({ h = 30 }) => <div style={{ paddingTop: 30, textAlign: 'center', position: 'relative', zIndex: 1 }}><Logo h={h} /></div>
 
 /* ---------- LANDING 1: bienvenida + wizard ---------- */
@@ -93,7 +101,7 @@ function Wizard({ supabase, cloudEnabled }) {
           {step === 0 && (
             <motion.div key="0" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -18 }} transition={{ duration: 0.45, ease }}>
               <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, ease }} className="onb-kicker" style={{ marginBottom: 16 }}>Onboarding · InsightsApps</motion.div>
-              <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18, ease }} className="onb-serif" style={{ fontSize: 'clamp(38px,8vw,64px)', lineHeight: 1.04, marginBottom: 18 }}>Bienvenido a<br /><span style={{ color: C.accent }}>Insights</span>.</motion.h1>
+              <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18, ease }} className="onb-serif" style={{ fontSize: 'clamp(38px,8vw,64px)', lineHeight: 1.04, marginBottom: 18 }}>Bienvenido a<br />insights<span style={{ color: C.accent }}>.</span></motion.h1>
               <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28, ease }} style={{ fontSize: 18, color: C.dim, lineHeight: 1.6, maxWidth: 500, marginBottom: 30 }}>Vamos a crear tu proyecto en unos pasos rápidos. Contanos de vos y de tu negocio, y en minutos lo tenemos andando de nuestro lado.</motion.p>
               <motion.button initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38, ease }} className="onb-btn" onClick={() => go(1)}>Empezar →</motion.button>
             </motion.div>

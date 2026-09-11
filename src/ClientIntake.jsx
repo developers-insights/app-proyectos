@@ -161,7 +161,7 @@ export default function ClientIntake({ supabase, shareId, password, projectName 
               <div className="label" style={{ marginBottom: 7, color: done ? 'var(--green)' : 'var(--accent)' }}>
                 {done ? 'Listo' : urgent.length ? 'Te necesitamos 10 minutos' : 'Nos falta que decidas'}
               </div>
-              <h2 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 20, lineHeight: 1.25, marginBottom: 8 }}>
+              <h2 style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontSize: 20, lineHeight: 1.25, marginBottom: 8 }}>
                 {done
                   ? 'Contestaste todo. Gracias.'
                   : urgent.length
@@ -323,7 +323,7 @@ export default function ClientIntake({ supabase, shareId, password, projectName 
             <div style={{ width: 46, height: 46, borderRadius: 999, margin: '0 auto 12px', background: 'var(--green-soft)', display: 'grid', placeItems: 'center', color: 'var(--green)' }}>
               <I2.check width={22} height={22} />
             </div>
-            <h3 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 18, marginBottom: 7 }}>Contestaste todo</h3>
+            <h3 style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontSize: 18, marginBottom: 7 }}>Contestaste todo</h3>
             <p style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.6, margin: '0 auto', maxWidth: 420 }}>
               Nos llega al instante y seguimos nosotros. Si algo cambia, entrás con este mismo
               link y lo corregís.
@@ -350,7 +350,7 @@ function QuestionBody({ q, value, onAnswer, onSaveOnly }) {
           Urgente
         </span>
       )}
-      <h1 style={{ fontFamily: 'Bricolage Grotesque', fontSize: 27, lineHeight: 1.22, marginBottom: q.body || q.why ? 14 : 22 }}>
+      <h1 style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontSize: 27, lineHeight: 1.22, marginBottom: q.body || q.why ? 14 : 22 }}>
         {q.title}
       </h1>
       {q.body && (

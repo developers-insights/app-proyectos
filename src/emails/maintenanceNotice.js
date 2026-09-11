@@ -5,12 +5,12 @@
 // previsualizar en la app. El proveedor de envío se conecta después.
 
 const BRAND = {
-  orange: '#F97316',
-  paper: '#F8F8F6',
-  surface: '#FFFFFF',
-  ink: '#0A0A0A',
-  inkSecondary: '#5C5A55',
-  hairline: '#E7E5E1',
+  accent: '#0A63E8',
+  paper: '#FFFFFF',
+  surface: '#F5F5F7',
+  ink: '#1D1D1F',
+  inkSecondary: '#6E6E73',
+  hairline: 'rgba(0,0,0,0.09)',
 };
 
 const FONT_STACK =
@@ -202,7 +202,7 @@ function renderHtml({
                     <tr>
                       <td width="20" valign="top" style="padding-top:3px;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="6" height="6" style="width:6px;height:6px;">
-                          <tr><td bgcolor="${BRAND.orange}" style="background-color:${BRAND.orange};border-radius:3px;line-height:6px;font-size:6px;">&nbsp;</td></tr>
+                          <tr><td bgcolor="${BRAND.accent}" style="background-color:${BRAND.accent};border-radius:3px;line-height:6px;font-size:6px;">&nbsp;</td></tr>
                         </table>
                       </td>
                       <td style="font-family:${FONT_STACK};font-size:15px;line-height:22px;color:${BRAND.ink};">${escapeHtml(item)}</td>
@@ -218,13 +218,13 @@ function renderHtml({
             <tr>
               <td align="center" style="padding:8px 0 4px 0;">
                 <!--[if mso]>
-                <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${safeUrl}" style="height:48px;v-text-anchor:middle;width:280px;" arcsize="50%" strokecolor="${BRAND.orange}" fillcolor="${BRAND.orange}">
+                <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${safeUrl}" style="height:48px;v-text-anchor:middle;width:280px;" arcsize="50%" strokecolor="${BRAND.accent}" fillcolor="${BRAND.accent}">
                 <w:anchorlock/>
                 <center style="color:#FFFFFF;font-family:${FONT_STACK};font-size:16px;font-weight:600;">Ver el tablero del proyecto</center>
                 </v:roundrect>
                 <![endif]-->
                 <!--[if !mso]><!-->
-                <a href="${safeUrl}" target="_blank" style="background-color:${BRAND.orange};border-radius:999px;color:#FFFFFF;display:inline-block;font-family:${FONT_STACK};font-size:16px;font-weight:600;line-height:48px;text-align:center;text-decoration:none;width:280px;-webkit-text-size-adjust:none;mso-hide:all;">Ver el tablero del proyecto</a>
+                <a href="${safeUrl}" target="_blank" style="background-color:${BRAND.accent};border-radius:999px;color:#FFFFFF;display:inline-block;font-family:${FONT_STACK};font-size:16px;font-weight:600;line-height:48px;text-align:center;text-decoration:none;width:280px;-webkit-text-size-adjust:none;mso-hide:all;">Ver el tablero del proyecto</a>
                 <!--<![endif]-->
               </td>
             </tr>`
@@ -253,7 +253,7 @@ function renderHtml({
   table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
   img { border:0; line-height:100%; outline:none; text-decoration:none; }
   body { margin:0; padding:0; width:100% !important; background-color:${BRAND.paper}; }
-  a { color:${BRAND.orange}; }
+  a { color:${BRAND.accent}; }
 
   /* Anti dark-mode: forzamos nuestra paleta clara aunque el cliente invierta colores */
   :root { color-scheme: light; supported-color-schemes: light; }
@@ -292,7 +292,7 @@ function renderHtml({
             <td class="ins-pad" style="padding:0 0 24px 4px;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td width="28" height="28" bgcolor="${BRAND.orange}" style="background-color:${BRAND.orange};border-radius:7px;width:28px;height:28px;text-align:center;" role="img" aria-label="Insights">
+                  <td width="28" height="28" bgcolor="${BRAND.accent}" style="background-color:${BRAND.accent};border-radius:7px;width:28px;height:28px;text-align:center;" role="img" aria-label="Insights">
                     <span style="font-family:${FONT_STACK};font-size:16px;line-height:28px;font-weight:700;color:#FFFFFF;">I</span>
                   </td>
                   <td style="padding-left:10px;font-family:${FONT_STACK};font-size:16px;font-weight:600;color:${BRAND.ink};">Insights</td>
@@ -316,7 +316,7 @@ function renderHtml({
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ins-hairline" style="border-top:1px solid ${BRAND.hairline};border-bottom:1px solid ${BRAND.hairline};">
                       <tr>
                         <td style="padding:24px 0;">
-                          <p style="margin:0 0 14px 0;font-family:${FONT_STACK};font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${BRAND.orange};">Qué incluye</p>
+                          <p style="margin:0 0 14px 0;font-family:${FONT_STACK};font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${BRAND.accent};">Qué incluye</p>
                           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                             ${listRows}
                           </table>
