@@ -8739,8 +8739,9 @@ function UsuariosView({ onOpenProject }) {
 export default function InsightsApp() {
   const [session, setSession] = useState(cloudEnabled ? undefined : null) // undefined=loading
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : ''
   const shareId = params.get('share')
-  const onbStep = params.get('onb')
+  const onbStep = params.get('onb') || (pathname === '/empezar' ? 'inicio' : null)
   const onbxStep = params.get('onbx')
 
   // inject global css once
