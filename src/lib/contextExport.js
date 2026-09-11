@@ -84,7 +84,7 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   const stg = (k) => stageMeta(k).label
   const nStage = (k) => (c.byStage[k] || []).length
 
-  L.push('# Insights Software — Contexto operativo (Proyectos App)')
+  L.push('# InsightsApps — Contexto operativo (Proyectos App)')
   L.push('')
   L.push(`> Snapshot generado el **${fmtDate(now)}** desde la app de proyectos. Fuente de verdad para RAW (segundo cerebro).`)
   if (c.since) L.push(`> Datos desde **${fmtDate(c.since)}**${c.sinceDays != null ? ` (~${c.sinceDays} días operando en la app)` : ''}.`)
@@ -199,7 +199,7 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   L.push('')
 
   L.push('---')
-  L.push(`_Generado automáticamente por Proyectos App · Insights Software. Volvé a exportar cuando quieras para tener RAW al día._`)
+  L.push(`_Generado automáticamente por Proyectos App · InsightsApps. Volvé a exportar cuando quieras para tener RAW al día._`)
   L.push('')
   return L.join('\n')
 }
