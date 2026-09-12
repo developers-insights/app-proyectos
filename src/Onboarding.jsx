@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 
 /* ============================================================================
@@ -155,25 +155,15 @@ function Nav({ onBack, onNext, nextDisabled }) {
   )
 }
 
-/* ---------- LANDING 2: agendar la llamada de onboarding (directo al calendario) ---------- */
+/* ---------- LANDING 2: agendar la llamada de onboarding ----------
+   La agenda con Nacho ya no vive acá: la reemplazó el funnel "Arranque
+   Insights" en Speed Funnels (mismo encabezado, calendario real contra
+   SU Google, confirmación y recordatorio por WhatsApp ya armados del
+   otro lado). Acá sólo se redirige — no queda un widget que mantener. */
+const ARRANQUE_URL = 'https://funnel.insightsapps.tech/f/arranque'
 function Presentacion() {
-  const calRef = useRef(null)
-  // Cargamos el resizer de LeadConnector y escuchamos su postMessage para ajustar el alto
-  // del iframe al contenido. Así el botón de agendar nunca queda cortado (en mobile iOS no
-  // permite scroll dentro de un iframe).
   useEffect(() => {
-    const old = document.getElementById('lc-form-embed'); if (old) old.remove()
-    const s = document.createElement('script'); s.id = 'lc-form-embed'; s.src = 'https://link.msgsndr.com/js/form_embed.js'; s.async = true; document.body.appendChild(s)
-    const onMsg = (e) => {
-      if (!/leadconnectorhq\.com|msgsndr\.com/.test(e.origin || '')) return
-      let h = null; const d = e.data
-      if (typeof d === 'number') h = d
-      else if (d && typeof d === 'object' && typeof d.height === 'number') h = d.height
-      else if (typeof d === 'string') { try { const o = JSON.parse(d); if (o && typeof o.height === 'number') h = o.height } catch (_) {} }
-      if (h && h > 300 && calRef.current) calRef.current.style.height = h + 'px'
-    }
-    window.addEventListener('message', onMsg)
-    return () => { window.removeEventListener('message', onMsg); try { s.remove() } catch (_) {} }
+    window.location.href = ARRANQUE_URL
   }, [])
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 80 }}>
@@ -182,10 +172,7 @@ function Presentacion() {
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5 }} style={{ marginTop: 34, textAlign: 'center' }}>
           <div className="onb-kicker" style={{ marginBottom: 10 }}>Último paso</div>
           <h2 className="onb-serif" style={{ fontSize: 'clamp(28px,5.5vw,44px)', marginBottom: 8 }}>Agendá tu llamada de onboarding</h2>
-          <p style={{ color: C.dim, fontSize: 'clamp(15px,3.4vw,16px)', maxWidth: 520, margin: '0 auto', lineHeight: 1.6 }}>Elegí un horario para hablar con Nacho, tu Project Manager. En esa llamada arrancamos con tu proyecto.</p>
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.6, delay: 0.1 }} className="onb-card" style={{ padding: 4, marginTop: 24 }}>
-          <iframe ref={calRef} src="https://api.leadconnectorhq.com/widget/booking/vsD3uHw8TYyGAH2CMcL2" id="vsD3uHw8TYyGAH2CMcL2_onb" allow="payment" scrolling="no" style={{ width: '100%', border: 'none', minHeight: 700, display: 'block', borderRadius: 14 }} title="Agendar llamada" />
+          <p style={{ color: C.dim, fontSize: 'clamp(15px,3.4vw,16px)', maxWidth: 520, margin: '0 auto', lineHeight: 1.6 }}>Te llevamos a elegir el horario con Nacho, tu Project Manager…</p>
         </motion.div>
       </div>
     </div>
