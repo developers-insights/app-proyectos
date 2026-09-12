@@ -3074,50 +3074,6 @@ function CommitChip({ repo, compact }) {
   )
 }
 
-/* alta de un proyecto nuevo: cliente + WhatsApp + testing (opcional). El plan se asocia luego dentro de la tarjeta. */
-function NewProjectModal({ open, clients, onClose, onCreate }) {
-  const [name, setName] = useState('')
-  const [kind, setKind] = useState('cliente')
-  const [clientId, setClientId] = useState('')
-  const [wa, setWa] = useState('')
-  const [testing, setTesting] = useState('')
-  useEffect(() => { if (open) { setName(''); setKind('cliente'); setClientId((clients[0] && clients[0].id) || ''); setWa(''); setTesting('') } }, [open])
-  const canCreate = name.trim() && (kind === 'interno' || clientId)
-  const create = () => { if (!canCreate) return; onCreate({ name: name.trim(), kind, clientId, whatsappUrl: wa.trim(), testingUrl: testing.trim() }) }
-  const kindBtn = (k, label, Icon) => (
-    <button type="button" onClick={() => setKind(k)} className="btn btn-sm" style={{ flex: 1, justifyContent: 'center', background: kind === k ? 'var(--accent-soft)' : 'transparent', color: kind === k ? 'var(--accent)' : 'var(--text-dim)', borderColor: kind === k ? 'var(--accent-line)' : 'var(--border)' }}>{Icon}{label}</button>
-  )
-  return (
-    <Modal open={open} onClose={onClose} title="Nuevo proyecto" sub="Creá la tarjeta; después le asociás el plan adentro" width={460}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <Field label="Nombre del proyecto"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Chamber OS" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); create() } }} /></Field>
-        <Field label="Tipo de proyecto">
-          <div style={{ display: 'flex', gap: 8 }}>
-            {kindBtn('cliente', 'De un cliente', <I2.users width={14} height={14} />)}
-            {kindBtn('interno', 'Interno (Insights)', <span style={{ fontFamily: FONT_SANS, fontWeight: 800, fontSize: 12, marginRight: 2 }}>I</span>)}
-          </div>
-        </Field>
-        {kind === 'cliente' ? (
-          <Field label="Cliente">
-            <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-              {clients.length === 0 && <option value="">— No hay clientes cargados —</option>}
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}
-            </select>
-          </Field>
-        ) : (
-          <div style={{ fontSize: 12.5, color: 'var(--text-dim)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', lineHeight: 1.5 }}>Proyecto <strong>interno de Insights</strong> (sin cliente). Ej: “20 carruseles de Instagram para la cuenta de Fede”.</div>
-        )}
-        <Field label="Grupo de WhatsApp"><input className="input" value={wa} onChange={(e) => setWa(e.target.value)} placeholder="https://chat.whatsapp.com/…" /></Field>
-        <Field label="Testing / Deploy URL (opcional)"><input className="input" value={testing} onChange={(e) => setTesting(e.target.value)} placeholder="https://mi-app.onrender.com" /></Field>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={create} disabled={!canCreate}><I2.plus width={15} height={15} /> Crear proyecto</button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
 /* ============================================================================
    12 · PROJECTS LIST
 ============================================================================ */
@@ -3421,7 +3377,6 @@ function Projects({ onOpenProject }) {
     return m
   }, [plans])
   const planOf = (p) => (p.planId ? planById.get(p.planId) || null : null)
-  const [newOpen, setNewOpen] = useState(false)
   const qp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
   /* El ?tab= viejo traía estados que ya no existen (active/paused/delivered) y
      dejaba el listado vacío sin explicación: cualquier valor que no sea una
@@ -3458,24 +3413,6 @@ function Projects({ onOpenProject }) {
     if (proj && stageIsRegression(proj, to)) { setStageAsk({ projectId: id, to }); return }
     commitStage(id, to)
   }
-  const createProject = ({ name, clientId, kind, whatsappUrl, testingUrl }) => {
-    const id = uid()
-    const proj = {
-      id, name, clientId: kind === 'interno' ? '' : clientId, kind: kind || 'cliente', stage: 'desarrollo', priority: 'normal',
-      assignments: { pm: null, dev: null }, tags: [],
-      avances: [], comms: [], scopeFiles: [], salesLinks: [], scopeNotes: [],
-      risks: [], pendingAgency: [], pendingClient: [], chats: [],
-      createdAt: new Date().toISOString(),
-      testingUrl: testingUrl || '', whatsappUrl: whatsappUrl || '', productionUrl: '',
-      totalAmount: 0, paidAmount: 0, lastDeployDate: null, githubRepo: '', kickoff: '',
-      cardActions: { scope: true, testing: true, whatsapp: true },
-    }
-    projectStore.create(proj)
-    if (logActivity) logActivity({ type: 'project-add', text: `creó el proyecto "${name}"` })
-    setNewOpen(false)
-    onOpenProject(id)   // abre la tarjeta nueva para asociarle el plan
-  }
-
   // keep filters URL-friendly
   useEffect(() => {
     const p = new URLSearchParams()
@@ -3612,11 +3549,6 @@ function Projects({ onOpenProject }) {
             <span aria-hidden="true">Ver equipo</span>
           </button>
         )}
-
-        <button className="pj-cta" onClick={() => setNewOpen(true)} title="Nuevo proyecto">
-          Nuevo proyecto
-          <i><I2.plus width={15} height={15} /></i>
-        </button>
       </div>
 
       {loading && (
@@ -3638,12 +3570,11 @@ function Projects({ onOpenProject }) {
                 ? <>Sacá alguno de los filtros de arriba para ver más.</>
                 : showAllToggle && !showAll && hiddenCount > 0
                   ? <>Hay {hiddenCount} proyectos asignados a otras personas. Prendé «Ver todos los proyectos» para verlos.</>
-                  : <>Cuando crees uno va a aparecer acá con su avance y su fase.</>}
+                  : <>Se crea desde el onboarding que se le manda al cliente.</>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
             {q && <button className="btn btn-sm" onClick={() => setSearch('')}>Limpiar búsqueda</button>}
             {filtersActive && <button className="btn btn-sm" onClick={clearFilters}>Quitar filtros</button>}
-            {!q && !filtersActive && <button className="pj-cta" onClick={() => setNewOpen(true)} style={{ height: 36 }}>Nuevo proyecto<i><I2.plus width={14} height={14} /></i></button>}
           </div>
         </div>
       )}
@@ -3672,7 +3603,6 @@ function Projects({ onOpenProject }) {
       <ProjectLogModal open={!!logModal} kind={logModal?.kind} project={data.projects.find((p) => p.id === logModal?.projectId)} onClose={() => setLogModal(null)} patch={(fn) => patchProject(logModal.projectId, fn)} />
       <ScopeModal open={!!scopeFor} project={data.projects.find((p) => p.id === scopeFor)} onClose={() => setScopeFor(null)} patch={(fn) => patchProject(scopeFor, fn)} />
       <CardConfigModal open={!!cardCfgFor} project={data.projects.find((p) => p.id === cardCfgFor)} onClose={() => setCardCfgFor(null)} onSave={(f) => updateProject(cardCfgFor, f)} />
-      <NewProjectModal open={newOpen} clients={data.clients} onClose={() => setNewOpen(false)} onCreate={createProject} />
     </div>
   )
 }
