@@ -71,6 +71,12 @@ function Wizard({ supabase, cloudEnabled }) {
       const { data: res, error } = await supabase.functions.invoke('onboarding-signup', { body: f })
       if (error) throw error
       if (res && res.error) throw new Error(res.error)
+      // Se guarda para que el paso "presentacion" (otra navegación completa,
+      // sin estado de React que sobreviva) pueda mandarlo a Speed Funnels y
+      // evitar que el cliente vuelva a tipear nombre/email/teléfono. Va por
+      // sessionStorage y no por querystring: el pixel de la landing de
+      // destino manda location.href entero a Meta en cada hit.
+      try { sessionStorage.setItem('onb:contact', JSON.stringify({ name: f.name, email: f.email, phone: f.phone })) } catch { /* storage bloqueado: Presentacion cae al redirect de siempre */ }
       setDone(true)
     } catch (e) { setErr(e.message || 'No se pudo enviar el formulario') } finally { setBusy(false) }
   }
@@ -161,9 +167,34 @@ function Nav({ onBack, onNext, nextDisabled }) {
    SU Google, confirmación y recordatorio por WhatsApp ya armados del
    otro lado). Acá sólo se redirige — no queda un widget que mantener. */
 const ARRANQUE_URL = 'https://funnel.insightsapps.tech/f/arranque'
+const ONBOARDING_LEAD_URL = 'https://funnel.insightsapps.tech/api/onboarding-lead'
 function Presentacion() {
   useEffect(() => {
-    window.location.href = ARRANQUE_URL
+    // Si tenemos los datos del wizard, se los pasamos a Speed Funnels de
+    // antemano (crea el contacto y devuelve su id) para que el calendario
+    // abra directo, sin pedirle de nuevo nombre/email/teléfono al cliente.
+    // Cualquier falla acá (sin datos guardados, red caída, CORS) cae al
+    // redirect de siempre — nunca puede costarle al cliente su reunión.
+    let contact = null
+    try { contact = JSON.parse(sessionStorage.getItem('onb:contact') || 'null') } catch { /* noop */ }
+    if (!contact || !contact.name || (!contact.email && !contact.phone)) {
+      window.location.href = ARRANQUE_URL
+      return
+    }
+    const ctrl = new AbortController()
+    const timeout = setTimeout(() => ctrl.abort(), 4000)
+    fetch(ONBOARDING_LEAD_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(contact),
+      signal: ctrl.signal,
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        window.location.href = json && json.contact_id ? `${ARRANQUE_URL}?c=${json.contact_id}` : ARRANQUE_URL
+      })
+      .catch(() => { window.location.href = ARRANQUE_URL })
+      .finally(() => clearTimeout(timeout))
   }, [])
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 80 }}>
