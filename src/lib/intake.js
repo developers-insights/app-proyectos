@@ -197,26 +197,6 @@ const IROWING = {
       placeholder: 'soporte@irowing.net',
     },
     {
-      id: 'irowing.dev_verification',
-      section: 'lanzamiento',
-      kind: 'choice',
-      title: 'La verificación nueva de desarrollador de Android',
-      why:
-        'Google empezó a exigir que el desarrollador esté verificado con un documento para que ' +
-        'sus apps se puedan instalar en cualquier Android, incluso fuera de la Play Store. Hoy ' +
-        'se aplica en cuatro países y en 2027 pasa a ser global. Es un trámite aparte del que ' +
-        'ya hiciste, y también lo tiene que hacer el titular.',
-      options: [
-        {
-          value: 'ahora',
-          label: 'Hagámoslo ahora y nos lo sacamos de encima',
-          hint: 'Son unos minutos más mientras ya estás adentro de la consola',
-          recommended: true,
-        },
-        { value: 'despues', label: 'Cuando sea obligatorio acá' },
-      ],
-    },
-    {
       id: 'irowing.ai_reports',
       section: 'producto',
       kind: 'choice',
@@ -633,26 +613,6 @@ const MAREX = {
       options: [
         { value: 'ok', label: 'Adelante, creen la cuenta de prueba', recommended: true },
         { value: 'hablar', label: 'Quiero entender bien qué ve esa cuenta' },
-      ],
-    },
-    {
-      id: 'marex.dev_verification',
-      section: 'lanzamiento',
-      kind: 'choice',
-      title: 'La verificación nueva de desarrollador de Android',
-      why:
-        'Google empezó a exigir que el desarrollador esté verificado con un documento para que ' +
-        'sus apps se puedan instalar en cualquier Android, incluso fuera de la Play Store. Hoy ' +
-        'se aplica en cuatro países y en 2027 pasa a ser global. Es un trámite aparte del que ' +
-        'ya hiciste, y también lo tiene que hacer el titular.',
-      options: [
-        {
-          value: 'ahora',
-          label: 'Hagámoslo ahora y nos lo sacamos de encima',
-          hint: 'Son unos minutos más mientras ya estás adentro de la consola',
-          recommended: true,
-        },
-        { value: 'despues', label: 'Cuando sea obligatorio acá' },
       ],
     },
     {
