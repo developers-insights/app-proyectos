@@ -19,6 +19,7 @@ import { createClient } from '@supabase/supabase-js'
 import OnboardingLanding from './Onboarding'
 import OnboardingV2 from './OnboardingV2'
 import ClientIntake from './ClientIntake.jsx'
+import { intakeFor, isAnswered, intakeProgress } from './lib/intake.js'
 import { uid, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
 import { I2 } from './ui/icons2.jsx'
 import {
@@ -5318,6 +5319,73 @@ function ShareModal({ open, project, onClose, patch }) {
   )
 }
 
+/* Lo que el cliente contestó en el cuestionario de despliegue (src/lib/intake.js).
+   Lee por la MISMA Edge Function que usa el cliente, con el shareId y la contraseña
+   del proyecto: `client_intake` tiene RLS sin políticas a propósito —solo el
+   service_role entra—, así que una consulta directa desde acá devolvería vacío. */
+function IntakeAnswersModal({ open, onClose, project }) {
+  const intake = intakeFor(project.name)
+  const [answers, setAnswers] = useState(null)
+  const [err, setErr] = useState(null)
+
+  useEffect(() => {
+    if (!open || !intake || !supabase) return
+    let alive = true
+    setAnswers(null); setErr(null)
+    supabase.functions
+      .invoke('project-intake', { body: { shareId: project.shareId, password: project.sharePassword, action: 'get' } })
+      .then(({ data, error }) => {
+        if (!alive) return
+        if (error || (data && data.error)) setErr((data && data.error) || 'No se pudieron leer las respuestas.')
+        else setAnswers((data && data.answers) || {})
+      })
+    return () => { alive = false }
+  }, [open, project.shareId, project.sharePassword])
+
+  if (!intake) return null
+  const prog = intakeProgress(intake, answers || {})
+
+  const show = (q, v) => {
+    if (!isAnswered(v)) return null
+    if (Array.isArray(v)) return v.join('\n')
+    if (q.kind === 'action') return 'Hecho'
+    if (q.kind === 'confirm') return v.ok ? 'Confirmado' : `Hay que corregir: ${v.correction || '(sin detalle)'}`
+    if (q.kind === 'choice') {
+      const o = (q.options || []).find((x) => x.value === v.value)
+      return (o ? o.label : v.value) + (v.extra ? ` — ${v.extra}` : '')
+    }
+    if (typeof v === 'object') {
+      return Object.entries(v).filter(([k]) => k !== '__skip').map(([k, val]) => {
+        const f = (q.fields || []).find((x) => x.key === k)
+        return `${f ? f.label : k}: ${val}`
+      }).join('\n') || 'Lo dejó pendiente'
+    }
+    return String(v)
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Respuestas del cliente" sub={`${project.name} · ${prog.done} de ${prog.total}`} width={620}>
+      {err && <div style={{ fontSize: 13, color: 'var(--red)', background: 'var(--red-soft)', padding: '9px 12px', borderRadius: 8 }}>{err}</div>}
+      {!answers && !err && <div style={{ fontSize: 13, color: 'var(--text-dim)' }}>Leyendo…</div>}
+      {answers && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {intake.questions.map((q) => {
+            const txt = show(q, answers[q.id])
+            return (
+              <div key={q.id} style={{ padding: '11px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text-dim)', marginBottom: 4 }}>{q.title}</div>
+                <div style={{ fontSize: 14, whiteSpace: 'pre-wrap', color: txt ? 'var(--text)' : 'var(--text-faint)' }}>
+                  {txt || 'Sin contestar'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 /* ============================================================================
    15b · AVANCE DEL PLAN — acordeón de semanas con tachado de tareas
    El equipo tacha tareas semana a semana; el % sube y el cliente lo ve en su link
@@ -6204,6 +6272,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [scopeOpen, setScopeOpen] = useState(false)
   const [driveOpen, setDriveOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [intakeOpen, setIntakeOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [vaultOpen, setVaultOpen] = useState(false)
 
@@ -6310,6 +6379,8 @@ function ProjectDetail({ projectId, onBack }) {
               { Ico: I2.lock, label: 'Datos', count: vaultN, onClick: () => setVaultOpen(true), title: 'Datos y credenciales del cliente' },
               { Ico: I2.eye, label: 'Compartir', dot: project.shareEnabled ? 'var(--green)' : undefined, onClick: () => setShareOpen(true),
                 title: project.shareEnabled ? 'El cliente tiene acceso a la vista compartida' : 'Compartir la vista con el cliente' },
+              ...(intakeFor(project.name) ? [{ Ico: I2.tasks, label: 'Cuestionario', onClick: () => setIntakeOpen(true),
+                title: 'Lo que el cliente contestó para poder publicar la app' }] : []),
               { Ico: I2.calendar, label: 'Plan', onClick: () => setPlanOpen(true), title: linkedPlan ? 'Plan asociado — cambiar o publicar' : 'Asociar un plan de ejecución' },
             ]} />
             <span className="pdh-sep" aria-hidden="true" />
@@ -6502,6 +6573,7 @@ function ProjectDetail({ projectId, onBack }) {
         </div>
       </Modal>
       <ShareModal open={shareOpen} project={project} onClose={() => setShareOpen(false)} patch={patch} />
+      <IntakeAnswersModal open={intakeOpen} project={project} onClose={() => setIntakeOpen(false)} />
       <Modal open={planOpen} onClose={() => setPlanOpen(false)} title="Plan del proyecto" sub={project.name} width={480}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {project.planId && !linkedPlan && (

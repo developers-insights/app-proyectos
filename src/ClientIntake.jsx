@@ -259,15 +259,19 @@ export default function ClientIntake({ supabase, shareId, password, projectName 
       </div>
 
       <div style={{ flex: 1, width: '100%', maxWidth: 760, margin: '0 auto', padding: '38px 20px 120px' }}>
-        {section && section.owner === 'abogado' && (
+        {/* El aviso de la sección. Existía solo para el bloque del abogado; ahora
+            cualquier sección con `note` lo usa — es lo que le explica al cliente
+            por qué de golpe le estamos preguntando por otra tienda. */}
+        {section && (section.owner === 'abogado' || section.note) && (
           <div
             className="surface"
             style={{ padding: '11px 14px', marginBottom: 20, borderColor: 'var(--border)', display: 'flex', gap: 10, alignItems: 'flex-start' }}
           >
             <I2.alert width={15} height={15} style={{ color: 'var(--text-dim)', flexShrink: 0, marginTop: 2 }} />
             <span style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.55 }}>
-              Esta parte necesita un abogado. No hace falta que la resuelvas ahora: contestanos
-              qué tenés y seguimos.
+              {section.owner === 'abogado'
+                ? 'Esta parte necesita un abogado. No hace falta que la resuelvas ahora: contestanos qué tenés y seguimos.'
+                : <RichText>{section.note}</RichText>}
             </span>
           </div>
         )}

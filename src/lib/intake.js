@@ -28,7 +28,7 @@
  */
 
 /** Un `id` publicado no se renombra. Ver el comentario de arriba. */
-export const INTAKE_VERSION = 1
+export const INTAKE_VERSION = 2
 
 // ---------------------------------------------------------------------------
 // iRowing
@@ -39,7 +39,9 @@ const IROWING = {
   intro:
     'Ya está escrito todo lo que se puede escribir: los textos de la ficha, las capturas, ' +
     'la política de privacidad y el instalador firmado. Lo que falta son decisiones tuyas. ' +
-    'Casi todas ya tienen una respuesta recomendada: si te parece bien, tocás y seguís.',
+    'Están las de Android y también las del iPhone, que es el paso siguiente: contestás todo ' +
+    'de una vez y después no frenamos. Casi todas ya tienen una respuesta recomendada: si te ' +
+    'parece bien, tocás y seguís.',
   sections: [
     {
       key: 'cuenta',
@@ -49,6 +51,13 @@ const IROWING = {
     { key: 'identidad', title: 'Quién publica la app' },
     { key: 'lanzamiento', title: 'Cómo sale a la calle' },
     { key: 'producto', title: 'Detalles de la app' },
+    {
+      key: 'apple',
+      title: 'La App Store del iPhone',
+      note:
+        'Esto es para la tienda de Apple, que es el paso siguiente. Contestalo ahora aunque ' +
+        'todavía estemos con Android: es lo que hace que no frenemos al llegar ahí.',
+    },
   ],
   questions: [
     {
@@ -136,7 +145,9 @@ const IROWING = {
       why:
         'Si la app queda disponible en Europa o el Reino Unido, la ley nos obliga a designar un ' +
         'representante legal con domicilio allá, con contrato y dirección publicada. Para apps ' +
-        'que manejan datos de salud —frecuencia cardíaca, dolencias— no hay excepción. Se puede ' +
+        'que manejan datos de salud —frecuencia cardíaca, dolencias— no hay excepción. Y Apple ' +
+        'suma lo suyo: para vender en la Unión Europea exige declararse comerciante y publicar ' +
+        'tu teléfono, tu dirección y tu correo en la ficha, a la vista de cualquiera. Se puede ' +
         'ampliar más adelante sin rehacer nada.',
       options: [
         {
@@ -184,6 +195,26 @@ const IROWING = {
         'una casilla que alguien lea de verdad: ahí llegan las consultas y los problemas.',
       hint: 'Puede ser tu correo personal. También puede ser uno nuevo redirigido al tuyo.',
       placeholder: 'soporte@irowing.net',
+    },
+    {
+      id: 'irowing.dev_verification',
+      section: 'lanzamiento',
+      kind: 'choice',
+      title: 'La verificación nueva de desarrollador de Android',
+      why:
+        'Google empezó a exigir que el desarrollador esté verificado con un documento para que ' +
+        'sus apps se puedan instalar en cualquier Android, incluso fuera de la Play Store. Hoy ' +
+        'se aplica en cuatro países y en 2027 pasa a ser global. Es un trámite aparte del que ' +
+        'ya hiciste, y también lo tiene que hacer el titular.',
+      options: [
+        {
+          value: 'ahora',
+          label: 'Hagámoslo ahora y nos lo sacamos de encima',
+          hint: 'Son unos minutos más mientras ya estás adentro de la consola',
+          recommended: true,
+        },
+        { value: 'despues', label: 'Cuando sea obligatorio acá' },
+      ],
     },
     {
       id: 'irowing.ai_reports',
@@ -242,6 +273,104 @@ const IROWING = {
         { value: 'despues', label: 'Dejémoslo para después de publicar' },
       ],
     },
+    {
+      id: 'irowing.apple_holder',
+      section: 'apple',
+      kind: 'choice',
+      title: '¿A nombre de quién va la cuenta de Apple?',
+      why:
+        'Igual que en Google, quien figure como titular es quien firma con Apple y quien ' +
+        'aparece como responsable en la ficha. La diferencia es el trámite: si la cuenta va a ' +
+        'nombre de una empresa, Apple pide un número D-U-N-S y la verificación tarda una o dos ' +
+        'semanas más.',
+      options: [
+        {
+          value: 'mismo',
+          label: 'A mi nombre, igual que Google Play',
+          hint: 'Es lo más rápido: la verificación suele salir en 24 o 48 horas',
+          recommended: true,
+        },
+        { value: 'empresa', label: 'A nombre de una empresa', hint: 'Suma el trámite del D-U-N-S y una o dos semanas' },
+        {
+          value: 'insights',
+          label: 'Que la ponga Insights a su nombre',
+          hint: 'Salimos antes, pero la app queda alojada en nuestra cuenta y no en la tuya',
+        },
+      ],
+    },
+    {
+      id: 'irowing.apple_device',
+      section: 'apple',
+      kind: 'choice',
+      title: '¿Tenés a mano un iPhone o un iPad?',
+      why:
+        'Apple verifica la identidad del titular desde su app Apple Developer, que solo existe ' +
+        'en iPhone y iPad: se escanea un documento y listo. Es el mismo tipo de paso que ya ' +
+        'hiciste con el Android, y también lo tiene que hacer el titular en persona.',
+      body:
+        'También hace falta que tu Apple ID tenga activada la verificación en dos pasos. Sin ' +
+        'eso, Apple no deja ni empezar.',
+      options: [
+        { value: 'si', label: 'Sí, tengo uno', recommended: true },
+        {
+          value: 'prestado',
+          label: 'No, pero consigo uno prestado',
+          hint: 'Alcanza con cinco minutos: la verificación queda en tu cuenta, no en el teléfono',
+        },
+        { value: 'no', label: 'No consigo ninguno', hint: 'Decinos y lo encaramos por la web, que es más lento pero sale' },
+      ],
+    },
+    {
+      id: 'irowing.apple_fee',
+      section: 'apple',
+      kind: 'choice',
+      title: 'Los US$99 por año de Apple',
+      why:
+        'Es una suscripción anual, no un pago único: el día que se deja de pagar, la app ' +
+        'desaparece de la App Store. Google fueron US$25 una sola vez. Preferimos que lo sepas ' +
+        'ahora y no cuando llegue la primera renovación.',
+      options: [
+        {
+          value: 'cliente',
+          label: 'Lo pago yo con mi tarjeta',
+          hint: 'La cuenta queda tuya desde el día uno',
+          recommended: true,
+        },
+        { value: 'insights', label: 'Adelántenlo ustedes y me lo facturan' },
+      ],
+    },
+    {
+      id: 'irowing.support_url',
+      section: 'apple',
+      kind: 'choice',
+      title: 'Apple pide una página de soporte, no le alcanza un correo',
+      why:
+        'Google se conforma con una casilla; Apple exige una dirección web pública donde ' +
+        'alguien pueda pedir ayuda, y la abre durante la revisión. Si no existe o está caída, ' +
+        'rechaza la app.',
+      options: [
+        {
+          value: 'nosotros',
+          label: 'Ármenla ustedes dentro de irowing.net',
+          hint: 'La hacemos nosotros, con el correo de soporte que elegiste más arriba',
+          recommended: true,
+        },
+        { value: 'propia', label: 'Ya tengo una página de soporte' },
+      ],
+      followUp: { when: 'propia', kind: 'text', label: 'La dirección de esa página' },
+    },
+    {
+      id: 'irowing.public_phone',
+      section: 'apple',
+      kind: 'text',
+      title: 'Un teléfono de contacto que pueda quedar público',
+      why:
+        'Google publica datos de contacto del desarrollador en la ficha, y si algún día la app ' +
+        'se publica en Europa, Apple obliga a mostrar teléfono, dirección y correo del ' +
+        'responsable. Tenerlo ahora nos evita frenar justo al final.',
+      hint: 'Puede ser el mismo que verificaste en Google Play.',
+      placeholder: '+1 415 724 6732',
+    },
   ],
 }
 
@@ -253,8 +382,10 @@ const MAREX = {
   projectName: 'MAREX',
   intro:
     'Los textos de las dos fichas, las respuestas de los formularios de Google y los borradores ' +
-    'legales ya están escritos. Faltan datos de la empresa y algunas decisiones. Las que necesitan ' +
-    'un abogado están marcadas: conviene mandárselas hoy, porque no se resuelven en 48 horas.',
+    'legales ya están escritos. Faltan datos de la empresa y algunas decisiones. Están también ' +
+    'las del iPhone, que es el paso siguiente: contestás todo de una vez y después no frenamos. ' +
+    'Las que necesitan un abogado están marcadas: conviene mandárselas hoy, porque no se ' +
+    'resuelven en 48 horas.',
   sections: [
     {
       key: 'cuenta',
@@ -264,6 +395,13 @@ const MAREX = {
     { key: 'empresa', title: 'Datos de la empresa' },
     { key: 'negocio', title: 'Decisiones del negocio' },
     { key: 'lanzamiento', title: 'Cómo salen a la calle' },
+    {
+      key: 'apple',
+      title: 'La App Store del iPhone',
+      note:
+        'Esto es para la tienda de Apple, que es el paso siguiente. Contestalo ahora aunque ' +
+        'todavía estemos con Android: es lo que hace que no frenemos al llegar ahí.',
+    },
     { key: 'abogado', title: 'Lo que necesita un abogado', owner: 'abogado' },
   ],
   questions: [
@@ -341,7 +479,9 @@ const MAREX = {
       why:
         'Tienen que ser casillas que alguien lea. La de avisos legales figura en la cláusula de ' +
         'arbitraje como la dirección donde un usuario puede desistir dentro de los 30 días: tiene ' +
-        'que funcionar desde el primer día.',
+        'que funcionar desde el primer día. Y la página de soporte no es opcional del lado de ' +
+        'Apple: exige una dirección web pública donde se pueda pedir ayuda, y la abre durante la ' +
+        'revisión. Si no existe todavía, la armamos nosotros — decinos y listo.',
       fields: [
         { key: 'support', label: 'Soporte general', placeholder: 'support@marexcleaningsolution.com', required: true },
         { key: 'privacy', label: 'Privacidad', placeholder: 'Puede ser el mismo que soporte' },
@@ -453,6 +593,145 @@ const MAREX = {
         'no llegás a 12, decinos: nosotros ponemos los que falten.** Google no exige que sean ' +
         'conocidos tuyos, pero sí que usen la app de verdad.',
       placeholder: 'nombre@gmail.com',
+    },
+    {
+      id: 'marex.countries',
+      section: 'lanzamiento',
+      kind: 'choice',
+      title: '¿En qué países se publican las apps?',
+      why:
+        'Las tiendas las ofrecen en todo el mundo por defecto, y eso no es gratis. Si quedan ' +
+        'disponibles en la Unión Europea, Apple exige declararte comerciante y publicar tu ' +
+        'teléfono, tu dirección y tu correo en la ficha; y la ley europea de datos pide designar ' +
+        'un representante con domicilio allá. Para un servicio de limpieza que se presta en ' +
+        'Carolina del Norte, no tiene sentido pagar eso.',
+      options: [
+        {
+          value: 'us',
+          label: 'Solo Estados Unidos',
+          hint: 'Sin trámites extra. Se amplía cuando quieras, sin rehacer nada',
+          recommended: true,
+        },
+        { value: 'us_latam', label: 'Estados Unidos y algunos países de Latinoamérica' },
+        { value: 'global', label: 'Todo el mundo, Europa incluida', hint: 'Implica el trámite europeo antes de publicar' },
+      ],
+    },
+    {
+      id: 'marex.review_pro_account',
+      section: 'lanzamiento',
+      kind: 'choice',
+      title: 'Con qué cuenta van a probar la app de profesionales',
+      why:
+        'Quien revisa la app en Google y en Apple no tiene un teléfono tuyo ni pasa una ' +
+        'verificación de antecedentes: entra con una cuenta de prueba que le damos nosotros. Si ' +
+        'esa cuenta no puede aceptar un trabajo y terminarlo, rechazan la app porque «no se ' +
+        'puede usar». Es de los motivos de rechazo más comunes y de los más fáciles de evitar.',
+      body:
+        'Necesitamos tu visto bueno para crear un perfil de profesional de prueba, marcado como ' +
+        'verificado a mano, que no corresponde a ninguna persona real, no cobra y no aparece ' +
+        'para los clientes.',
+      options: [
+        { value: 'ok', label: 'Adelante, creen la cuenta de prueba', recommended: true },
+        { value: 'hablar', label: 'Quiero entender bien qué ve esa cuenta' },
+      ],
+    },
+    {
+      id: 'marex.dev_verification',
+      section: 'lanzamiento',
+      kind: 'choice',
+      title: 'La verificación nueva de desarrollador de Android',
+      why:
+        'Google empezó a exigir que el desarrollador esté verificado con un documento para que ' +
+        'sus apps se puedan instalar en cualquier Android, incluso fuera de la Play Store. Hoy ' +
+        'se aplica en cuatro países y en 2027 pasa a ser global. Es un trámite aparte del que ' +
+        'ya hiciste, y también lo tiene que hacer el titular.',
+      options: [
+        {
+          value: 'ahora',
+          label: 'Hagámoslo ahora y nos lo sacamos de encima',
+          hint: 'Son unos minutos más mientras ya estás adentro de la consola',
+          recommended: true,
+        },
+        { value: 'despues', label: 'Cuando sea obligatorio acá' },
+      ],
+    },
+    {
+      id: 'marex.apple_holder',
+      section: 'apple',
+      kind: 'choice',
+      title: '¿A nombre de quién va la cuenta de Apple?',
+      why:
+        'Una sola cuenta de Apple alcanza para las dos apps. Quien figure como titular es quien ' +
+        'firma con Apple y quien aparece como responsable en las fichas. Ojo con un detalle que ' +
+        'sorprende a todos: para Apple, un «sole proprietorship» o un DBA **no** cuenta como ' +
+        'empresa — o hay una LLC o corporation de verdad, o la cuenta va a nombre de una persona.',
+      options: [
+        {
+          value: 'empresa',
+          label: 'A nombre de la empresa',
+          hint: 'Solo si ya existe la LLC o la corporation. Apple pide un D-U-N-S y tarda una o dos semanas más',
+          recommended: true,
+        },
+        { value: 'persona', label: 'A mi nombre personal', hint: 'Sale en 24 o 48 horas, pero tu nombre queda público en las dos fichas' },
+        {
+          value: 'insights',
+          label: 'Que la ponga Insights a su nombre',
+          hint: 'Salimos antes, pero las apps quedan alojadas en nuestra cuenta y no en la tuya',
+        },
+      ],
+    },
+    {
+      id: 'marex.apple_device',
+      section: 'apple',
+      kind: 'choice',
+      title: '¿Tenés a mano un iPhone o un iPad?',
+      why:
+        'Apple verifica la identidad del titular desde su app Apple Developer, que solo existe ' +
+        'en iPhone y iPad: se escanea un documento y listo. Es el mismo tipo de paso que hiciste ' +
+        'con el Android, y también lo tiene que hacer el titular en persona.',
+      body:
+        'También hace falta que el Apple ID tenga activada la verificación en dos pasos. Sin eso, ' +
+        'Apple no deja ni empezar.',
+      options: [
+        { value: 'si', label: 'Sí, tengo uno', recommended: true },
+        {
+          value: 'prestado',
+          label: 'No, pero consigo uno prestado',
+          hint: 'Alcanza con cinco minutos: la verificación queda en tu cuenta, no en el teléfono',
+        },
+        { value: 'no', label: 'No consigo ninguno', hint: 'Decinos y lo encaramos por la web, que es más lento pero sale' },
+      ],
+    },
+    {
+      id: 'marex.apple_fee',
+      section: 'apple',
+      kind: 'choice',
+      title: 'Los US$99 por año de Apple',
+      why:
+        'Es una suscripción anual, no un pago único: el día que se deja de pagar, las apps ' +
+        'desaparecen de la App Store. Google fueron US$25 una sola vez. Con una cuenta alcanza ' +
+        'para MAREX Clean y MAREX Pro, así que el costo no se duplica.',
+      options: [
+        {
+          value: 'cliente',
+          label: 'Lo pago yo con mi tarjeta',
+          hint: 'La cuenta queda tuya desde el día uno',
+          recommended: true,
+        },
+        { value: 'insights', label: 'Adelántenlo ustedes y me lo facturan' },
+      ],
+    },
+    {
+      id: 'marex.public_phone',
+      section: 'apple',
+      kind: 'text',
+      title: 'Un teléfono de contacto que pueda quedar público',
+      why:
+        'Google publica datos de contacto del desarrollador en la ficha, y si algún día las apps ' +
+        'se publican en Europa, Apple obliga a mostrar teléfono, dirección y correo del ' +
+        'responsable. Tenerlo ahora nos evita frenar justo al final.',
+      hint: 'Ideal el teléfono del negocio, no el personal: es el que va a ver cualquiera.',
+      placeholder: '+1 704 000 0000',
     },
     {
       id: 'marex.counsel',
