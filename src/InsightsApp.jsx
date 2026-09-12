@@ -533,7 +533,13 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   color:var(--text-faint);opacity:0;transform:translateX(-3px);
   transition:opacity .24s var(--e),transform .24s var(--e)}
 .pd-hero-main:hover .go,.pd-hero-main:focus-visible .go{opacity:1;transform:none}
-.pd-hero-side{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--border)}
+/* Columnas según cuántas celdas hay realmente: 2 fijas (Terminadas, Pendientes)
+   + hasta 2 dinámicas (Esperan al cliente, Bloqueadas) que solo aparecen con
+   datos — data-n lo calcula quien arma el JSX, así el grid nunca deja un
+   hueco vacío ni aprieta 4 celdas en 3 columnas. */
+.pd-hero-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--border)}
+.pd-hero-side[data-n="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pd-hero-side[data-n="4"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,1fr)}
 .pd-cell{display:flex;flex-direction:column;justify-content:center;gap:5px;padding:13px 14px;text-align:left;
   background:var(--card);transition:background .26s var(--e)}
 .pd-cell:hover{background:var(--card-hover)}
@@ -545,8 +551,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   .pd-hero .pct{font-size:34px}
 }
 @media (max-width:420px){
-  .pd-hero-side{grid-template-columns:1fr 1fr}
-  .pd-hero-side > :last-child{grid-column:1 / -1}
+  .pd-hero-side,.pd-hero-side[data-n="3"],.pd-hero-side[data-n="4"]{grid-template-columns:1fr 1fr;grid-template-rows:none}
 }
 
 .pd-note{display:flex;align-items:flex-start;gap:11px;padding:12px 13px;border-radius:13px;
@@ -5881,7 +5886,6 @@ function PlanProgress({ linkedPlan, patchPlan, onAssociate, markProgress }) {
 
   const weeks = [...(linkedPlan.weeks || [])].sort((a, b) => (a.n || 0) - (b.n || 0))
   const summary = planBoardSummary(linkedPlan)
-  const allDone = summary.total > 0 && summary.pctInsights === 100
   const clientLabel = (linkedPlan.clientName && String(linkedPlan.clientName).trim()) || 'el cliente'
   // Lo que todavía depende del cliente (responsable cliente/ambos, sin terminar).
   const CLIENTE_COLOR = RESPONSABLES.cliente.color
@@ -5966,23 +5970,13 @@ function PlanProgress({ linkedPlan, patchPlan, onAssociate, markProgress }) {
         )}
       </div>
 
-      {/* TABLERO DE AVANCE — % terminado + chips de control. Una tarea está
-          terminada o no: sin paso de aceptación del cliente de por medio. */}
-      {/* Compacto a propósito (2026-09-12): el % general y su barra ya viven en el
-          héroe de arriba. Acá solo va lo que ese héroe NO dice — el avance de lo
-          que depende de Insights y los estados que piden acción. */}
+      {/* ESTADOS QUE PIDEN ACCIÓN — el % y la barra ya viven en el héroe de
+          arriba (2026-09-12: sacado de acá por duplicado). Esto es lo que ese
+          héroe NO dice: en curso, bloqueadas, riesgo alto, próxima fecha. Si
+          no hay nada que contar, el panel entero no se muestra. */}
+      {(summary.curso > 0 || summary.pendiente > 0 || summary.bloqueada > 0 || summary.riesgoAlto > 0 || summary.nextFecha) && (
       <div className="pd-panel lift" style={{ padding: '13px 16px 14px', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-          <span style={{ fontSize: 12.5, color: 'var(--text-dim)', fontWeight: 600 }}>Del lado de Insights</span>
-          <span className="mono" style={{ fontSize: 13.5, fontWeight: 700, color: allDone ? 'var(--green)' : 'var(--accent)', letterSpacing: '-0.02em' }}>{summary.pctInsights}%</span>
-          <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{summary.done}/{summary.total} tareas</span>
-        </div>
-        <div style={{ position: 'relative', height: 6, background: 'var(--track)', borderRadius: 999, overflow: 'hidden' }}
-          title={`${summary.done}/${summary.total} terminadas`}>
-          <motion.div initial={false} animate={{ width: `${summary.pctInsights}%` }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: allDone ? 'var(--green)' : 'var(--accent)', borderRadius: 999 }} />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 11 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {summary.curso > 0 && (
             <span className="tag" style={{ color: TASK_ESTADOS.curso.color, background: hexA(TASK_ESTADOS.curso.color, 0.14), borderColor: hexA(TASK_ESTADOS.curso.color, 0.28) }}>{summary.curso} en curso</span>
           )}
@@ -6000,6 +5994,7 @@ function PlanProgress({ linkedPlan, patchPlan, onAssociate, markProgress }) {
           )}
         </div>
       </div>
+      )}
 
       {/* LO QUE NECESITAMOS DEL CLIENTE — todo lo que depende de su lado y frena el avance. */}
       {pendingCliente.length > 0 && (
@@ -6375,6 +6370,7 @@ function ProjectDetail({ projectId, onBack }) {
 
   // Avance del proyecto = TODAS las tareas del plan asociado (equipo + cliente).
   const prog = progressBreakdown(project, linkedPlan)
+  const planSummary = planBoardSummary(linkedPlan)   // solo se usa acá por `bloqueada` (dinámica del héroe)
   const planWeeks = linkedPlan ? [...(linkedPlan.weeks || [])].sort((a, b) => (a.n || 0) - (b.n || 0)) : []
   // Sin plan asociado no hay detalle que abrir: las tarjetas llevan a asociar uno.
   const openKpi = () => (linkedPlan ? setKpiModal('plan') : setPlanOpen(true))
@@ -6475,7 +6471,7 @@ function ProjectDetail({ projectId, onBack }) {
               <span className="go">{kpiSub} <I2.arrowRight width={11} height={11} /></span>
             </span>
           </motion.button>
-          <motion.span variants={rise} className="pd-hero-side">
+          <motion.span variants={rise} className="pd-hero-side" data-n={2 + (prog.pendingCliente > 0 ? 1 : 0) + (planSummary.bloqueada > 0 ? 1 : 0)}>
             <button className="pd-cell" onClick={openKpi} title="Tareas terminadas del plan">
               <span className="v" style={{ color: 'var(--green)' }}>{prog.done}</span>
               <span className="k">Terminadas</span>
@@ -6484,10 +6480,21 @@ function ProjectDetail({ projectId, onBack }) {
               <span className="v">{prog.total - prog.done}</span>
               <span className="k">Pendientes</span>
             </button>
-            <button className="pd-cell" onClick={openKpi} title="Tareas que dependen del cliente y frenan el avance">
-              <span className="v" style={{ color: RESPONSABLES.cliente.color }}>{prog.pendingCliente}</span>
-              <span className="k">Esperan al cliente</span>
-            </button>
+            {/* Las dos de acá abajo son dinámicas a propósito (2026-09-12): con
+                0 esperando al cliente o 0 bloqueadas, mostrar la celda en cero
+                es ruido — un estado que no está pasando no necesita cartel. */}
+            {prog.pendingCliente > 0 && (
+              <button className="pd-cell" onClick={openKpi} title="Tareas que dependen del cliente y frenan el avance">
+                <span className="v" style={{ color: RESPONSABLES.cliente.color }}>{prog.pendingCliente}</span>
+                <span className="k">Esperan al cliente</span>
+              </button>
+            )}
+            {planSummary.bloqueada > 0 && (
+              <button className="pd-cell" onClick={openKpi} title="Tareas bloqueadas del plan">
+                <span className="v" style={{ color: 'var(--red)' }}>{planSummary.bloqueada}</span>
+                <span className="k">Bloqueadas</span>
+              </button>
+            )}
           </motion.span>
         </motion.div>
 
