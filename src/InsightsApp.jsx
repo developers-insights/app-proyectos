@@ -3430,7 +3430,6 @@ function Projects({ onOpenProject }) {
     const t = qp.get('tab')
     return t === 'all' || PROJECT_STAGES.some((s) => s.key === t) ? t : 'desarrollo'
   })
-  const [view, setView] = useState('cards')
   const [clientFilter, setClientFilter] = useState(qp.get('client') || 'all')
   const [pmFilter, setPmFilter] = useState(qp.get('pm') || 'all')
   const [devFilter, setDevFilter] = useState(qp.get('dev') || 'all')
@@ -3602,11 +3601,6 @@ function Projects({ onOpenProject }) {
           {search && <button onClick={() => setSearch('')} title="Limpiar búsqueda" style={{ display: 'flex', padding: 2, color: 'var(--text-faint)' }}><I2.x width={14} height={14} /></button>}
         </label>
 
-        <div className="pj-seg" role="group" aria-label="Modo de vista">
-          <button onClick={() => setView('cards')} title="Tarjetas" aria-pressed={view === 'cards'} style={{ padding: '0 10px' }}><I2.cards width={15} height={15} /></button>
-          <button onClick={() => setView('table')} title="Tabla" aria-pressed={view === 'table'} style={{ padding: '0 10px' }}><I2.table width={15} height={15} /></button>
-        </div>
-
         {showAllToggle && (
           <button
             className="pj-switch" role="switch" aria-checked={showAll} onClick={() => setShowAll((v) => !v)}
@@ -3654,7 +3648,7 @@ function Projects({ onOpenProject }) {
         </div>
       )}
 
-      {loading ? null : view === 'cards' ? (
+      {!loading && (
         <motion.div className="pj-grid" variants={stagger} initial="hidden" animate="show">
           {list.map((p) => (
             <ProjectCard
@@ -3671,45 +3665,6 @@ function Projects({ onOpenProject }) {
             />
           ))}
         </motion.div>
-      ) : (
-        <div className="surface tbl" style={{ overflow: 'hidden' }}>
-          <table>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Proyecto', 'Cliente', 'Equipo', 'Etapa', 'Avance', 'Últ. comunicación', 'Últ. avance'].map((h) =><th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-faint)', fontWeight: 600 }}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((p) => {
-                const cl = clientOf(p.clientId)
-                const trackCell = (kind, firstLabel) => {
-                  const t = trackInfo(p, kind, kind === 'comm' ? (botComms || {})[p.id] : undefined)
-                  const bad = t.overdue
-                  const val = t.first ? firstLabel : (t.days === 0 ? 'hoy' : `${t.days}d háb.`)
-                  return (
-                    <td style={{ padding: '13px 16px' }}>
-                      <button onClick={(e) => { e.stopPropagation(); setLogModal({ projectId: p.id, kind }) }} title="Ver / registrar" className="mono row-hover"
-                        style={{ fontSize: 12.5, fontWeight: 600, background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 7px', borderRadius: 7, whiteSpace: 'nowrap', color: bad ? 'var(--red)' : t.first ? 'var(--text-faint)' : 'var(--text)' }}>
-                        {val}{bad ? ' ⚠' : ''}
-                      </button>
-                    </td>
-                  )
-                }
-                return (
-                  <tr key={p.id} className="row-hover click" onClick={() => onOpenProject(p.id)} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '13px 16px', fontWeight: 600 }}>{p.name}</td>
-                    <td style={{ padding: '13px 16px', color: p.kind === 'interno' ? 'var(--accent)' : 'var(--text-dim)' }}>{p.kind === 'interno' ? 'Interno · Insights' : cl?.company}</td>
-                    <td style={{ padding: '13px 16px' }}><TeamAvatars assignments={p.assignments} team={data.team} onChange={(assignments) => updateProject(p.id, { assignments })} size={26} ring="var(--card)" /></td>
-                    <td style={{ padding: '13px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><PriorityMenu value={p.priority} onChange={(v) => updateProject(p.id, { priority: v })} /><StageMenu stage={projectStage(p)} onChange={(s) => setStage(p.id, s)} /></div></td>
-                    <td style={{ padding: '13px 16px', minWidth: 160 }}><Progress value={projectProgress(p, planOf(p))} showLabel /></td>
-                    {trackCell('comm', 'Sin primer mensaje')}
-                    {trackCell('avance', 'Sin primer avance')}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
       )}
 
       <StageConfirmModal open={!!stageAsk} to={stageAsk?.to} project={data.projects.find((p) => p.id === stageAsk?.projectId)}
