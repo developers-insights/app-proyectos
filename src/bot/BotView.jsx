@@ -86,7 +86,7 @@ const BOT_CSS = `
 .bw-chip{transition:border-color .16s,background .16s,transform .18s cubic-bezier(.22,1,.36,1)}
 .bw-chip:hover{border-color:var(--accent-line);transform:translateY(-1px)}
 .bw-chip:active{transform:translateY(0) scale(.98)}
-.bw-chatbg{background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:18px 18px}
+.bw-chatbg{background-image:radial-gradient(680px 380px at 50% -10%, var(--wash-a), transparent 70%)}
 .bw-img{transition:transform .3s cubic-bezier(.22,1,.36,1),filter .3s}
 .bw-img:hover{transform:scale(1.012);filter:brightness(1.05)}
 .bw-scroll::-webkit-scrollbar{width:8px}

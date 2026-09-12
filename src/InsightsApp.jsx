@@ -90,7 +90,12 @@ const THEMES = {
     '--shadow': '0 1px 0 rgba(255,255,255,0.03), 0 18px 40px -20px rgba(0,0,0,0.8)',
     '--shadow-lift': '0 1px 0 rgba(255,255,255,0.05), 0 30px 56px -26px rgba(0,0,0,0.95)',
     '--track': 'rgba(255,255,255,0.055)',
-    '--grid': 'rgba(255,255,255,0.025)',
+    /* Washes del fondo: reemplazan a la cuadrícula (2026-09-12). Son dos halos
+       radiales enormes y casi imperceptibles — dan profundidad sin textura ni
+       patrón repetido, que era lo que ensuciaba la pantalla. */
+    '--wash-a': 'rgba(90,200,250,0.055)',
+    '--wash-b': 'rgba(129,140,248,0.045)',
+    '--wash-c': 'rgba(255,255,255,0.022)',
   },
   light: {
     '--bg': '#FFFFFF',
@@ -123,7 +128,9 @@ const THEMES = {
     '--shadow': '0 1px 2px rgba(0,0,0,0.04), 0 12px 30px -18px rgba(0,0,0,0.14)',
     '--shadow-lift': '0 2px 4px rgba(0,0,0,0.06), 0 24px 46px -20px rgba(0,0,0,0.22)',
     '--track': 'rgba(0,0,0,0.075)',
-    '--grid': 'rgba(0,0,0,0.022)',
+    '--wash-a': 'rgba(10,99,232,0.055)',
+    '--wash-b': 'rgba(109,40,217,0.032)',
+    '--wash-c': 'rgba(0,0,0,0.018)',
   },
 }
 
@@ -149,9 +156,18 @@ a{color:inherit;text-decoration:none}
 ::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:6px;border:2px solid var(--bg)}
 ::-webkit-scrollbar-thumb:hover{background:var(--text-faint)}
 
-.app-shell{display:flex;height:100vh;overflow:hidden;
-  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
-  background-size:46px 46px;}
+/* El fondo NO lleva patrón. Dos halos radiales gigantes + una veladura vertical:
+   a esta opacidad no se ven como "un gradiente", se leen como luz de ambiente.
+   Van en un ::before propio (no en background del shell) porque el shell es el
+   contenedor flex del layout y meterle capas de pintura ahí se pisa con los
+   fondos de las vistas hijas. */
+.app-shell{position:relative;display:flex;height:100vh;overflow:hidden;background:var(--bg)}
+.app-shell::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(1100px 620px at 12% -12%, var(--wash-a), transparent 68%),
+    radial-gradient(900px 560px at 108% 4%, var(--wash-b), transparent 66%),
+    linear-gradient(180deg, var(--wash-c), transparent 42%)}
+.app-shell > *{position:relative;z-index:1}
 .surface{background:var(--card);border:1px solid var(--border);border-radius:16px}
 .surface-hover{transition:background .18s,border-color .18s,transform .18s}
 .surface-hover:hover{background:var(--card-hover);border-color:var(--border-strong)}
@@ -313,7 +329,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 
 /* --- responsive / mobile --- */
 @media (max-width: 760px){
-  .app-shell{ background-image:none }
+  .app-shell::before{ opacity:.7 }
   .view{ padding:18px 14px 48px !important }
   .tbl{ overflow-x:auto !important }
   .tbl > table{ min-width:600px }
@@ -336,7 +352,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
       enlace: en el menú se ve hueco y su click lleva a cargarlo.
    Mismo ritmo de movimiento que el listado (--e), solo transform/opacity.
 ============================================================================ */
-.pd-shell{display:flex;height:100%;overflow:hidden}
+.pd-shell{position:relative;display:flex;height:100%;overflow:hidden}
 .pd-main{flex:1 1 auto;min-width:0;overflow-y:auto;padding:20px 30px 64px}
 .pd-back{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px 0 8px;border-radius:999px;
   font-size:12.5px;font-weight:600;color:var(--text-dim);
@@ -493,17 +509,45 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   .pdh-cluster{justify-content:flex-start}
 }
 
-/* --- tira de stats: un solo bloque, celdas separadas por pelo --- */
-.pd-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(122px,1fr));gap:1px;padding:1px;
+/* --- resumen del plan: una métrica héroe + tres conteos ---------------------
+   Antes eran CINCO celdas del mismo tamaño con el mismo subtítulo repetido
+   ("ver detalle" x5): cinco números gritando lo mismo no se leen, se barren.
+   Ahora el % manda (número grande + barra), y total / terminadas / cliente
+   quedan como apoyo. El "ver detalle" vive una sola vez, en el pie del héroe. */
+.pd-hero{display:grid;grid-template-columns:minmax(250px,1.05fr) minmax(270px,1fr);gap:1px;padding:1px;
   background:var(--border);border-radius:16px;overflow:hidden}
-.pd-stat{display:flex;flex-direction:column;gap:6px;padding:13px 14px 14px;text-align:left;background:var(--card);
+.pd-hero > *{background:var(--card)}
+.pd-hero-main{display:flex;flex-direction:column;gap:11px;padding:15px 17px 15px;text-align:left;
   transition:background .26s var(--e)}
-.pd-stat:hover{background:var(--card-hover)}
-.pd-stat .k{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pd-stat .v{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;
-  font-size:23px;font-weight:600;letter-spacing:-.045em;line-height:1}
-.pd-stat .s{font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pd-hero-main:hover{background:var(--card-hover)}
+.pd-hero-top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.pd-hero .pct{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;
+  font-size:40px;font-weight:600;letter-spacing:-.055em;line-height:.9}
+.pd-hero .of{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:12px;
+  color:var(--text-dim);text-align:right;line-height:1.45}
+.pd-bar{position:relative;height:8px;border-radius:999px;background:var(--track);overflow:hidden}
+.pd-bar > span{position:absolute;top:0;bottom:0;left:0;border-radius:999px;background:var(--accent)}
+.pd-hero-foot{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);flex-wrap:wrap}
+.pd-hero-foot .dt{width:6px;height:6px;border-radius:999px;flex:none;background:var(--green)}
+.pd-hero-foot .go{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;
+  color:var(--text-faint);opacity:0;transform:translateX(-3px);
+  transition:opacity .24s var(--e),transform .24s var(--e)}
+.pd-hero-main:hover .go,.pd-hero-main:focus-visible .go{opacity:1;transform:none}
+.pd-hero-side{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--border)}
+.pd-cell{display:flex;flex-direction:column;justify-content:center;gap:5px;padding:13px 14px;text-align:left;
+  background:var(--card);transition:background .26s var(--e)}
+.pd-cell:hover{background:var(--card-hover)}
+.pd-cell .v{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;
+  font-size:24px;font-weight:600;letter-spacing:-.045em;line-height:1}
+.pd-cell .k{font-size:11px;font-weight:600;color:var(--text-dim);line-height:1.3}
+@media (max-width:820px){
+  .pd-hero{grid-template-columns:1fr}
+  .pd-hero .pct{font-size:34px}
+}
+@media (max-width:420px){
+  .pd-hero-side{grid-template-columns:1fr 1fr}
+  .pd-hero-side > :last-child{grid-column:1 / -1}
+}
 
 .pd-note{display:flex;align-items:flex-start;gap:11px;padding:12px 13px;border-radius:13px;
   font-size:12.5px;line-height:1.55;color:var(--text-dim)}
@@ -518,9 +562,47 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pd-hollow{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:15px 16px;border-radius:14px;
   outline:1px dashed var(--border-strong);outline-offset:-1px;font-size:12.5px;color:var(--text-faint);line-height:1.5}
 
-/* --- rail derecho: registro de actividad --- */
-.pd-rail{flex:0 0 34%;min-width:312px;max-width:440px;border-left:1px solid var(--border);
-  background:var(--bg-elevated);display:flex;flex-direction:column;height:100%;min-height:0}
+/* --- rail derecho: registro de actividad -----------------------------------
+   Mismo contrato que el sidebar izquierdo (2026-09-12): arranca cerrado en una
+   columna de 56px, se abre solo al acercar el mouse y se monta ENCIMA del
+   contenido en vez de empujarlo — así abrirlo no dispara un reflow de toda la
+   columna principal. El pin lo deja fijo, y ahí sí ocupa lugar en el layout.
+   Cerrado no está mudo: muestra un guion por cada registro (verde = lo ve el
+   cliente, azul = solo el equipo), que es el resumen más barato que existe. */
+.pd-railspace{flex:none;align-self:stretch}
+.pd-rail{position:absolute;top:0;right:0;bottom:0;z-index:40;overflow:hidden;
+  border-left:1px solid var(--border);background:var(--bg-elevated);
+  transition:box-shadow .3s var(--e)}
+.pd-rail[data-lift="1"]{box-shadow:var(--shadow-lift)}
+.pd-railfull{position:absolute;top:0;left:0;bottom:0;display:flex;flex-direction:column;min-height:0;
+  transition:opacity .22s var(--e)}
+.pd-mini{position:absolute;inset:0;width:56px;display:flex;flex-direction:column;align-items:center;
+  gap:9px;padding:12px 0 14px;transition:opacity .22s var(--e)}
+.pd-mini-ib{position:relative;display:grid;place-items:center;width:34px;height:34px;border-radius:11px;flex:none;
+  color:var(--text-faint);background:var(--card);box-shadow:inset 0 0 0 1px var(--border);
+  transition:color .24s var(--e),background .24s var(--e),transform .24s var(--e)}
+.pd-mini-ib:hover{color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.pd-mini-ib:active{transform:scale(.93)}
+.pd-mini-n{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;
+  display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;
+  color:var(--accent-contrast);background:var(--accent);box-shadow:0 0 0 2px var(--bg-elevated)}
+.pd-mini hr{width:20px;height:1px;border:none;background:var(--border);flex:none;margin:2px 0}
+.pd-dashes{display:flex;flex-direction:column;align-items:center;gap:7px;min-height:0;overflow:hidden;
+  padding-bottom:2px}
+.pd-dash{width:18px;height:2.5px;border-radius:999px;flex:none;background:var(--green);opacity:.6}
+.pd-dash.priv{background:var(--accent)}
+.pd-mini .more{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--text-faint)}
+.pd-mini .vert{margin-top:auto;font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--text-faint);writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;
+  max-height:150px;overflow:hidden}
+.pd-railpin{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;flex:none;
+  color:var(--text-faint);transition:color .24s var(--e),background .24s var(--e)}
+.pd-railpin:hover{color:var(--text);background:var(--card-hover)}
+.pd-railpin[data-on="1"]{color:var(--accent);background:var(--accent-soft)}
+/* apilado (pantallas angostas): vuelve a ser un bloque más del scroll */
+.pd-rail.stat{position:static;width:100%;max-width:none;height:auto;display:flex;flex-direction:column;
+  border-left:none;border-top:1px solid var(--border);box-shadow:none}
+.pd-rail.stat .pd-railfull{position:static;width:100% !important;opacity:1 !important;visibility:visible !important}
 .pd-rail-list{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:9px}
 .pd-entry{position:relative;padding:11px 12px 11px 15px;border-radius:13px;background:var(--card);
   box-shadow:inset 0 0 0 1px var(--border);transition:background .24s var(--e)}
@@ -542,8 +624,6 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 @media (max-width:1080px){
   .pd-shell{flex-direction:column;overflow-y:auto}
   .pd-main{flex:0 0 auto;overflow:visible;padding:18px 20px 24px}
-  .pd-rail{flex:0 0 auto;width:100%;max-width:none;min-width:0;height:auto;
-    border-left:none;border-top:1px solid var(--border)}
   .pd-rail-list{overflow:visible;min-height:0}
 }
 @media (max-width:640px){
@@ -567,20 +647,36 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pj-bar .pj-search{flex:1 1 170px;width:auto;min-width:148px;max-width:300px}
 .pj-bar .pj-seg,.pj-bar .pj-switch,.pj-bar .pj-cta{flex:none}
 
-/* segmentado de estado con indicador deslizante (framer-motion layoutId) */
-.pj-tabs{position:relative;display:inline-flex;gap:2px;padding:3px;border-radius:12px;flex:none;
-  background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border)}
-.pj-tabs > button{position:relative;display:inline-flex;align-items:center;height:32px;padding:0 9px;
-  border-radius:9px;font-size:12.5px;font-weight:600;color:var(--text-faint);white-space:nowrap;
-  transition:color .26s var(--e)}
-.pj-tabs > button:hover{color:var(--text-dim)}
-.pj-tabs > button[aria-selected="true"]{color:var(--text)}
-.pj-tabs .glide{position:absolute;inset:0;border-radius:9px;background:var(--card);
-  box-shadow:inset 0 0 0 1px var(--border),0 1px 2px rgba(0,0,0,.10)}
-.pj-tabs .lb{position:relative;display:inline-flex;align-items:center;gap:7px}
-.pj-tabs .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;
-  color:var(--text-faint);transition:color .26s var(--e)}
-.pj-tabs > button[aria-selected="true"] .n{color:var(--accent)}
+/* --- selector de ETAPA (reemplaza a los 8 tabs, 2026-09-12) ---------------
+   Ocho pestañas en fila era la mitad del ruido de la pantalla y seis de ellas
+   casi siempre en 0. Ahora es UN disparador que dice en qué etapa estás parado
+   —con su color y su contador— y despliega el resto agrupado. El dato que
+   importa (cuántos hay en cada etapa) no se pierde: viaja al menú. */
+.pj-stage{--sc:var(--accent);display:inline-flex;align-items:center;gap:9px;height:38px;padding:0 13px 0 12px;
+  border-radius:999px;flex:none;font-size:13px;font-weight:600;color:var(--text);
+  background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border);
+  transition:background .26s var(--e),box-shadow .26s var(--e)}
+.pj-stage:hover{box-shadow:inset 0 0 0 1px var(--border-strong)}
+.pj-stage[aria-expanded="true"]{background:var(--card);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.pj-stage .sd{width:7px;height:7px;border-radius:999px;flex:none;background:var(--sc)}
+.pj-stage .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:700;
+  min-width:20px;height:20px;padding:0 6px;border-radius:999px;display:grid;place-items:center;
+  color:var(--text-dim);background:var(--card);box-shadow:inset 0 0 0 1px var(--border)}
+.pj-stage .cd{color:var(--text-faint);transition:transform .3s var(--e)}
+.pj-stage[aria-expanded="true"] .cd{transform:rotate(180deg)}
+/* filas del menú: etiqueta a la izquierda, contador a la derecha; las etapas
+   vacías se apagan pero siguen siendo clickeables (existen, no estorban) */
+.pj-stagerow{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:8px 9px;border-radius:8px;
+  font-size:13px;font-weight:600;color:var(--text)}
+.pj-stagerow .lb{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-stagerow .sd{width:8px;height:8px;border-radius:999px;flex:none;background:var(--sc)}
+.pj-stagerow .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;font-weight:700;
+  flex:none;color:var(--text-faint)}
+.pj-stagerow[data-empty="1"]{color:var(--text-faint)}
+.pj-stagerow[data-empty="1"] .sd{opacity:.4}
+.pj-stagerow[aria-selected="true"]{background:var(--accent-soft);color:var(--text)}
+.pj-stagerow[aria-selected="true"] .n{color:var(--accent)}
+.pj-stagerow:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
 /* disparador del panel de filtros + chips de lo que está aplicado */
 .pj-filt{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 13px;border-radius:999px;flex:none;
@@ -716,7 +812,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   box-shadow:0 0 0 2px var(--bg-elevated)}
 
 @media (prefers-reduced-motion: reduce){
-  .sb-i,.sb-u,.hd-ib,.hd-ver,.pj-filt,.pj-chip > button,.pj-tabs > button{transition:none}
+  .sb-i,.sb-u,.hd-ib,.hd-ver,.pj-filt,.pj-chip > button,.pj-stage{transition:none}
   .hd-ib:active,.pj-chip > button:active{transform:none}
   .sb-i .cd,.pj-filt .cd{transition:none}
 }
@@ -727,11 +823,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 }
 @media (max-width: 760px){
   .pj-bar{gap:8px}
-  /* los cuatro estados siguen siendo un segmentado, pero desplazable: en 375px
-     no entran los cuatro y partirlos en dos líneas rompe la metáfora */
-  .pj-tabs{width:100%;overflow-x:auto;scrollbar-width:none}
-  .pj-tabs::-webkit-scrollbar{display:none}
-  .pj-tabs > button{flex:1 0 auto;justify-content:center;height:38px}
+  .pj-stage{height:42px;flex:1 1 100%;justify-content:flex-start}
   .pj-popwrap{flex:1 1 140px}
   .pj-filt{width:100%;height:42px;justify-content:center}
   .pj-bar .pj-search{flex:1 1 100%;max-width:none;height:42px}
@@ -3159,6 +3251,52 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign,
    la pastilla encendida en naranja cuando el filtro está aplicado.
    `block` = variante para el panel de filtros: ocupa el ancho de su columna y
    lleva su propia etiqueta arriba, así que no repite el título adentro. */
+/* Selector de etapa del listado. `value` puede ser 'all' (todas) o una etapa.
+   El contador de cada fila lo calcula quien lo usa: acá no sabemos filtrar. */
+function StageFilterMenu({ value, onChange, counts, total }) {
+  const isAll = value === 'all'
+  const meta = stageMeta(value)
+  const menuH = (PROJECT_STAGES.length + 1) * 38 + (STAGE_GROUPS.length + 1) * 26 + 16
+  const { open, pos, btnRef, toggle, setOpen } = useAnchoredMenu(248, menuH)
+  const pick = (k) => { if (k !== value) onChange(k); setOpen(false) }
+  const Row = ({ k, label, n, colorVar }) => (
+    <button className="row-hover pj-stagerow" role="option" aria-selected={value === k} data-empty={n === 0 ? '1' : '0'}
+      style={{ '--sc': `var(${colorVar})` }} onClick={() => pick(k)}>
+      <span className="sd" aria-hidden="true" />
+      <span className="lb">{label}</span>
+      <span className="n">{n}</span>
+      <I2.check className="ck" width={14} height={14} style={{ opacity: value === k ? 1 : 0, color: 'var(--accent)', flex: 'none' }} />
+    </button>
+  )
+  return (
+    <span style={{ display: 'inline-flex', flex: 'none' }}>
+      <button ref={btnRef} className="pj-stage" onClick={toggle} aria-haspopup="listbox" aria-expanded={open}
+        style={{ '--sc': isAll ? 'var(--text-faint)' : `var(${meta.colorVar})` }}
+        aria-label={`Etapa: ${isAll ? 'todas' : meta.label}. Cambiar`} title="Filtrar por etapa">
+        <span className="sd" aria-hidden="true" />
+        <span>{isAll ? 'Todas las etapas' : meta.label}</span>
+        <span className="n">{isAll ? total : (counts[value] || 0)}</span>
+        <I2.chevD className="cd" width={13} height={13} />
+      </button>
+      {open && pos && (
+        <MenuSurface pos={pos} onClose={() => setOpen(false)} role="listbox" label="Filtrar por etapa">
+          <div role="group">
+            <Row k="all" label="Todas las etapas" n={total} colorVar="--text-faint" />
+          </div>
+          {STAGE_GROUPS.map((g) => (
+            <div key={g.key} role="group" aria-label={g.label}>
+              <div className="pdh-head" aria-hidden="true">{g.label}</div>
+              {PROJECT_STAGES.filter((s) => s.group === g.key).map((s) => (
+                <Row key={s.key} k={s.key} label={s.label} n={counts[s.key] || 0} colorVar={s.colorVar} />
+              ))}
+            </div>
+          ))}
+        </MenuSurface>
+      )}
+    </span>
+  )
+}
+
 function FilterSelect({ value, onChange, active, title, block = false, children }) {
   const id = useMemo(() => 'flt-' + Math.random().toString(36).slice(2, 8), [])
   const sel = (
@@ -3285,7 +3423,7 @@ function Projects({ onOpenProject }) {
      etapa cae en Desarrollo. */
   const [tab, setTab] = useState(() => {
     const t = qp.get('tab')
-    return PROJECT_STAGES.some((s) => s.key === t) ? t : 'desarrollo'
+    return t === 'all' || PROJECT_STAGES.some((s) => s.key === t) ? t : 'desarrollo'
   })
   const [view, setView] = useState('cards')
   const [clientFilter, setClientFilter] = useState(qp.get('client') || 'all')
@@ -3381,11 +3519,15 @@ function Projects({ onOpenProject }) {
     return hay.includes(q)
   }
   const keep = (p) => matchesFilters(p) && matchesSearch(p)
-  const countFor = (stage) => universe.filter((p) => projectStage(p) === stage && keep(p)).length
-  let list = universe.filter((p) => projectStage(p) === tab && keep(p))
+  /* Una sola pasada para los contadores de las 8 etapas: antes se recorría el
+     universo entero una vez por pestaña en cada render. */
+  const matched = universe.filter(keep)
+  const stageCounts = {}
+  for (const p of matched) { const s = projectStage(p); stageCounts[s] = (stageCounts[s] || 0) + 1 }
+  const totalCount = matched.length
+  let list = tab === 'all' ? matched : matched.filter((p) => projectStage(p) === tab)
   if (prioFilter === 'sort') list = [...list].sort((a, b) => projPrioMeta(b.priority).rank - projPrioMeta(a.priority).rank)
-  const TABS = PROJECT_STAGES.map((s) => [s.key, s.label])
-  const tabLabel = `en ${stageMeta(tab).label}`
+  const tabLabel = tab === 'all' ? 'todavía' : `en ${stageMeta(tab).label}`
 
   return (
     <div className="view" style={{ padding: '28px 34px 60px' }}>
@@ -3399,17 +3541,7 @@ function Projects({ onOpenProject }) {
       {/* Una sola fila de control: estado, filtros, lo que está aplicado, búsqueda
           y la acción principal. Antes eran tres franjas apiladas. */}
       <div className="pj-bar" style={{ marginBottom: 20 }}>
-        <div className="pj-tabs" role="tablist" aria-label="Etapa del proyecto">
-          {TABS.map(([k, l]) => (
-            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
-              {tab === k && (
-                <motion.span layoutId="pjTabGlide" className="glide"
-                  transition={{ type: 'spring', stiffness: 520, damping: 44 }} />
-              )}
-              <span className="lb">{l}<span className="n">{countFor(k)}</span></span>
-            </button>
-          ))}
-        </div>
+        <StageFilterMenu value={tab} onChange={setTab} counts={stageCounts} total={totalCount} />
 
         <FilterPanel count={chips.length} onClear={clearFilters}>
           <FilterSelect block title="Tipo" value={kindFilter} onChange={setKindFilter} active={kindFilter !== 'all'}>
@@ -5836,21 +5968,21 @@ function PlanProgress({ linkedPlan, patchPlan, onAssociate, markProgress }) {
 
       {/* TABLERO DE AVANCE — % terminado + chips de control. Una tarea está
           terminada o no: sin paso de aceptación del cliente de por medio. */}
-      <div className="pd-panel lift" style={{ padding: '16px 18px', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 13 }}>
-          <span style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 600 }}>Tablero de avance</span>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.1 }}>
-            <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: allDone ? 'var(--green)' : 'var(--accent)', letterSpacing: '-0.02em' }}>{summary.pctInsights}%</span>
-            <span style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700, marginTop: 3 }}>Terminado</span>
-          </div>
+      {/* Compacto a propósito (2026-09-12): el % general y su barra ya viven en el
+          héroe de arriba. Acá solo va lo que ese héroe NO dice — el avance de lo
+          que depende de Insights y los estados que piden acción. */}
+      <div className="pd-panel lift" style={{ padding: '13px 16px 14px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+          <span style={{ fontSize: 12.5, color: 'var(--text-dim)', fontWeight: 600 }}>Del lado de Insights</span>
+          <span className="mono" style={{ fontSize: 13.5, fontWeight: 700, color: allDone ? 'var(--green)' : 'var(--accent)', letterSpacing: '-0.02em' }}>{summary.pctInsights}%</span>
+          <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)', marginLeft: 'auto' }}>{summary.done}/{summary.total} tareas</span>
         </div>
-        <div style={{ position: 'relative', height: 12, background: 'var(--bg-elevated)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}
+        <div style={{ position: 'relative', height: 6, background: 'var(--track)', borderRadius: 999, overflow: 'hidden' }}
           title={`${summary.done}/${summary.total} terminadas`}>
           <motion.div initial={false} animate={{ width: `${summary.pctInsights}%` }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: allDone ? 'var(--green)' : 'linear-gradient(90deg, var(--accent), #FB923C)', borderRadius: 999 }} />
+            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: allDone ? 'var(--green)' : 'var(--accent)', borderRadius: 999 }} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{summary.done}/{summary.total} tareas</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 11 }}>
           {summary.curso > 0 && (
             <span className="tag" style={{ color: TASK_ESTADOS.curso.color, background: hexA(TASK_ESTADOS.curso.color, 0.14), borderColor: hexA(TASK_ESTADOS.curso.color, 0.28) }}>{summary.curso} en curso</span>
           )}
@@ -6324,24 +6456,39 @@ function ProjectDetail({ projectId, onBack }) {
         {/* TIRA DE STATS — las 4 métricas del plan + el último avance, que en el
             detalle sí se usa (abre el registro de avance). Un solo bloque:
             antes eran cuatro cajas sueltas compitiendo con su propio marco. */}
-        <motion.div variants={stagger} initial="hidden" animate="show" className="pd-stats" style={{ marginTop: 18, marginBottom: 26 }}>
-          <motion.button variants={rise} className="pd-stat" onClick={openKpi}>
-            <span className="k">Tareas del plan</span><span className="v">{prog.total}</span><span className="s">{kpiSub}</span>
+        <motion.div variants={stagger} initial="hidden" animate="show" className="pd-hero" style={{ marginTop: 18, marginBottom: 26 }}>
+          <motion.button variants={rise} className="pd-hero-main" onClick={openKpi}
+            title={linkedPlan ? 'Ver el detalle del plan' : 'Asociar un plan de ejecución'}>
+            <span className="pd-eyebrow">Avance del plan</span>
+            <span className="pd-hero-top">
+              <span className="pct" style={{ color: progressColor(prog.pct) }}>{prog.pct}%</span>
+              <span className="of">{prog.done} de {prog.total} tareas<br />{prog.total - prog.done} pendientes</span>
+            </span>
+            <span className="pd-bar" aria-hidden="true">
+              <motion.span initial={{ width: 0 }} animate={{ width: `${prog.pct}%` }}
+                transition={{ duration: .8, ease: [.16, 1, .3, 1] }}
+                style={{ background: progressColor(prog.pct) }} />
+            </span>
+            <span className="pd-hero-foot">
+              <span className="dt" style={{ background: adv.none ? 'var(--text-faint)' : adv.stale ? 'var(--yellow)' : 'var(--green)' }} />
+              Último avance <b style={{ color: adv.stale ? 'var(--yellow)' : 'var(--text)', fontWeight: 650 }}>{adv.text}</b>
+              <span className="go">{kpiSub} <I2.arrowRight width={11} height={11} /></span>
+            </span>
           </motion.button>
-          <motion.button variants={rise} className="pd-stat" onClick={openKpi}>
-            <span className="k">Terminadas</span><span className="v" style={{ color: 'var(--green)' }}>{prog.done}</span><span className="s">{kpiSub}</span>
-          </motion.button>
-          <motion.button variants={rise} className="pd-stat" onClick={openKpi}>
-            <span className="k">Pendientes del cliente</span><span className="v" style={{ color: RESPONSABLES.cliente.color }}>{prog.pendingCliente}</span><span className="s">{kpiSub}</span>
-          </motion.button>
-          <motion.button variants={rise} className="pd-stat" onClick={openKpi}>
-            <span className="k">% Avance</span><span className="v" style={{ color: progressColor(prog.pct) }}>{prog.pct}%</span><span className="s">{kpiSub}</span>
-          </motion.button>
-          <motion.button variants={rise} className="pd-stat" onClick={openKpi} title="Última vez que se tocó una tarea del plan">
-            <span className="k">Último avance</span>
-            <span className="v" style={{ fontSize: 17, color: adv.none ? 'var(--text-faint)' : adv.stale ? 'var(--yellow)' : 'var(--text)' }}>{adv.text}</span>
-            <span className="s">{adv.stale ? 'hace más de una semana' : kpiSub}</span>
-          </motion.button>
+          <motion.span variants={rise} className="pd-hero-side">
+            <button className="pd-cell" onClick={openKpi} title="Tareas terminadas del plan">
+              <span className="v" style={{ color: 'var(--green)' }}>{prog.done}</span>
+              <span className="k">Terminadas</span>
+            </button>
+            <button className="pd-cell" onClick={openKpi} title="Tareas del plan todavía sin terminar">
+              <span className="v">{prog.total - prog.done}</span>
+              <span className="k">Pendientes</span>
+            </button>
+            <button className="pd-cell" onClick={openKpi} title="Tareas que dependen del cliente y frenan el avance">
+              <span className="v" style={{ color: RESPONSABLES.cliente.color }}>{prog.pendingCliente}</span>
+              <span className="k">Esperan al cliente</span>
+            </button>
+          </motion.span>
         </motion.div>
 
         {/* AVISO DE COBRO — solo aparece cuando hay uno a la vista */}
@@ -6611,8 +6758,20 @@ function ClientContactCard({ client }) {
   )
 }
 
+/* Ancho del rail abierto y de la columna cerrada. En px (no %) porque el panel
+   está fuera del flujo: animar un % contra un contenedor que no cambia de ancho
+   no aporta nada y complica el cálculo de la zona de anticipo. */
+const RAIL_W = 384
+const RAIL_MINI = 56
+
 function ActivityRegistry({ project, client, patch }) {
   const { data } = useApp()
+  const narrow = useIsMobile(1080)
+  const [pinned, setPinned] = useState(() => {
+    try { return localStorage.getItem('pd_rail_pinned') === '1' } catch (e) { return false }
+  })
+  const [hovered, setHovered] = useState(false)
+  useEffect(() => { try { localStorage.setItem('pd_rail_pinned', pinned ? '1' : '0') } catch (e) { /* modo privado */ } }, [pinned])
   const team = data.team || []
   const myId = typeof localStorage !== 'undefined' ? localStorage.getItem('my_team_id') : ''
   const userOf = (id) => team.find((u) => u.id === id)
@@ -6648,9 +6807,12 @@ function ActivityRegistry({ project, client, patch }) {
 
   const ready = type === 'nota' ? (!!note.trim() || photos.length > 0) : !!link.trim()
   const publicCount = entries.filter((e) => e.type !== 'nota' || e.visibility !== 'private').length
+  /* Los guiones del estado cerrado: uno por registro (los más nuevos arriba),
+     cortados en 14 para que nunca desborden la columna. */
+  const dashes = entries.slice(0, 14).map((e) => ({ id: e.id, priv: e.type === 'nota' && e.visibility === 'private' }))
 
-  return (
-    <div className="pd-rail">
+  const full = (
+    <>
       <ClientContactCard client={client} />
       <div style={{ padding: '16px 16px 13px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -6658,7 +6820,16 @@ function ActivityRegistry({ project, client, patch }) {
             <I2.pulse width={15} height={15} />
           </span>
           <strong style={{ fontSize: 14.5, letterSpacing: '-0.015em' }}>Registro de actividad</strong>
-          {entries.length > 0 && <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-faint)' }}>{entries.length}</span>}
+          {entries.length > 0 && <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{entries.length}</span>}
+          {!narrow && (
+            <button className="pd-railpin" data-on={pinned ? '1' : '0'} onClick={() => setPinned((v) => !v)}
+              style={{ marginLeft: 'auto' }}
+              aria-pressed={pinned}
+              title={pinned ? 'Soltar: vuelve a modo compacto y se abre al pasar el mouse' : 'Fijar el panel abierto'}
+              aria-label={pinned ? 'Soltar el panel de actividad' : 'Fijar el panel de actividad'}>
+              <I2.panelLeft width={15} height={15} style={{ transform: pinned ? 'none' : 'scaleX(-1)' }} />
+            </button>
+          )}
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 5, lineHeight: 1.5 }}>
           Calls, notas y looms del proyecto.{entries.length > 0 && <> El cliente ve {publicCount} de {entries.length}.</>}
@@ -6763,6 +6934,59 @@ function ActivityRegistry({ project, client, patch }) {
           )
         })}
       </div>
+    </>
+  )
+
+  /* Apilado (pantallas angostas): el rail deja de ser rail y es un bloque más
+     del scroll. Sin mini, sin hover, sin superposición. */
+  if (narrow) return <div className="pd-rail stat">{full}</div>
+
+  const open = pinned || hovered
+  const spring = { type: 'spring', stiffness: 420, damping: 34 }
+  return (
+    <div style={{ display: 'contents' }} onMouseLeave={() => setHovered(false)}>
+      {/* el espaciador es lo que ocupa lugar en el flex; el aside está fuera del
+          flujo. Fijado, el espaciador crece y el panel deja de tapar contenido. */}
+      <motion.div aria-hidden="true" className="pd-railspace"
+        initial={false} animate={{ width: pinned ? RAIL_W : RAIL_MINI }} transition={spring} />
+      {/* zona de anticipo: 10px pegados al borde interno del rail. Abre antes de
+          que el mouse llegue al panel, que es lo que lo hace sentir instantáneo. */}
+      {!open && (
+        <div onMouseEnter={() => setHovered(true)} aria-hidden="true"
+          style={{ position: 'absolute', top: 0, bottom: 0, right: RAIL_MINI, width: 12, zIndex: 39 }} />
+      )}
+      <motion.aside className="pd-rail" data-lift={!pinned && hovered ? '1' : '0'}
+        onMouseEnter={() => setHovered(true)}
+        onFocus={() => setHovered(true)}
+        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setHovered(false) }}
+        initial={false} animate={{ width: open ? RAIL_W : RAIL_MINI }} transition={spring}>
+        {/* Las dos caras viven montadas a la vez: la completa conserva lo que
+            estabas escribiendo al cerrarse, y no hay reflow al animar el ancho.
+            visibility (no display) saca la cara oculta del orden de tabulación. */}
+        <div className="pd-mini" aria-hidden={open ? 'true' : undefined}
+          style={{ opacity: open ? 0 : 1, visibility: open ? 'hidden' : 'visible' }}>
+          <button className="pd-mini-ib" onClick={() => setPinned(true)} title="Registro de actividad — abrir"
+            aria-label={`Registro de actividad · ${entries.length} registro${entries.length === 1 ? '' : 's'}. Abrir`}>
+            <I2.pulse width={16} height={16} />
+            {entries.length > 0 && <span className="pd-mini-n">{entries.length > 99 ? '99' : entries.length}</span>}
+          </button>
+          {client && (
+            <span className="pd-mini-ib" title={`${client.name || ''}${client.company ? ` · ${client.company}` : ''}`}
+              style={{ cursor: 'default' }}>
+              <I2.user width={15} height={15} />
+            </span>
+          )}
+          <hr />
+          <div className="pd-dashes" aria-hidden="true">
+            {dashes.map((d) => <span key={d.id} className={`pd-dash${d.priv ? ' priv' : ''}`} />)}
+            {entries.length > dashes.length && <span className="more">+{entries.length - dashes.length}</span>}
+          </div>
+          {entries.length === 0 && <span className="vert">Sin registros</span>}
+        </div>
+        <div className="pd-railfull" style={{ width: RAIL_W, opacity: open ? 1 : 0, visibility: open ? 'visible' : 'hidden' }}>
+          {full}
+        </div>
+      </motion.aside>
     </div>
   )
 }
