@@ -316,7 +316,11 @@ const IROWING = {
           hint: 'La cuenta queda tuya desde el día uno',
           recommended: true,
         },
-        { value: 'insights', label: 'Adelántenlo ustedes y me lo facturan' },
+        {
+          value: 'ayuda',
+          label: 'No tengo una tarjeta que sirva, necesito ayuda',
+          hint: 'Lo vemos juntos — la carga la seguís poniendo vos, nunca la adelantamos nosotros',
+        },
       ],
     },
     {
@@ -329,15 +333,15 @@ const IROWING = {
         'alguien pueda pedir ayuda, y la abre durante la revisión. Si no existe o está caída, ' +
         'rechaza la app.',
       options: [
+        { value: 'tengo', label: 'Ya tengo una página de soporte' },
+        { value: 'yo_agrego', label: 'No tengo, la agrego yo mismo a mi web' },
         {
-          value: 'nosotros',
-          label: 'Ármenla ustedes dentro de irowing.net',
-          hint: 'La hacemos nosotros, con el correo de soporte que elegiste más arriba',
-          recommended: true,
+          value: 'consultar',
+          label: 'No tengo, ¿la pueden armar ustedes?',
+          hint: 'Lo vemos aparte — no viene incluido en lo que ya cotizamos',
         },
-        { value: 'propia', label: 'Ya tengo una página de soporte' },
       ],
-      followUp: { when: 'propia', kind: 'text', label: 'La dirección de esa página' },
+      followUp: { when: 'tengo', kind: 'text', label: 'La dirección de esa página' },
     },
     {
       id: 'irowing.public_phone',
@@ -461,7 +465,8 @@ const MAREX = {
         'arbitraje como la dirección donde un usuario puede desistir dentro de los 30 días: tiene ' +
         'que funcionar desde el primer día. Y la página de soporte no es opcional del lado de ' +
         'Apple: exige una dirección web pública donde se pueda pedir ayuda, y la abre durante la ' +
-        'revisión. Si no existe todavía, la armamos nosotros — decinos y listo.',
+        'revisión. Si todavía no existe, decinos y lo charlamos aparte — no viene incluido en lo ' +
+        'que ya cotizamos.',
       fields: [
         { key: 'support', label: 'Soporte general', placeholder: 'support@marexcleaningsolution.com', required: true },
         { key: 'privacy', label: 'Privacidad', placeholder: 'Puede ser el mismo que soporte' },
@@ -678,7 +683,11 @@ const MAREX = {
           hint: 'La cuenta queda tuya desde el día uno',
           recommended: true,
         },
-        { value: 'insights', label: 'Adelántenlo ustedes y me lo facturan' },
+        {
+          value: 'ayuda',
+          label: 'No tengo una tarjeta que sirva, necesito ayuda',
+          hint: 'Lo vemos juntos — la carga la seguís poniendo vos, nunca la adelantamos nosotros',
+        },
       ],
     },
     {
