@@ -320,11 +320,6 @@ const MAREX = {
     'Las que necesitan un abogado están marcadas: conviene mandárselas hoy, porque no se ' +
     'resuelven en 48 horas.',
   sections: [
-    {
-      key: 'cuenta',
-      title: 'Tu cuenta de Google Play',
-      note: 'Esto es lo único urgente. Son diez minutos y sin esto no se puede avanzar con nada.',
-    },
     { key: 'empresa', title: 'Datos de la empresa' },
     { key: 'negocio', title: 'Decisiones del negocio' },
     { key: 'lanzamiento', title: 'Cómo salen a la calle' },
@@ -339,46 +334,16 @@ const MAREX = {
   ],
   questions: [
     {
-      id: 'marex.verify_device',
-      section: 'cuenta',
-      kind: 'action',
-      urgent: true,
-      title: 'Verificá que tenés un celular Android',
-      body:
-        'Instalá la app **Google Play Console** desde la Play Store e iniciá sesión con ' +
-        '`admin@marexcleaningsolution.com`. Con abrirla una vez alcanza.',
-      why: 'Google no nos deja ni crear las apps hasta que la cuenta esté verificada.',
-      hint:
-        '**¿No tenés un Android?** No hace falta que sea tuyo. Pedile el teléfono prestado a ' +
-        'cualquiera cinco minutos, entrá con tu cuenta, tocá Verificar y cerrá sesión. La ' +
-        'verificación queda en tu cuenta, no en ese teléfono. Lo que no podemos hacer nosotros ' +
-        'es entrar en tu lugar: Google exige que sea el titular. Si no conseguís ninguno, ' +
-        'decinos y lo resolvemos.',
-      doneLabel: 'Ya lo hice',
-    },
-    {
-      id: 'marex.verify_phone',
-      section: 'cuenta',
-      kind: 'action',
-      urgent: true,
-      title: 'Verificá tu teléfono de contacto',
-      body:
-        'En la consola, entrá a **Cuenta de desarrollador → Datos de contacto** y verificá el ' +
-        'número. Te llega un código por SMS.',
-      why:
-        'Google aclara que este paso **solo lo puede hacer el titular de la cuenta**. Nosotros no ' +
-        'lo podemos hacer por vos aunque tengamos acceso.',
-      doneLabel: 'Ya lo hice',
-    },
-    {
       id: 'marex.entity',
       section: 'empresa',
       kind: 'choice',
       title: '¿MAREX está constituida como empresa?',
       why:
-        'Hoy la cuenta de Google Play figura a nombre de **Jose Daniel Anaya**, persona física, ' +
-        'con domicilio en 2660 Zion Church Rd, Concord, NC. Ese domicilio se publica en la política ' +
-        'de privacidad. Si existe la empresa, conviene que todo salga a su nombre.',
+        'La cuenta de Google Play sigue a nombre de **Jose Daniel Anaya**, persona física — eso ' +
+        'ya quedó así y no se cambia. Pero estos datos son los que van a la política de ' +
+        'privacidad, los términos y los documentos de FCRA como responsable legal: si existe una ' +
+        'LLC o corporation, conviene que esos documentos salgan a su nombre y no al de José como ' +
+        'persona.',
       options: [
         { value: 'llc', label: 'Sí, es una LLC', recommended: true },
         { value: 'corp', label: 'Sí, es una corporation' },
