@@ -43,11 +43,6 @@ const IROWING = {
     'de una vez y después no frenamos. Casi todas ya tienen una respuesta recomendada: si te ' +
     'parece bien, tocás y seguís.',
   sections: [
-    {
-      key: 'cuenta',
-      title: 'Tu cuenta de Google Play',
-      note: 'Esto es lo único urgente. Son diez minutos y sin esto no se puede avanzar con nada.',
-    },
     { key: 'identidad', title: 'Quién publica la app' },
     { key: 'lanzamiento', title: 'Cómo sale a la calle' },
     { key: 'producto', title: 'Detalles de la app' },
@@ -60,40 +55,6 @@ const IROWING = {
     },
   ],
   questions: [
-    {
-      id: 'irowing.verify_device',
-      section: 'cuenta',
-      kind: 'action',
-      urgent: true,
-      title: 'Verificá que tenés un celular Android',
-      body:
-        'Instalá la app **Google Play Console** desde la Play Store e iniciá sesión con ' +
-        '`remoindoorenmendoza@gmail.com`. Con abrirla una vez alcanza.',
-      why:
-        'Google no nos deja ni crear la app hasta que la cuenta esté verificada. Es el único ' +
-        'motivo por el que hoy está todo frenado.',
-      hint:
-        '**¿No tenés un Android?** No hace falta que sea tuyo. Pedile el teléfono prestado a ' +
-        'cualquiera cinco minutos —un familiar, alguien del club, un empleado—, entrá con tu ' +
-        'cuenta, tocá Verificar y cerrá sesión. La verificación queda en tu cuenta, no en ese ' +
-        'teléfono. Lo que no podemos hacer nosotros es entrar en tu lugar: Google exige que sea ' +
-        'el titular. Si no conseguís ninguno, decinos y lo resolvemos.',
-      doneLabel: 'Ya lo hice',
-    },
-    {
-      id: 'irowing.verify_phone',
-      section: 'cuenta',
-      kind: 'action',
-      urgent: true,
-      title: 'Verificá tu teléfono de contacto',
-      body:
-        'En la consola, entrá a **Cuenta de desarrollador → Datos de contacto** y verificá el ' +
-        'número +1 415 724 6732. Te llega un código por SMS.',
-      why:
-        'Google aclara que este paso **solo lo puede hacer el titular de la cuenta**. Nosotros ' +
-        'no lo podemos hacer por vos aunque tengamos acceso.',
-      doneLabel: 'Ya lo hice',
-    },
     {
       id: 'irowing.owner_confirm',
       section: 'identidad',
