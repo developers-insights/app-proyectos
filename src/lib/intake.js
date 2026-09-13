@@ -215,14 +215,14 @@ const IROWING = {
       id: 'irowing.age_18',
       section: 'producto',
       kind: 'choice',
-      title: 'La app se declara para mayores de 18. ¿Confirmás?',
+      title: '¿A qué edad se puede usar la app?',
       why:
-        'Hoy pide confirmar la edad antes de habilitar el chat con IA y el tratamiento de datos ' +
-        'de salud, y así está declarado en la política. Bajarlo a 16 obliga a rehacer la ' +
-        'clasificación de contenido y a sumar controles parentales.',
+        'Hoy pide confirmar que sos mayor de 18 antes de habilitar el chat con IA y el ' +
+        'tratamiento de datos de salud, y así está declarado en la política. Es una decisión ' +
+        'de producto tuya: si querés abrirla a menores, la ajustamos.',
       options: [
-        { value: 'si', label: 'Sí, 18+', recommended: true },
-        { value: 'menores', label: 'Espero que la usen menores de edad' },
+        { value: 'si', label: '18+, como está hoy' },
+        { value: 'menores', label: 'También la van a usar menores de edad' },
       ],
     },
     {
