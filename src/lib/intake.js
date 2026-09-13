@@ -343,18 +343,6 @@ const IROWING = {
       ],
       followUp: { when: 'tengo', kind: 'text', label: 'La dirección de esa página' },
     },
-    {
-      id: 'irowing.public_phone',
-      section: 'apple',
-      kind: 'text',
-      title: 'Un teléfono de contacto que pueda quedar público',
-      why:
-        'Google publica datos de contacto del desarrollador en la ficha, y si algún día la app ' +
-        'se publica en Europa, Apple obliga a mostrar teléfono, dirección y correo del ' +
-        'responsable. Tenerlo ahora nos evita frenar justo al final.',
-      hint: 'Puede ser el mismo que verificaste en Google Play.',
-      placeholder: '+1 415 724 6732',
-    },
   ],
 }
 
