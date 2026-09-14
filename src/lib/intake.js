@@ -25,6 +25,11 @@
  * `owner: 'abogado'` marca lo que NO puede contestar el cliente solo. No lo
  * escondemos: verlo es parte de la respuesta, porque le avisa que tiene que
  * mover a alguien más y eso tarda.
+ *
+ * `simple` — una o dos frases que explican la pregunta sin ningún término
+ * técnico, como se lo diría un amigo. Va colapsado detrás de un desplegable
+ * ("¿No entendés del todo?") porque el cliente que ya entendió el `why` no
+ * necesita leerlo dos veces; el que no entendió, sí. Toda pregunta lo tiene.
  */
 
 /** Un `id` publicado no se renombra. Ver el comentario de arriba. */
@@ -63,6 +68,9 @@ const IROWING = {
       body:
         'Estos datos los sacamos de tu propia cuenta de Google Play, así que ya son oficiales. ' +
         'Los mismos van a figurar en la política de privacidad como responsable de los datos.',
+      simple:
+        'Vamos a poner tu nombre y tu dirección en los papeles oficiales de la app. Solo ' +
+        'necesitamos que confirmes que están bien escritos antes de que quede fijo.',
       prefill: [
         ['Titular', 'Leonardo Javier Pedrosa (persona física)'],
         ['Domicilio', '5014 Foothills Road, Lake Oswego, OR 97034'],
@@ -82,6 +90,10 @@ const IROWING = {
         'La política de privacidad tiene que mostrar la dirección del responsable, y hoy la que ' +
         'figura es la de tu casa. Cualquiera que instale la app la puede leer. No es un problema ' +
         'legal — es una decisión tuya, y preferimos que la tomes vos y no nosotros.',
+      simple:
+        'Tu dirección de casa va a quedar visible para cualquiera que abra la política de ' +
+        'privacidad. Elegís si te da igual, si preferís usar otra dirección, o si querés armar ' +
+        'antes una empresa para que figure esa en vez de la tuya.',
       options: [
         { value: 'publicar', label: 'Publicalo, no me molesta', recommended: false },
         {
@@ -110,6 +122,9 @@ const IROWING = {
         'suma lo suyo: para vender en la Unión Europea exige declararse comerciante y publicar ' +
         'tu teléfono, tu dirección y tu correo en la ficha, a la vista de cualquiera. Se puede ' +
         'ampliar más adelante sin rehacer nada.',
+      simple:
+        'Elegís en qué países se puede bajar la app. Cuantos más países —sobre todo en Europa—, ' +
+        'más papeles hay que sumar antes de publicar.',
       options: [
         {
           value: 'us_ar',
@@ -136,6 +151,9 @@ const IROWING = {
         'Google exige que la app pase por una prueba cerrada con 12 personas distintas durante ' +
         '14 días seguidos antes de dejarnos publicarla. El reloj no arranca hasta tener las 12, ' +
         'y si el grupo baja de 12 vuelve a cero. Tu cuenta es personal, así que esto aplica sí o sí.',
+      simple:
+        'Antes de que cualquiera pueda bajar la app, Google pide que 12 personas la prueben ' +
+        'durante dos semanas seguidas. Nos pasás sus mails de Gmail y arrancamos ese conteo.',
       body:
         'Tienen que ser cuentas de **Gmail** reales, y cada persona va a instalar la app y usarla. ' +
         'Sirven remeros del club, familia, amigos — no hace falta que sean técnicos.',
@@ -154,6 +172,9 @@ const IROWING = {
       why:
         'Google lo publica en la ficha, a la vista de cualquiera que instale la app. Tiene que ser ' +
         'una casilla que alguien lea de verdad: ahí llegan las consultas y los problemas.',
+      simple:
+        'Es el mail que va a aparecer en la ficha de la app para que te escriban si tienen un ' +
+        'problema. Tiene que ser uno que realmente revises.',
       hint: 'Puede ser tu correo personal. También puede ser uno nuevo redirigido al tuyo.',
       placeholder: 'soporte@irowing.net',
     },
@@ -166,6 +187,9 @@ const IROWING = {
         'La app tiene un chat con inteligencia artificial, y Google exige que exista una forma de ' +
         'reportar una respuesta ofensiva o inapropiada. El botón lo construimos nosotros: solo ' +
         'necesitamos saber a qué casilla mandamos esos reportes.',
+      simple:
+        'Si a alguien no le gusta lo que le contestó el chat con IA, va a poder avisarlo con un ' +
+        'botón. Elegís a qué mail nos llega ese aviso.',
       options: [
         { value: 'soporte', label: 'Al mismo correo de soporte', recommended: true },
         { value: 'otro', label: 'A otra dirección' },
@@ -181,6 +205,9 @@ const IROWING = {
         'Hoy pide confirmar que sos mayor de 18 antes de habilitar el chat con IA y el ' +
         'tratamiento de datos de salud, y así está declarado en la política. Es una decisión ' +
         'de producto tuya: si querés abrirla a menores, la ajustamos.',
+      simple:
+        'Hoy la app pide confirmar que sos mayor de edad antes de usar el chat con IA. Nos decís ' +
+        'si eso sigue así o si querés que también la usen menores.',
       options: [
         { value: 'si', label: '18+, como está hoy' },
         { value: 'menores', label: 'También la van a usar menores de edad' },
@@ -194,6 +221,9 @@ const IROWING = {
       why:
         'Agregar suscripciones más adelante es simple. Sacarlas una vez publicadas, no. Y las ' +
         'compras dentro de la app disparan requisitos fiscales y de facturación en cada país.',
+      simple:
+        'Definís si la app se baja gratis o si va a cobrar algo desde el arranque. Sumar un ' +
+        'cobro después es fácil; sacarlo una vez publicada, no.',
       options: [
         { value: 'gratis', label: 'Gratis, sin compras', recommended: true },
         { value: 'suscripcion', label: 'Con suscripción desde el día uno' },
@@ -208,6 +238,9 @@ const IROWING = {
       why:
         'Pediste que la app se sincronice con el Logbook. El código ya está escrito, pero hay que ' +
         'registrar iRowing como aplicación ante Concept2, y eso crea una cuenta de desarrollador allá.',
+      simple:
+        'Para que la app se conecte con el Logbook de tu remo, hay que anotarla ante Concept2 ' +
+        'como aplicación oficial. Elegís a nombre de quién queda esa registración.',
       options: [
         { value: 'mismo', label: 'A mi nombre, igual que la cuenta de Play', recommended: true },
         { value: 'otro', label: 'A otro nombre' },
@@ -224,6 +257,9 @@ const IROWING = {
         'aparece como responsable en la ficha. La diferencia es el trámite: si la cuenta va a ' +
         'nombre de una empresa, Apple pide un número D-U-N-S y la verificación tarda una o dos ' +
         'semanas más.',
+      simple:
+        'Necesitamos abrir una cuenta de desarrollador de Apple, igual que ya hiciste con Google. ' +
+        'Elegís si va a tu nombre, al de una empresa, o si preferís que la abramos nosotros.',
       options: [
         {
           value: 'mismo',
@@ -248,6 +284,9 @@ const IROWING = {
         'Apple verifica la identidad del titular desde su app Apple Developer, que solo existe ' +
         'en iPhone y iPad: se escanea un documento y listo. Es el mismo tipo de paso que ya ' +
         'hiciste con el Android, y también lo tiene que hacer el titular en persona.',
+      simple:
+        'Apple pide verificar quién sos escaneando tu documento desde un iPhone o iPad. Sin uno ' +
+        'de esos aparatos a mano, ese paso no se puede hacer.',
       body:
         'También hace falta que tu Apple ID tenga activada la verificación en dos pasos. Sin ' +
         'eso, Apple no deja ni empezar.',
@@ -270,6 +309,9 @@ const IROWING = {
         'Es una suscripción anual, no un pago único: el día que se deja de pagar, la app ' +
         'desaparece de la App Store. Google fueron US$25 una sola vez. Preferimos que lo sepas ' +
         'ahora y no cuando llegue la primera renovación.',
+      simple:
+        'A diferencia de Google, que cobra una sola vez, Apple cobra todos los años. Si algún ' +
+        'año no se paga, la app se cae de la tienda.',
       options: [
         {
           value: 'cliente',
@@ -293,6 +335,9 @@ const IROWING = {
         'Google se conforma con una casilla; Apple exige una dirección web pública donde ' +
         'alguien pueda pedir ayuda, y la abre durante la revisión. Si no existe o está caída, ' +
         'rechaza la app.',
+      simple:
+        'Apple no acepta solo un mail: pide una página web donde alguien pueda pedir ayuda. Nos ' +
+        'decís si ya tenés una, si la vas a armar vos, o si preferís que hablemos de armarla nosotros.',
       options: [
         { value: 'tengo', label: 'Ya tengo una página de soporte' },
         { value: 'yo_agrego', label: 'No tengo, la agrego yo mismo a mi web' },
@@ -315,10 +360,8 @@ const MAREX = {
   projectName: 'MAREX',
   intro:
     'Los textos de las dos fichas, las respuestas de los formularios de Google y los borradores ' +
-    'legales ya están escritos. Faltan datos de la empresa y algunas decisiones. Están también ' +
-    'las del iPhone, que es el paso siguiente: contestás todo de una vez y después no frenamos. ' +
-    'Las que necesitan un abogado están marcadas: conviene mandárselas hoy, porque no se ' +
-    'resuelven en 48 horas.',
+    'legales ya están escritos. Faltan algunos datos y decisiones. Están también las del iPhone, ' +
+    'que es el paso siguiente: contestás todo de una vez y después no frenamos.',
   sections: [
     { key: 'empresa', title: 'Datos de la empresa' },
     { key: 'negocio', title: 'Decisiones del negocio' },
@@ -330,45 +373,8 @@ const MAREX = {
         'Esto es para la tienda de Apple, que es el paso siguiente. Contestalo ahora aunque ' +
         'todavía estemos con Android: es lo que hace que no frenemos al llegar ahí.',
     },
-    { key: 'abogado', title: 'Lo que necesita un abogado', owner: 'abogado' },
   ],
   questions: [
-    {
-      id: 'marex.entity',
-      section: 'empresa',
-      kind: 'choice',
-      title: '¿MAREX está constituida como empresa?',
-      why:
-        'La cuenta de Google Play sigue a nombre de **Jose Daniel Anaya**, persona física — eso ' +
-        'ya quedó así y no se cambia. Pero estos datos son los que van a la política de ' +
-        'privacidad, los términos y los documentos de FCRA como responsable legal: si existe una ' +
-        'LLC o corporation, conviene que esos documentos salgan a su nombre y no al de José como ' +
-        'persona.',
-      options: [
-        { value: 'llc', label: 'Sí, es una LLC', recommended: true },
-        { value: 'corp', label: 'Sí, es una corporation' },
-        { value: 'persona', label: 'No, va a mi nombre personal' },
-        { value: 'en_tramite', label: 'Está en trámite' },
-      ],
-    },
-    {
-      id: 'marex.entity_details',
-      section: 'empresa',
-      kind: 'fields',
-      title: 'Los datos de la empresa, exactamente como figuran en la inscripción',
-      why:
-        'Van a un solo archivo nuestro y desde ahí se propagan solos a la política de privacidad, ' +
-        'los términos, la política de cookies y los tres documentos de verificación de antecedentes, ' +
-        'en inglés y en español a la vez. Es el paso que más marcadores pendientes cierra de una vez.',
-      fields: [
-        { key: 'legal_name', label: 'Razón social', placeholder: 'MAREX Home Services, LLC', required: true },
-        { key: 'state', label: 'Estado de constitución', placeholder: 'North Carolina', required: true },
-        { key: 'address', label: 'Domicilio registrado', placeholder: '2660 Zion Church Rd, Concord, NC 28025', required: true },
-      ],
-      note:
-        'La ley antispam de Estados Unidos exige un domicilio postal real en cada email de ' +
-        'marketing. Es el requisito que más se saltea y el más fácil de probar en contra.',
-    },
     {
       id: 'marex.emails',
       section: 'empresa',
@@ -381,6 +387,9 @@ const MAREX = {
         'Apple: exige una dirección web pública donde se pueda pedir ayuda, y la abre durante la ' +
         'revisión. Si todavía no existe, decinos y lo charlamos aparte — no viene incluido en lo ' +
         'que ya cotizamos.',
+      simple:
+        'Son los mails que van a aparecer en distintos lugares de las apps y los documentos ' +
+        'legales: soporte, privacidad y avisos legales. Mejor que sean casillas que realmente uses.',
       fields: [
         { key: 'support', label: 'Soporte general', placeholder: 'support@marexcleaningsolution.com', required: true },
         { key: 'privacy', label: 'Privacidad', placeholder: 'Puede ser el mismo que soporte' },
@@ -396,6 +405,9 @@ const MAREX = {
       why:
         'Hoy Google muestra **«InsightsApps (Marex)»** — o sea, el nombre de la agencia que ' +
         'desarrolla, no el de tu marca. Se puede cambiar, solo necesitamos tu visto bueno.',
+      simple:
+        'Hoy figura el nombre de nuestra agencia debajo del nombre de las apps en la tienda, en ' +
+        'vez de MAREX. Confirmás si lo cambiamos a tu marca.',
       options: [
         { value: 'marex', label: 'Cambiarlo a «MAREX»', recommended: true },
         { value: 'otro', label: 'Ponerle otro nombre' },
@@ -413,6 +425,9 @@ const MAREX = {
         'datos. La ley federal exige que el teléfono de la agencia figure en la notificación que ' +
         'recibe un trabajador rechazado: dejar el alta abierta sin eso sería juntar consentimientos ' +
         'que no cumplen la ley.',
+      simple:
+        'Antes de dejar que un profesional de limpieza se sume a la plataforma, hay que revisarle ' +
+        'los antecedentes con una agencia especializada. Nos decís cuál van a usar.',
       fields: [
         { key: 'name', label: 'Nombre de la agencia', placeholder: 'Checkr, Inc.' },
         { key: 'address', label: 'Dirección' },
@@ -423,21 +438,6 @@ const MAREX = {
       allowSkip: 'Todavía no la elegimos',
     },
     {
-      id: 'marex.stripe',
-      section: 'negocio',
-      kind: 'choice',
-      title: 'La clave de Stripe de producción',
-      why:
-        'La app está usando una clave de prueba: simula cobrar sin cobrar. El sistema **bloquea la ' +
-        'compilación de producción** cuando la detecta, justamente para que eso no salga a la calle.',
-      options: [
-        { value: 'tengo', label: 'La tengo, se la paso a Manuel', recommended: true },
-        { value: 'ayuda', label: 'Necesito ayuda para sacarla' },
-        { value: 'sin_pagos', label: 'Lancemos sin cobros por ahora' },
-      ],
-      note: 'No la escribas acá. Mandásela a Manuel por un canal privado.',
-    },
-    {
       id: 'marex.geography',
       section: 'negocio',
       kind: 'text',
@@ -446,6 +446,9 @@ const MAREX = {
         'Importa más de lo que parece: si los profesionales cuentan como contratistas independientes ' +
         'o como empleados se juzga estado por estado, y hay estados mucho más duros que otros. La ' +
         'revisión legal depende de esta respuesta.',
+      simple:
+        'Nos interesa saber dónde arranca el servicio porque las leyes laborales cambian de un ' +
+        'estado a otro, y eso afecta cómo se redactan los contratos.',
       placeholder: 'Concord y Charlotte, NC',
     },
     {
@@ -454,6 +457,9 @@ const MAREX = {
       kind: 'fields',
       title: 'Los números del negocio',
       why: 'Aparecen en los Términos y en algunos textos de la ficha de la tienda.',
+      simple:
+        'Son las reglas de plata del negocio: cuánto se queda la plataforma, cuánto tiempo tiene ' +
+        'alguien para reclamar, y qué pasa si cancelan a último momento. Van escritas en los Términos.',
       fields: [
         { key: 'commission', label: 'Comisión de la plataforma', placeholder: '20%' },
         { key: 'dispute', label: 'Plazo para abrir una disputa', placeholder: '72 horas' },
@@ -469,6 +475,9 @@ const MAREX = {
       why:
         'MAREX Clean y MAREX Pro necesitan íconos distintos: si son iguales, Google los lee como app ' +
         'duplicada y rechaza. Preparamos una versión diferenciada invirtiendo los colores de la marca.',
+      simple:
+        'MAREX Clean y MAREX Pro necesitan verse distintas en la tienda, no solo por dentro. Te ' +
+        'mostramos una propuesta de dos íconos parecidos pero diferenciables.',
       options: [
         { value: 'ok', label: 'Adelante con la propuesta', recommended: true },
         { value: 'ver', label: 'Quiero verlos antes de decidir' },
@@ -486,6 +495,9 @@ const MAREX = {
         'Google exige una prueba cerrada con 12 personas distintas durante 14 días seguidos antes ' +
         'de dejarnos publicar. Tu cuenta es personal, así que aplica sí o sí. Son dos apps, pero ' +
         'las mismas personas sirven para las dos: conviene arrancar los dos relojes el mismo día.',
+      simple:
+        'Antes de que cualquiera pueda bajar las apps, Google pide que 12 personas las prueben ' +
+        'durante dos semanas seguidas. Sirven las mismas 12 personas para las dos apps.',
       body: 'Tienen que ser cuentas de **Gmail** reales, y cada persona va a instalar la app y usarla.',
       hint:
         'Cargá 14 o 15 en vez de 12: si el grupo baja de 12, el contador vuelve a cero. **Y si ' +
@@ -504,6 +516,9 @@ const MAREX = {
         'teléfono, tu dirección y tu correo en la ficha; y la ley europea de datos pide designar ' +
         'un representante con domicilio allá. Para un servicio de limpieza que se presta en ' +
         'Carolina del Norte, no tiene sentido pagar eso.',
+      simple:
+        'Elegís en qué países se pueden bajar las apps. Si en algún momento entran a Europa, se ' +
+        'suman trámites que hoy no hacen falta.',
       options: [
         {
           value: 'us',
@@ -516,48 +531,25 @@ const MAREX = {
       ],
     },
     {
-      id: 'marex.review_pro_account',
-      section: 'lanzamiento',
-      kind: 'choice',
-      title: 'Con qué cuenta van a probar la app de profesionales',
-      why:
-        'Quien revisa la app en Google y en Apple no tiene un teléfono tuyo ni pasa una ' +
-        'verificación de antecedentes: entra con una cuenta de prueba que le damos nosotros. Si ' +
-        'esa cuenta no puede aceptar un trabajo y terminarlo, rechazan la app porque «no se ' +
-        'puede usar». Es de los motivos de rechazo más comunes y de los más fáciles de evitar.',
-      body:
-        'Necesitamos tu visto bueno para crear un perfil de profesional de prueba, marcado como ' +
-        'verificado a mano, que no corresponde a ninguna persona real, no cobra y no aparece ' +
-        'para los clientes.',
-      options: [
-        { value: 'ok', label: 'Adelante, creen la cuenta de prueba', recommended: true },
-        { value: 'hablar', label: 'Quiero entender bien qué ve esa cuenta' },
-      ],
-    },
-    {
       id: 'marex.apple_holder',
       section: 'apple',
       kind: 'choice',
       title: '¿A nombre de quién va la cuenta de Apple?',
       why:
         'Una sola cuenta de Apple alcanza para las dos apps. Quien figure como titular es quien ' +
-        'firma con Apple y quien aparece como responsable en las fichas. Ojo con un detalle que ' +
-        'sorprende a todos: para Apple, un «sole proprietorship» o un DBA **no** cuenta como ' +
-        'empresa — o hay una LLC o corporation de verdad, o la cuenta va a nombre de una persona.',
+        'firma con Apple y quien aparece como responsable en las fichas. Igual que en Google Play, ' +
+        'va a nombre de una persona: la verificación suele salir en 24 o 48 horas.',
+      simple:
+        'Necesitamos abrir una cuenta de desarrollador de Apple para las dos apps. Decidís a ' +
+        'nombre de quién queda.',
       options: [
-        {
-          value: 'empresa',
-          label: 'A nombre de la empresa',
-          hint: 'Solo si ya existe la LLC o la corporation. Apple pide un D-U-N-S y tarda una o dos semanas más',
-          recommended: true,
-        },
-        { value: 'persona', label: 'A mi nombre personal', hint: 'Sale en 24 o 48 horas, pero tu nombre queda público en las dos fichas' },
-        {
-          value: 'insights',
-          label: 'Que la ponga Insights a su nombre',
-          hint: 'Salimos antes, pero las apps quedan alojadas en nuestra cuenta y no en la tuya',
-        },
+        { value: 'persona', label: 'A mi nombre personal' },
+        { value: 'otro', label: 'A otro nombre' },
       ],
+      followUp: {
+        persona: { label: 'Tu nombre completo, tal cual querés que figure' },
+        otro: { label: '¿A nombre de quién?' },
+      },
     },
     {
       id: 'marex.apple_device',
@@ -568,6 +560,9 @@ const MAREX = {
         'Apple verifica la identidad del titular desde su app Apple Developer, que solo existe ' +
         'en iPhone y iPad: se escanea un documento y listo. Es el mismo tipo de paso que hiciste ' +
         'con el Android, y también lo tiene que hacer el titular en persona.',
+      simple:
+        'Apple pide verificar quién sos escaneando tu documento desde un iPhone o iPad. Sin uno ' +
+        'de esos aparatos a mano, ese paso no se puede hacer.',
       body:
         'También hace falta que el Apple ID tenga activada la verificación en dos pasos. Sin eso, ' +
         'Apple no deja ni empezar.',
@@ -590,6 +585,9 @@ const MAREX = {
         'Es una suscripción anual, no un pago único: el día que se deja de pagar, las apps ' +
         'desaparecen de la App Store. Google fueron US$25 una sola vez. Con una cuenta alcanza ' +
         'para MAREX Clean y MAREX Pro, así que el costo no se duplica.',
+      simple:
+        'A diferencia de Google, que cobra una sola vez, Apple cobra todos los años. Con una ' +
+        'cuenta alcanza para las dos apps.',
       options: [
         {
           value: 'cliente',
@@ -613,30 +611,11 @@ const MAREX = {
         'Google publica datos de contacto del desarrollador en la ficha, y si algún día las apps ' +
         'se publican en Europa, Apple obliga a mostrar teléfono, dirección y correo del ' +
         'responsable. Tenerlo ahora nos evita frenar justo al final.',
+      simple:
+        'Es un teléfono que va a poder quedar visible para cualquiera, así que mejor uno del ' +
+        'negocio y no tu celular personal.',
       hint: 'Ideal el teléfono del negocio, no el personal: es el que va a ver cualquiera.',
       placeholder: '+1 704 000 0000',
-    },
-    {
-      id: 'marex.counsel',
-      section: 'abogado',
-      owner: 'abogado',
-      kind: 'choice',
-      title: '¿Tenés un abogado con matrícula en Estados Unidos?',
-      why:
-        'MAREX verifica antecedentes, y la ley que regula eso paga los honorarios del abogado del ' +
-        'demandante además de la indemnización. Eso es exactamente lo que hace que valga la pena ' +
-        'demandar, y por eso estas seis decisiones no las podemos redactar nosotros.',
-      body:
-        'Lo que necesita decidir: **la clasificación de los trabajadores** (contratista o empleado), ' +
-        '**el proveedor de arbitraje** y su reglamento, **el tope de responsabilidad**, ' +
-        '**el plazo para disputar un informe de antecedentes**, **el agente DMCA** —y registrarlo ante ' +
-        'la Oficina de Derechos de Autor, porque sin registro la protección no existe— y ' +
-        '**los plazos de retención de datos**.',
-      options: [
-        { value: 'si', label: 'Sí, se lo mando hoy', recommended: true },
-        { value: 'buscando', label: 'Todavía no tengo, necesito una recomendación' },
-        { value: 'sin', label: 'Prefiero lanzar sin revisión legal' },
-      ],
     },
   ],
 }

@@ -72,6 +72,9 @@ export default function ClientIntake({ supabase, shareId, password, projectName 
   const [justSaved, setJustSaved] = useState(false)
   const [error, setError] = useState(null)
   const savedTimer = useRef(null)
+  const saveTimers = useRef({})
+  const saveSeq = useRef({})
+  const savePrevio = useRef({})
 
   const call = async (payload) => {
     const { data, error: e } = await supabase.functions.invoke('project-intake', {
@@ -92,7 +95,10 @@ export default function ClientIntake({ supabase, shareId, password, projectName 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intake, shareId])
 
-  useEffect(() => () => clearTimeout(savedTimer.current), [])
+  useEffect(() => () => {
+    clearTimeout(savedTimer.current)
+    Object.values(saveTimers.current).forEach(clearTimeout)
+  }, [])
 
   if (!intake || answers === null) return null
 
@@ -101,29 +107,53 @@ export default function ClientIntake({ supabase, shareId, password, projectName 
   const urgent = pendingUrgent(intake, answers)
   const q = questions[Math.min(idx, questions.length - 1)]
 
-  /* Guardar: optimista en pantalla, y si el servidor rechaza lo revertimos. Que
-     el cliente vea su respuesta puesta al instante es lo que hace que el
-     cuestionario se sienta rápido; que se revierta cuando falla es lo que evita
-     que crea que guardó algo que no guardó. */
-  const save = async (questionId, value) => {
-    const previo = answers[questionId]
-    setAnswers((a) => ({ ...a, [questionId]: value }))
+  const flushSave = async (questionId, value) => {
+    const mySeq = (saveSeq.current[questionId] = (saveSeq.current[questionId] || 0) + 1)
     setSaving(true); setError(null)
     try {
       await call({ action: 'save', questionId, value })
+      if (saveSeq.current[questionId] !== mySeq) return   // ya hay un guardado más nuevo despachado
       setJustSaved(true)
       clearTimeout(savedTimer.current)
       savedTimer.current = setTimeout(() => setJustSaved(false), 1800)
     } catch (e) {
-      setAnswers((a) => ({ ...a, [questionId]: previo }))
+      if (saveSeq.current[questionId] !== mySeq) return
+      setAnswers((a) => ({ ...a, [questionId]: savePrevio.current[questionId] }))
       setError('No se pudo guardar. Revisá la conexión y probá de nuevo.')
     } finally {
-      setSaving(false)
+      if (saveSeq.current[questionId] === mySeq) setSaving(false)
     }
   }
 
+  /* Guardar: optimista en pantalla, y si el servidor rechaza lo revertimos. Que
+     el cliente vea su respuesta puesta al instante es lo que hace que el
+     cuestionario se sienta rápido; que se revierta cuando falla es lo que evita
+     que crea que guardó algo que no guardó.
+     El POST real se demora 500ms (`immediate=false`, el default) porque esto
+     se llama en cada tecla de un campo de texto: sin el margen, cada letra es
+     un POST aparte, y la red no garantiza que le lleguen al servidor en el
+     mismo orden en que salieron — el más viejo puede pisar al más nuevo y lo
+     que el cliente ve en pantalla deja de coincidir con lo que queda guardado
+     (pasó de verdad: Leo escribió una corrección de domicilio, la pantalla la
+     mostraba completa, y en la base quedó vacía). `saveSeq` es la segunda
+     barrera, para cuando el debounce no alcanza a juntar los cambios: solo el
+     resultado del ÚLTIMO guardado despachado para esa pregunta se aplica: uno
+     viejo que responde tarde se descarta en silencio. */
+  const save = (questionId, value, { immediate = false } = {}) => {
+    if (!saveTimers.current[questionId]) savePrevio.current[questionId] = answers[questionId]
+    setAnswers((a) => ({ ...a, [questionId]: value }))
+    clearTimeout(saveTimers.current[questionId])
+    if (immediate) { saveTimers.current[questionId] = null; return flushSave(questionId, value) }
+    return new Promise((resolve) => {
+      saveTimers.current[questionId] = setTimeout(() => {
+        saveTimers.current[questionId] = null
+        flushSave(questionId, value).then(resolve)
+      }, 500)
+    })
+  }
+
   const answerAndAdvance = async (questionId, value) => {
-    await save(questionId, value)
+    await save(questionId, value, { immediate: true })
     setTimeout(() => setIdx((i) => Math.min(i + 1, questions.length - 1)), 110)
   }
 
@@ -346,6 +376,10 @@ export default function ClientIntake({ supabase, shareId, password, projectName 
 
 function QuestionBody({ q, value, onAnswer, onSaveOnly }) {
   const answered = isAnswered(value)
+  /* Colapsado por default: quien ya entendió el `why` no necesita leer una
+     segunda versión de lo mismo. `useState` alcanza porque el padre monta
+     este componente con `key={q.id}` — cambia la pregunta, se resetea solo. */
+  const [simpleOpen, setSimpleOpen] = useState(false)
 
   const head = (
     <>
@@ -363,9 +397,40 @@ function QuestionBody({ q, value, onAnswer, onSaveOnly }) {
         </p>
       )}
       {q.why && (
-        <p style={{ fontSize: 14.5, color: 'var(--text-dim)', lineHeight: 1.65, marginBottom: 22 }}>
+        <p style={{ fontSize: 14.5, color: 'var(--text-dim)', lineHeight: 1.65, marginBottom: q.simple ? 10 : 22 }}>
           <RichText>{q.why}</RichText>
         </p>
+      )}
+      {q.simple && (
+        <div style={{ marginBottom: 22 }}>
+          <button
+            type="button"
+            onClick={() => setSimpleOpen((v) => !v)}
+            className="btn btn-sm btn-ghost"
+            style={{ padding: '3px 0', fontSize: 12.5, color: 'var(--text-faint)', fontWeight: 500 }}
+          >
+            {simpleOpen ? <I2.chevD width={12} height={12} /> : <I2.chevR width={12} height={12} />}
+            {simpleOpen ? 'Ocultar explicación' : '¿No te queda claro? Explicámelo más simple'}
+          </button>
+          <AnimatePresence initial={false}>
+            {simpleOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={SPRING}
+                style={{ overflow: 'hidden' }}
+              >
+                <p
+                  className="surface"
+                  style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.6, padding: '11px 14px', marginTop: 8 }}
+                >
+                  <RichText>{q.simple}</RichText>
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       )}
     </>
   )
@@ -453,7 +518,16 @@ function QuestionBody({ q, value, onAnswer, onSaveOnly }) {
 
   if (q.kind === 'choice') {
     const chosen = value && value.value
-    const follow = q.followUp && chosen === q.followUp.when
+    /* `followUp` acepta dos formas: la vieja, `{ when, label }` —una sola
+       opción con input— y una nueva, un mapa `{ [value]: { label } }` —varias
+       opciones, cada una con su propio input (p. ej. "a mi nombre" y "a otro
+       nombre" piden las dos un nombre, pero uno distinto). */
+    const followFor = (val) => {
+      if (!q.followUp) return null
+      if (q.followUp.when !== undefined) return q.followUp.when === val ? q.followUp : null
+      return q.followUp[val] || null
+    }
+    const follow = followFor(chosen)
     return (
       <div>
         {head}
@@ -466,7 +540,7 @@ function QuestionBody({ q, value, onAnswer, onSaveOnly }) {
                 whileTap={{ scale: 0.985 }}
                 transition={SPRING}
                 onClick={() =>
-                  q.followUp && o.value === q.followUp.when
+                  followFor(o.value)
                     ? onSaveOnly({ value: o.value, extra: (value && value.extra) || '' })
                     : onAnswer({ value: o.value })
                 }
@@ -509,7 +583,7 @@ function QuestionBody({ q, value, onAnswer, onSaveOnly }) {
         {follow && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} transition={SPRING} style={{ overflow: 'hidden' }}>
             <div style={{ paddingTop: 14 }}>
-              <div className="label" style={{ marginBottom: 6 }}>{q.followUp.label}</div>
+              <div className="label" style={{ marginBottom: 6 }}>{follow.label}</div>
               <input
                 className="input"
                 autoFocus
