@@ -3,11 +3,10 @@
  *
  * JS PURO: cero React.
  *
- * Regla de negocio: un dev entra a Proyectos y ve SOLO los suyos (donde figura
- * como dev asignado), con un switch "Ver todos los proyectos" apagado por
- * defecto. Cualquier otro rol (pm, fundador, o rol vacío) ve todo y ni siquiera
- * ve el switch. No es seguridad — es foco: el dev no necesita el ruido de los
- * 20 proyectos de la agencia para trabajar en el suyo.
+ * Regla de negocio (2026-09-25, pedido de Manuel): un dev ve SOLO los proyectos
+ * donde figura como dev asignado, sin switch para ver los del resto — se sacó a
+ * propósito, no volver a agregarlo. Cualquier otro rol (pm, fundador, o rol
+ * vacío) ve todo. Los proyectos se le asignan desde Usuarios.
  */
 
 /** Rol normalizado: minúsculas, sin espacios de más. Acepta el miembro o el string suelto. */
@@ -52,22 +51,11 @@ export function collabProjectIds(member) {
   return member.assignedProjectId ? [member.assignedProjectId] : []
 }
 
-/** ¿Mostrarle el switch "Ver todos los proyectos"? Solo a los devs internos (no colaboradores). */
-export function canSeeAllToggle(me) {
-  return isDev(me) && !isCollab(me)
-}
-
-/**
- * Proyectos visibles para `me`.
- * Un dev con el switch apagado ve solo aquellos donde `assignments.dev.userId`
- * es él. Todos los demás casos ven la lista completa (se devuelve tal cual, sin
- * copiar, para no romper las comparaciones por identidad de los useMemo).
- */
-export function visibleProjects(projects, me, showAll) {
+/** Los no-devs reciben la lista tal cual, sin copiar: los useMemo comparan por identidad. */
+export function visibleProjects(projects, me) {
   const list = Array.isArray(projects) ? projects : []
-  // Colaborador: SOLO sus proyectos asignados, sin importar el switch.
   if (isCollab(me)) { const ids = collabProjectIds(me); return list.filter((p) => p && ids.includes(p.id)) }
-  if (showAll || !me || !me.id || !isDev(me)) return list
+  if (!me || !me.id || !isDev(me)) return list
   return list.filter((p) => {
     const dev = p && p.assignments && p.assignments.dev
     return !!dev && dev.userId === me.id

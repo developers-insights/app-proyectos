@@ -29,7 +29,7 @@ import {
   PROJECT_STAGES, STAGE_GROUPS, stageMeta, projectStage, applyStage, stageIsRegression, isPaidStage,
 } from './lib/stages.js'
 import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
-import { isDev, isCollab, canSeeAllToggle, visibleProjects, collabProjectIds } from './lib/visibility.js'
+import { isDev, isCollab, visibleProjects, collabProjectIds } from './lib/visibility.js'
 import {
   taskText, taskDone, weekProgress,
   toggleTaskDone, hitoForWeek,
@@ -3362,14 +3362,7 @@ function Projects({ onOpenProject }) {
   // Los planes llegan DESPUÉS que los proyectos. Si solo esperáramos projectStore,
   // cada card pintaría el % legacy y saltaría al real un instante después.
   const loading = (projectStore ? projectStore.ready === false : false) || plansReady === false
-  // Quién soy: el switch "ver todos" solo existe para devs, y apagado ven solo
-  // los proyectos donde figuran como dev asignado.
   const me = useMemo(() => (data.team || []).find((u) => u.id === myId) || null, [data.team, myId])
-  const showAllToggle = canSeeAllToggle(me)
-  const [showAll, setShowAll] = useState(() => {
-    try { return localStorage.getItem('pj_show_all') === '1' } catch { return false }
-  })
-  useEffect(() => { try { localStorage.setItem('pj_show_all', showAll ? '1' : '0') } catch {} }, [showAll])
   // Índice planId → plan, armado una sola vez: el avance de cada tarjeta sale del
   // plan asociado y no queremos un find() por proyecto dentro del map.
   const planById = useMemo(() => {
@@ -3428,11 +3421,10 @@ function Projects({ onOpenProject }) {
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
   }, [tab, clientFilter, pmFilter, devFilter, tagFilter, prioFilter, kindFilter])
 
-  // Universo visible ANTES de filtrar: un dev con el switch apagado no ve el
-  // resto de la agencia, y por lo tanto los contadores de las pestañas tampoco
-  // pueden contarlo — el número tiene que coincidir con lo que hay en pantalla.
-  const universe = useMemo(() => visibleProjects(data.projects, me, showAll || !showAllToggle), [data.projects, me, showAll, showAllToggle])
-  const hiddenCount = showAllToggle && !showAll ? data.projects.length - universe.length : 0
+  // Universo visible ANTES de filtrar: los contadores de las pestañas no pueden
+  // contar proyectos que el dev no ve.
+  const universe = useMemo(() => visibleProjects(data.projects, me), [data.projects, me])
+  const devOnlyMine = isDev(me) && !isCollab(me)
   const allTags = [...new Set(universe.flatMap((p) => (p.tags || []).map((t) => t.text)))]
   const filtersActive = clientFilter !== 'all' || pmFilter !== 'all' || devFilter !== 'all' || tagFilter !== 'all' || prioFilter !== 'all' || kindFilter !== 'all'
   const clearFilters = () => { setClientFilter('all'); setPmFilter('all'); setDevFilter('all'); setTagFilter('all'); setPrioFilter('all'); setKindFilter('all') }
@@ -3539,17 +3531,6 @@ function Projects({ onOpenProject }) {
           {search && <button onClick={() => setSearch('')} title="Limpiar búsqueda" style={{ display: 'flex', padding: 2, color: 'var(--text-faint)' }}><I2.x width={14} height={14} /></button>}
         </label>
 
-        {showAllToggle && (
-          <button
-            className="pj-switch" role="switch" aria-checked={showAll} onClick={() => setShowAll((v) => !v)}
-            aria-label="Ver los proyectos de todo el equipo"
-            title={showAll ? 'Volver a ver solo tus proyectos' : `Mostrar también los ${hiddenCount} proyectos del resto del equipo`}
-          >
-            <span className="tr" />
-            <I2.eyeAll width={14} height={14} />
-            <span aria-hidden="true">Ver equipo</span>
-          </button>
-        )}
       </div>
 
       {loading && (
@@ -3569,8 +3550,8 @@ function Projects({ onOpenProject }) {
               ? <>Probá con otro nombre, o revisá si el proyecto está en otra pestaña.</>
               : filtersActive
                 ? <>Sacá alguno de los filtros de arriba para ver más.</>
-                : showAllToggle && !showAll && hiddenCount > 0
-                  ? <>Hay {hiddenCount} proyectos asignados a otras personas. Prendé «Ver todos los proyectos» para verlos.</>
+                : devOnlyMine
+                  ? <>Acá aparecen los proyectos que te asignan. Si falta alguno, pedíselo a tu PM.</>
                   : <>Se crea desde el onboarding que se le manda al cliente.</>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
@@ -8955,8 +8936,40 @@ function CollabProjectsCell({ u, projects, patch, onOpenProject }) {
   )
 }
 
+/* Celda "Proyectos" de un dev interno: la asignación vive en el proyecto
+   (`assignments.dev`, un único dev por proyecto), no en el usuario, porque de ahí
+   leen la tarjeta, los filtros y la visibilidad. Sumar un proyecto que ya tenía
+   otro dev se lo pasa a este — por eso el desplegable muestra quién lo tiene hoy. */
+function DevProjectsCell({ u, projects, team, projectStore, onOpenProject }) {
+  const [adding, setAdding] = useState(false)
+  const mine = projects.filter((p) => p.assignments?.dev?.userId === u.id)
+  const available = projects.filter((p) => p.assignments?.dev?.userId !== u.id).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  const nameOf = (id) => team.find((m) => m.id === id)?.name
+  const setDev = (pid, dev) => projectStore.patch(pid, (p) => ({ ...p, assignments: { ...(p.assignments || {}), dev } }))
+  const add = (pid) => { if (!pid) return; setDev(pid, { userId: u.id, roleLabel: 'Developer' }); setAdding(false) }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+      {mine.length === 0 && !adding && <span style={{ color: 'var(--text-faint)' }}>— sin asignar —</span>}
+      {mine.map((p) => (
+        <span key={p.id} className="tag click" onClick={() => onOpenProject && onOpenProject(p.id)} title="Abrir proyecto" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+          {p.name}
+          <span onClick={(e) => { e.stopPropagation(); setDev(p.id, null) }} title="Sacar de sus proyectos" style={{ display: 'inline-flex' }}><I2.x width={11} height={11} /></span>
+        </span>
+      ))}
+      {adding ? (
+        <select className="input" autoFocus value="" onChange={(e) => add(e.target.value)} onBlur={() => setAdding(false)} style={{ width: 'auto', minWidth: 190, padding: '5px 8px', fontSize: 12.5 }}>
+          <option value="">— elegir proyecto —</option>
+          {available.map((p) => { const cur = nameOf(p.assignments?.dev?.userId); return <option key={p.id} value={p.id}>{p.name}{cur ? ` · hoy: ${cur}` : ''}</option> })}
+        </select>
+      ) : available.length > 0 && (
+        <button className="btn btn-sm btn-ghost" onClick={() => setAdding(true)} style={{ padding: '4px 8px', fontSize: 12.5 }}><I2.plus width={12} height={12} /> agregar proyecto</button>
+      )}
+    </div>
+  )
+}
+
 function UsuariosView({ onOpenProject }) {
-  const { data, teamStore, myId } = useApp()
+  const { data, teamStore, projectStore, myId } = useApp()
   const me = (data.team || []).find((u) => u.id === myId)
   const meFounder = isFounder(me)
   const meCanApprove = canApproveUsers(me)
@@ -9032,6 +9045,8 @@ function UsuariosView({ onOpenProject }) {
                         </select>
                       )}
                     </div>
+                  ) : isDev(u) && meCanApprove && projectStore ? (
+                    <DevProjectsCell u={u} projects={projects} team={team} projectStore={projectStore} onOpenProject={onOpenProject} />
                   ) : projCol(u)}
                 </td>
                 <td style={{ padding: '12px 16px', color: 'var(--text-dim)' }}>{fmtSeen(u.lastSeenAt)}</td>
