@@ -7524,11 +7524,27 @@ function TeamManager({ open, onClose }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('')
-  const add = () => {
+  const [invite, setInvite] = useState(null)
+  const add = async () => {
     const n = name.trim(); if (!n) return
-    const m = { id: uid(), name: n, email: email.trim(), initials: autoInitials(n), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length], role }
+    const mail = email.trim().toLowerCase()
+    if (mail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) { setInvite({ tone: 'red', text: 'Revisá el email: no tiene un formato válido.' }); return }
+    if (mail && team.some((u) => String(u.email || '').toLowerCase() === mail)) { setInvite({ tone: 'red', text: 'Esa persona ya está en el equipo.' }); return }
+    const m = { id: uid(), name: n, email: mail, initials: autoInitials(n), color: AVATAR_COLORS[team.length % AVATAR_COLORS.length], role }
     teamStore.create(m)
     setName(''); setEmail(''); setRole('')
+    if (!mail || !cloudEnabled) { setInvite(null); return }
+    setInvite({ tone: 'dim', text: `Mandando el acceso a ${mail}…` })
+    try {
+      const { data: res, error } = await supabase.functions.invoke('invite-member', { body: { name: n, email: mail } })
+      if (error) throw error
+      if (res?.ok) setInvite({ tone: 'green', text: `Listo: le mandamos a ${mail} su usuario y una contraseña temporal.` })
+      else if (res?.error === 'already_registered') setInvite({ tone: 'dim', text: `${mail} ya tenía cuenta: entra con su contraseña de siempre.` })
+      else if (res?.error === 'email_failed') setInvite({ tone: 'red', text: `No se pudo mandar el mail a ${mail}. Quitalo y volvé a agregarlo para reintentar.` })
+      else throw new Error(res?.error || 'error')
+    } catch (e) {
+      setInvite({ tone: 'red', text: `Se agregó al equipo, pero no se pudo crear su acceso (${String(e.message || e)}).` })
+    }
   }
   const update = (id, fields) => teamStore.patch(id, (u) => ({ ...u, ...fields }))
   const remove = (id) => { if (window.confirm('¿Quitar a esta persona del equipo? Sus asignaciones quedarán sin nadie (no se borran proyectos ni tareas).')) teamStore.remove(id) }
@@ -7553,14 +7569,15 @@ function TeamManager({ open, onClose }) {
           <div className="label" style={{ marginBottom: 8 }}>Agregar miembro</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre y apellido" style={{ flex: '1 1 130px' }} />
-            <input className="input mono" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }} placeholder="email (para auto-login)" style={{ flex: '1 1 160px' }} />
+            <input className="input mono" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }} placeholder="email" style={{ flex: '1 1 160px' }} />
             <select className="input" value={role} onChange={(e) => setRole(e.target.value)} title="Rango" style={{ flex: '0 0 88px' }}>
               {TEAM_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
             </select>
             <button className="btn btn-accent" onClick={add}><I2.plus width={15} height={15} /> Agregar</button>
           </div>
+          {invite && <div style={{ fontSize: 12.5, marginTop: 10, padding: '8px 10px', borderRadius: 8, color: invite.tone === 'red' ? 'var(--red)' : invite.tone === 'green' ? 'var(--green)' : 'var(--text-dim)', background: invite.tone === 'red' ? 'var(--red-soft)' : invite.tone === 'green' ? 'var(--green-soft)' : 'var(--bg-elevated)' }}>{invite.text}</div>}
           <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 9 }}>
-            El <strong>email</strong> tiene que coincidir con el usuario de Supabase para que la persona se reconozca sola al iniciar sesión. Agregar un miembro acá <strong>no</strong> crea su login: eso se hace aparte en Supabase → Authentication.
+            Si cargás un <strong>email</strong>, le llega un mail con su usuario y una contraseña temporal. Al entrar por primera vez elige la suya.
           </div>
         </div>
       </div>
@@ -8256,6 +8273,74 @@ function Login() {
           <button type="button" className="btn btn-ghost" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setErr(null); setMsg(null) }} style={{ justifyContent: 'center', fontSize: 12.5, color: 'var(--text-dim)' }}>
             {mode === 'signin' ? '¿No tenés cuenta? Crear una' : '¿Ya tenés cuenta? Iniciar sesión'}
           </button>
+        </div>
+      </motion.form>
+    </div>
+  )
+}
+
+const PW_RULES = [
+  { test: (p) => p.length >= 6, label: 'Al menos 6 caracteres' },
+  { test: (p) => /[A-ZÁÉÍÓÚÑ]/.test(p), label: 'Una mayúscula' },
+  { test: (p) => /\d/.test(p), label: 'Un número' },
+]
+
+function ForcePasswordChange({ session, onLogout }) {
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [show, setShow] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const first = String(session.user.user_metadata?.name || '').split(' ')[0]
+  const rulesOk = PW_RULES.every((r) => r.test(pw))
+  const match = pw.length > 0 && pw === pw2
+  const submit = async (e) => {
+    e?.preventDefault()
+    if (!rulesOk) { setErr('La contraseña todavía no cumple los requisitos.'); return }
+    if (!match) { setErr('Las dos contraseñas no coinciden.'); return }
+    setBusy(true); setErr(null)
+    const { error } = await supabase.auth.updateUser({ password: pw, data: { must_change_password: false } })
+    setBusy(false)
+    if (error) setErr(/different|same/i.test(error.message) ? 'Elegí una contraseña distinta a la temporal.' : error.message)
+  }
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+      <motion.form onSubmit={submit} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+        className="surface" style={{ width: '100%', maxWidth: 400, padding: 28, boxShadow: 'var(--shadow)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18 }}>
+          <Mark size={34} />
+          <div><div style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: 17, lineHeight: 1, letterSpacing: '-.03em' }}>insights<span style={{ color: 'var(--accent)' }}>.</span></div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{session.user.email}</div></div>
+        </div>
+        <h2 style={{ fontFamily: FONT_SANS, fontSize: 19, marginBottom: 6 }}>{first ? `${first}, elegí tu contraseña` : 'Elegí tu contraseña'}</h2>
+        <p style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.55, marginBottom: 16 }}>Entraste con una contraseña temporal. Creá la tuya para seguir.</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Field label="Nueva contraseña">
+            <div style={{ position: 'relative' }}>
+              <input className="input" autoFocus type={show ? 'text' : 'password'} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" style={{ paddingRight: 40 }} />
+              <button type="button" onClick={() => setShow((v) => !v)} title={show ? 'Ocultar contraseña' : 'Ver contraseña'}
+                style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 6, display: 'flex', color: 'var(--text-faint)', background: 'transparent' }}>
+                {show ? <I2.eyeOff width={17} height={17} /> : <I2.eye width={17} height={17} />}
+              </button>
+            </div>
+          </Field>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {PW_RULES.map((r) => {
+              const ok = r.test(pw)
+              return (
+                <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: ok ? 'var(--green)' : 'var(--text-faint)', transition: 'color .2s' }}>
+                  <span style={{ width: 14, height: 14, borderRadius: 99, display: 'grid', placeItems: 'center', border: `1.5px solid ${ok ? 'var(--green)' : 'var(--border)'}`, background: ok ? 'var(--green-soft)' : 'transparent', fontSize: 9, fontWeight: 800, transition: 'all .2s' }}>{ok ? '✓' : ''}</span>
+                  {r.label}
+                </div>
+              )
+            })}
+          </div>
+          <Field label="Repetí la contraseña">
+            <input className="input" type={show ? 'text' : 'password'} autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="••••••••" />
+          </Field>
+          {pw2.length > 0 && !match && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>Las contraseñas no coinciden.</div>}
+          {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8 }}>{err}</div>}
+          <button type="submit" className="btn btn-accent" disabled={busy || !rulesOk || !match} style={{ justifyContent: 'center', padding: 11, opacity: busy || !rulesOk || !match ? 0.55 : 1 }}>{busy ? 'Guardando…' : 'Guardar y entrar'}</button>
+          <button type="button" className="btn btn-ghost" onClick={onLogout} style={{ justifyContent: 'center', fontSize: 12.5, color: 'var(--text-dim)' }}>Salir</button>
         </div>
       </motion.form>
     </div>
@@ -8975,6 +9060,7 @@ export default function InsightsApp() {
   if (shareId) return <ClientView shareId={shareId} />
   if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
   if (cloudEnabled && !session) return <Login />
+  if (cloudEnabled && session.user?.user_metadata?.must_change_password) return <ForcePasswordChange session={session} onLogout={() => supabase.auth.signOut()} />
   return <AppShell session={session} onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
 }
 
