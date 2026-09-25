@@ -7591,6 +7591,7 @@ function UserProfile({ session, myId, setMyId, onLogout, open, onClose }) {
   const { data, teamStore } = useApp()
   const setOpen = (v) => { if (!v && onClose) onClose() }
   const [teamOpen, setTeamOpen] = useState(false)
+  const [pwOpen, setPwOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
   const team = data.team || []
@@ -7627,6 +7628,7 @@ function UserProfile({ session, myId, setMyId, onLogout, open, onClose }) {
             </Field>
             <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 7 }}>{me ? 'Con esto sabemos qué proyectos son tuyos y a quién atribuir cada avance. Tu foto se ve en el menú y en las tarjetas donde estés asignado.' : 'Elegí tu nombre para ver tus proyectos y poder subir tu foto.'}</div>
             <button className="btn" onClick={() => { setOpen(false); setTeamOpen(true) }} style={{ width: '100%', marginTop: 12, justifyContent: 'center' }}><I2.users width={15} height={15} /> Gestionar equipo</button>
+            {cloudEnabled && <button className="btn" onClick={() => { setOpen(false); setPwOpen(true) }} style={{ width: '100%', marginTop: 8, justifyContent: 'center' }}><I2.key width={15} height={15} /> Cambiar contraseña</button>}
           </div>
 
           <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
@@ -7636,6 +7638,7 @@ function UserProfile({ session, myId, setMyId, onLogout, open, onClose }) {
         </div>
       </Modal>
       <TeamManager open={teamOpen} onClose={() => setTeamOpen(false)} />
+      <ChangePasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
     </>
   )
 }
@@ -8285,13 +8288,12 @@ const PW_RULES = [
   { test: (p) => /\d/.test(p), label: 'Un número' },
 ]
 
-function ForcePasswordChange({ session, onLogout }) {
+function NewPasswordForm({ submitLabel, onSaved, children }) {
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
-  const first = String(session.user.user_metadata?.name || '').split(' ')[0]
   const rulesOk = PW_RULES.every((r) => r.test(pw))
   const match = pw.length > 0 && pw === pw2
   const submit = async (e) => {
@@ -8301,11 +8303,48 @@ function ForcePasswordChange({ session, onLogout }) {
     setBusy(true); setErr(null)
     const { error } = await supabase.auth.updateUser({ password: pw, data: { must_change_password: false } })
     setBusy(false)
-    if (error) setErr(/different|same/i.test(error.message) ? 'Elegí una contraseña distinta a la temporal.' : error.message)
+    if (error) { setErr(/different|same/i.test(error.message) ? 'Elegí una contraseña distinta a la actual.' : error.message); return }
+    setPw(''); setPw2('')
+    onSaved && onSaved()
   }
   return (
+    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12, textAlign: 'left', width: '100%' }}>
+      <Field label="Nueva contraseña">
+        <div style={{ position: 'relative' }}>
+          <input className="input" autoFocus type={show ? 'text' : 'password'} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" style={{ paddingRight: 40 }} />
+          <button type="button" onClick={() => setShow((v) => !v)} title={show ? 'Ocultar contraseña' : 'Ver contraseña'}
+            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 6, display: 'flex', color: 'var(--text-faint)', background: 'transparent' }}>
+            {show ? <I2.eyeOff width={17} height={17} /> : <I2.eye width={17} height={17} />}
+          </button>
+        </div>
+      </Field>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {PW_RULES.map((r) => {
+          const ok = r.test(pw)
+          return (
+            <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: ok ? 'var(--green)' : 'var(--text-faint)', transition: 'color .2s' }}>
+              <span style={{ width: 14, height: 14, borderRadius: 99, display: 'grid', placeItems: 'center', border: `1.5px solid ${ok ? 'var(--green)' : 'var(--border)'}`, background: ok ? 'var(--green-soft)' : 'transparent', fontSize: 9, fontWeight: 800, transition: 'all .2s' }}>{ok ? '✓' : ''}</span>
+              {r.label}
+            </div>
+          )
+        })}
+      </div>
+      <Field label="Repetí la contraseña">
+        <input className="input" type={show ? 'text' : 'password'} autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="••••••••" />
+      </Field>
+      {pw2.length > 0 && !match && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>Las contraseñas no coinciden.</div>}
+      {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8 }}>{err}</div>}
+      <button type="submit" className="btn btn-accent" disabled={busy || !rulesOk || !match} style={{ justifyContent: 'center', padding: 11, opacity: busy || !rulesOk || !match ? 0.55 : 1 }}>{busy ? 'Guardando…' : submitLabel}</button>
+      {children}
+    </form>
+  )
+}
+
+function ForcePasswordChange({ session, onLogout }) {
+  const first = String(session.user.user_metadata?.name || '').split(' ')[0]
+  return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
-      <motion.form onSubmit={submit} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
         className="surface" style={{ width: '100%', maxWidth: 400, padding: 28, boxShadow: 'var(--shadow)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18 }}>
           <Mark size={34} />
@@ -8313,37 +8352,27 @@ function ForcePasswordChange({ session, onLogout }) {
         </div>
         <h2 style={{ fontFamily: FONT_SANS, fontSize: 19, marginBottom: 6 }}>{first ? `${first}, elegí tu contraseña` : 'Elegí tu contraseña'}</h2>
         <p style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.55, marginBottom: 16 }}>Entraste con una contraseña temporal. Creá la tuya para seguir.</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Field label="Nueva contraseña">
-            <div style={{ position: 'relative' }}>
-              <input className="input" autoFocus type={show ? 'text' : 'password'} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" style={{ paddingRight: 40 }} />
-              <button type="button" onClick={() => setShow((v) => !v)} title={show ? 'Ocultar contraseña' : 'Ver contraseña'}
-                style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 6, display: 'flex', color: 'var(--text-faint)', background: 'transparent' }}>
-                {show ? <I2.eyeOff width={17} height={17} /> : <I2.eye width={17} height={17} />}
-              </button>
-            </div>
-          </Field>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {PW_RULES.map((r) => {
-              const ok = r.test(pw)
-              return (
-                <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: ok ? 'var(--green)' : 'var(--text-faint)', transition: 'color .2s' }}>
-                  <span style={{ width: 14, height: 14, borderRadius: 99, display: 'grid', placeItems: 'center', border: `1.5px solid ${ok ? 'var(--green)' : 'var(--border)'}`, background: ok ? 'var(--green-soft)' : 'transparent', fontSize: 9, fontWeight: 800, transition: 'all .2s' }}>{ok ? '✓' : ''}</span>
-                  {r.label}
-                </div>
-              )
-            })}
-          </div>
-          <Field label="Repetí la contraseña">
-            <input className="input" type={show ? 'text' : 'password'} autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="••••••••" />
-          </Field>
-          {pw2.length > 0 && !match && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>Las contraseñas no coinciden.</div>}
-          {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8 }}>{err}</div>}
-          <button type="submit" className="btn btn-accent" disabled={busy || !rulesOk || !match} style={{ justifyContent: 'center', padding: 11, opacity: busy || !rulesOk || !match ? 0.55 : 1 }}>{busy ? 'Guardando…' : 'Guardar y entrar'}</button>
+        <NewPasswordForm submitLabel="Guardar y entrar">
           <button type="button" className="btn btn-ghost" onClick={onLogout} style={{ justifyContent: 'center', fontSize: 12.5, color: 'var(--text-dim)' }}>Salir</button>
-        </div>
-      </motion.form>
+        </NewPasswordForm>
+      </motion.div>
     </div>
+  )
+}
+
+function ChangePasswordModal({ open, onClose }) {
+  const [done, setDone] = useState(false)
+  useEffect(() => { if (open) setDone(false) }, [open])
+  return (
+    <Modal open={open} onClose={onClose} title="Cambiar contraseña" sub="Mínimo 6 caracteres, con una mayúscula y un número" width={400}>
+      {done ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', textAlign: 'center' }}>
+          <div style={{ width: 52, height: 52, borderRadius: 99, display: 'grid', placeItems: 'center', background: 'var(--green-soft)', color: 'var(--green)' }}><I2.check width={24} height={24} /></div>
+          <div style={{ fontSize: 14, color: 'var(--text-dim)' }}>Listo, tu contraseña quedó cambiada. La próxima vez entrás con la nueva.</div>
+          <button className="btn btn-accent" onClick={onClose} style={{ justifyContent: 'center', width: '100%' }}>Cerrar</button>
+        </div>
+      ) : open && <NewPasswordForm submitLabel="Guardar contraseña" onSaved={() => setDone(true)} />}
+    </Modal>
   )
 }
 
