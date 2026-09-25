@@ -13,6 +13,7 @@
  * Contrato con planAgent.js (congelado, lo implementa otro módulo).
  */
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { I, uid, stagger, rise } from '../ui.jsx'
 import {
@@ -853,13 +854,15 @@ export default function AgentStudio({ open, onClose, projects, clients, calls, t
   const showRight = !narrow || tab === 'run'
 
   /* ============================================================== RENDER */
-  return (
+  // Portal a body: renderizado dentro de la columna de contenido (.app-shell > div, z-index:1)
+  // el sidebar fijo (z 60) le quedaba encima tapando la columna izquierda.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
           initial={reduce ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
+          style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
           onMouseDown={(e) => { if (e.target === e.currentTarget) tryClose() }}>
 
           <motion.div
@@ -1309,6 +1312,7 @@ export default function AgentStudio({ open, onClose, projects, clients, calls, t
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }

@@ -2,6 +2,7 @@
    UI PRIMITIVES — extraído de InsightsApp.jsx (E6/B1). Sin cambios de comportamiento.
 ============================================================================ */
 import { useEffect, createContext, useContext } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 
 /* ============================================================================
@@ -86,7 +87,8 @@ export function Modal({ open, onClose, title, sub, children, width = 720 }) {
     if (open) window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [open, onClose])
-  return (
+  // Portal a body: dentro de la columna de contenido (z-index:1) el sidebar fijo quedaba por encima del fondo.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -107,7 +109,8 @@ export function Modal({ open, onClose, title, sub, children, width = 720 }) {
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }
 
