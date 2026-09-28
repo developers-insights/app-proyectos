@@ -8254,8 +8254,24 @@ function Login() {
   const [err, setErr] = useState(null)
   const [msg, setMsg] = useState(null)
   const [registered, setRegistered] = useState(null)   // { name } cuando el alta salió ok
+  const switchMode = (m) => { setMode(m); setErr(null); setMsg(null) }
+  const sendRecovery = async (e) => {
+    e?.preventDefault()
+    const mail = email.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) { setErr('Escribí el email con el que entrás.'); return }
+    setBusy(true); setErr(null); setMsg(null)
+    try {
+      const { data: res, error } = await supabase.functions.invoke('password-recovery', { body: { email: mail } })
+      if (error) throw error
+      if (!res?.ok) throw new Error(res?.error || 'error')
+      setMsg(`Si ${mail} tiene cuenta, te llegó un mail con un link para elegir tu nueva contraseña. Revisá también spam.`)
+    } catch (e2) {
+      setErr('No pudimos mandar el mail. Probá de nuevo en un rato.')
+    } finally { setBusy(false) }
+  }
   const submit = async (e) => {
     e?.preventDefault()
+    if (mode === 'forgot') return sendRecovery(e)
     if (!email || !pw || (mode === 'signup' && !name.trim())) return
     setBusy(true); setErr(null); setMsg(null)
     try {
@@ -8307,12 +8323,13 @@ function Login() {
         className="surface" style={{ width: '100%', maxWidth: 380, padding: 28, boxShadow: 'var(--shadow)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18 }}>
           <Mark size={34} />
-          <div><div style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: 17, lineHeight: 1, letterSpacing: '-.03em' }}>insights<span style={{ color: 'var(--accent)' }}>.</span></div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{mode === 'signin' ? 'Iniciá sesión para continuar' : 'Registrate para acceder'}</div></div>
+          <div><div style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: 17, lineHeight: 1, letterSpacing: '-.03em' }}>insights<span style={{ color: 'var(--accent)' }}>.</span></div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{mode === 'signin' ? 'Iniciá sesión para continuar' : mode === 'forgot' ? 'Recuperá tu contraseña' : 'Registrate para acceder'}</div></div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {mode === 'forgot' && <div style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Escribí tu email y te mandamos un link para que elijas una contraseña nueva.</div>}
           {mode === 'signup' && <Field label="Nombre y apellido"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Tu nombre" /></Field>}
           <Field label="Email"><input className="input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vos@empresa.com" /></Field>
-          <Field label="Contraseña">
+          {mode !== 'forgot' && <Field label="Contraseña">
             <div style={{ position: 'relative' }}>
               <input className="input" type={showPw ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" style={{ paddingRight: 40 }} />
               <button type="button" onClick={() => setShowPw((v) => !v)} title={showPw ? 'Ocultar contraseña' : 'Ver contraseña'}
@@ -8320,12 +8337,12 @@ function Login() {
                 {showPw ? <I2.eyeOff width={17} height={17} /> : <I2.eye width={17} height={17} />}
               </button>
             </div>
-          </Field>
+          </Field>}
           {err && <div style={{ fontSize: 12.5, color: 'var(--red)', background: 'var(--red-soft)', padding: '8px 10px', borderRadius: 8 }}>{err}</div>}
-          {msg && <div style={{ fontSize: 12.5, color: 'var(--green)', background: 'var(--green-soft)', padding: '8px 10px', borderRadius: 8 }}>{msg}</div>}
-          <button type="submit" className="btn btn-accent" disabled={busy} style={{ justifyContent: 'center', padding: 11 }}>{busy ? 'Un momento…' : mode === 'signin' ? 'Iniciar sesión' : 'Crear cuenta'}</button>
-          <button type="button" className="btn btn-ghost" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setErr(null); setMsg(null) }} style={{ justifyContent: 'center', fontSize: 12.5, color: 'var(--text-dim)' }}>
-            {mode === 'signin' ? '¿No tenés cuenta? Crear una' : '¿Ya tenés cuenta? Iniciar sesión'}
+          {msg && <div style={{ fontSize: 12.5, color: 'var(--green)', background: 'var(--green-soft)', padding: '8px 10px', borderRadius: 8, lineHeight: 1.5 }}>{msg}</div>}
+          <button type="submit" className="btn btn-accent" disabled={busy} style={{ justifyContent: 'center', padding: 11 }}>{busy ? 'Un momento…' : mode === 'signin' ? 'Iniciar sesión' : mode === 'forgot' ? 'Mandarme el link' : 'Crear cuenta'}</button>
+          <button type="button" className="btn btn-ghost" onClick={() => switchMode(mode === 'signin' ? 'forgot' : 'signin')} style={{ justifyContent: 'center', fontSize: 12.5, color: 'var(--text-dim)' }}>
+            {mode === 'signin' ? '¿Olvidaste tu contraseña?' : 'Volver a iniciar sesión'}
           </button>
         </div>
       </motion.form>
@@ -8339,7 +8356,7 @@ const PW_RULES = [
   { test: (p) => /\d/.test(p), label: 'Un número' },
 ]
 
-function NewPasswordForm({ submitLabel, onSaved, children }) {
+function NewPasswordForm({ submitLabel, onSaved, beforeSave, children }) {
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const [show, setShow] = useState(false)
@@ -8352,6 +8369,10 @@ function NewPasswordForm({ submitLabel, onSaved, children }) {
     if (!rulesOk) { setErr('La contraseña todavía no cumple los requisitos.'); return }
     if (!match) { setErr('Las dos contraseñas no coinciden.'); return }
     setBusy(true); setErr(null)
+    if (beforeSave) {
+      const pre = await beforeSave()
+      if (pre) { setBusy(false); setErr(pre); return }
+    }
     const { error } = await supabase.auth.updateUser({ password: pw, data: { must_change_password: false } })
     setBusy(false)
     if (error) { setErr(/different|same/i.test(error.message) ? 'Elegí una contraseña distinta a la actual.' : error.message); return }
@@ -8406,6 +8427,42 @@ function ForcePasswordChange({ session, onLogout }) {
         <NewPasswordForm submitLabel="Guardar y entrar">
           <button type="button" className="btn btn-ghost" onClick={onLogout} style={{ justifyContent: 'center', fontSize: 12.5, color: 'var(--text-dim)' }}>Salir</button>
         </NewPasswordForm>
+      </motion.div>
+    </div>
+  )
+}
+
+function RecoverPassword({ token, onDone }) {
+  const [verified, setVerified] = useState(false)
+  const [expired, setExpired] = useState(false)
+  const verify = async () => {
+    if (verified) return null
+    const { error } = await supabase.auth.verifyOtp({ type: 'recovery', token_hash: token })
+    if (error) { setExpired(true); return 'Este link ya se usó o venció.' }
+    setVerified(true)
+    return null
+  }
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+        className="surface" style={{ width: '100%', maxWidth: 400, padding: 28, boxShadow: 'var(--shadow)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18 }}>
+          <Mark size={34} />
+          <div><div style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: 17, lineHeight: 1, letterSpacing: '-.03em' }}>insights<span style={{ color: 'var(--accent)' }}>.</span></div><div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Recuperá tu contraseña</div></div>
+        </div>
+        {expired ? (
+          <>
+            <h2 style={{ fontFamily: FONT_SANS, fontSize: 19, marginBottom: 6 }}>Este link ya no sirve</h2>
+            <p style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.55, marginBottom: 16 }}>Los links de recuperación se usan una sola vez y vencen en una hora. Pedí uno nuevo desde la pantalla de inicio.</p>
+            <button className="btn btn-accent" onClick={() => onDone(false)} style={{ justifyContent: 'center', width: '100%', padding: 11 }}>Pedir otro link</button>
+          </>
+        ) : (
+          <>
+            <h2 style={{ fontFamily: FONT_SANS, fontSize: 19, marginBottom: 6 }}>Elegí tu nueva contraseña</h2>
+            <p style={{ fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.55, marginBottom: 16 }}>Escribila dos veces y listo, entrás directo.</p>
+            <NewPasswordForm submitLabel="Guardar y entrar" beforeSave={verify} onSaved={() => onDone(true)} />
+          </>
+        )}
       </motion.div>
     </div>
   )
@@ -9144,6 +9201,7 @@ export default function InsightsApp() {
   const shareId = params.get('share')
   const onbStep = params.get('onb') || (pathname === '/empezar' ? 'inicio' : null)
   const onbxStep = params.get('onbx')
+  const [recoveryToken, setRecoveryToken] = useState(() => params.get('recuperar'))
 
   // inject global css once
   useEffect(() => {
@@ -9173,6 +9231,7 @@ export default function InsightsApp() {
   if (onbxStep) return <OnboardingV2 supabase={supabase} cloudEnabled={cloudEnabled} />
   if (onbStep) return <OnboardingLanding step={onbStep} supabase={supabase} cloudEnabled={cloudEnabled} />
   if (shareId) return <ClientView shareId={shareId} />
+  if (cloudEnabled && recoveryToken) return <RecoverPassword token={recoveryToken} onDone={() => { window.history.replaceState(null, '', window.location.pathname); setRecoveryToken(null) }} />
   if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
   if (cloudEnabled && !session) return <Login />
   if (cloudEnabled && session.user?.user_metadata?.must_change_password) return <ForcePasswordChange session={session} onLogout={() => supabase.auth.signOut()} />
