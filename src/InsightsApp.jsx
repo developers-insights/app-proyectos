@@ -7499,6 +7499,75 @@ const AVATAR_COLORS = ['#F97316', '#6366F1', '#10B981', '#EC4899', '#38BDF8', '#
 const autoInitials = (name) => ((name || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase()) || '?'
 
 /* gestor del equipo: agregar / editar / quitar miembros que aparecen en asignaciones y @menciones */
+const RESET_ERRORS = {
+  no_account: 'Esta persona todavía no tiene cuenta para entrar. Quitala y volvé a agregarla con su email para mandarle el acceso.',
+  forbidden: 'No tenés permiso para generar contraseñas.',
+  forbidden_founder: 'La contraseña de un fundador solo la puede regenerar otro fundador.',
+  self: 'Para cambiar tu propia contraseña andá a Mi perfil → Cambiar contraseña.',
+}
+
+function ResetPasswordButton({ user }) {
+  const { myId } = useApp()
+  const [open, setOpen] = useState(false)
+  const [state, setState] = useState({ step: 'confirm' })
+  const [copied, setCopied] = useState(false)
+  const email = String(user.email || '').trim().toLowerCase()
+  if (!cloudEnabled || !email || user.id === myId) return null
+  const first = String(user.name || '').split(/\s+/)[0] || 'Hola'
+  const shareText = (pw) => `${first}, te generé una contraseña nueva para el portal de proyectos:\n\nUsuario: ${email}\nContraseña: ${pw}\n\nEntrá en https://proyectos.insightsapps.tech y te va a pedir que elijas la tuya.`
+  const openModal = () => { setState({ step: 'confirm' }); setCopied(false); setOpen(true) }
+  const generate = async () => {
+    setState({ step: 'busy' })
+    try {
+      const { data: res, error } = await supabase.functions.invoke('reset-password', { body: { email } })
+      if (error) throw error
+      if (res?.ok) setState({ step: 'done', password: res.password, emailed: res.emailed })
+      else setState({ step: 'error', text: RESET_ERRORS[res?.error] || `No se pudo generar (${res?.error || 'error'}).` })
+    } catch (e) {
+      setState({ step: 'error', text: `No se pudo generar (${String(e.message || e)}).` })
+    }
+  }
+  const copy = async (text) => { try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch (e) { /* ignore */ } }
+  return (
+    <>
+      <button className="btn btn-sm btn-ghost" onClick={openModal} title="Generar contraseña nueva" aria-label={`Generar contraseña nueva para ${user.name || email}`} style={{ padding: 6, color: 'var(--text-faint)' }}><I2.key width={14} height={14} /></button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Contraseña nueva" sub={`${user.name || ''} · ${email}`} width={420}>
+        {state.step === 'confirm' || state.step === 'busy' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.55 }}>
+              Le generamos una contraseña temporal y se la mandamos por mail. También te la mostramos acá para que se la pases por WhatsApp. Su contraseña actual deja de funcionar, y al entrar va a tener que elegir una propia.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={() => setOpen(false)} disabled={state.step === 'busy'}>Cancelar</button>
+              <button className="btn btn-accent" onClick={generate} disabled={state.step === 'busy'}><I2.key width={14} height={14} /> {state.step === 'busy' ? 'Generando…' : 'Generar contraseña'}</button>
+            </div>
+          </div>
+        ) : state.step === 'done' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
+              <div className="label" style={{ marginBottom: 6 }}>Contraseña temporal</div>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 700, letterSpacing: '.06em', userSelect: 'all' }}>{state.password}</div>
+            </div>
+            <div style={{ fontSize: 12.5, color: state.emailed ? 'var(--green)' : 'var(--yellow)' }}>
+              {state.emailed ? `También se la mandamos por mail a ${email}.` : 'No pudimos mandarle el mail: pasásela vos.'}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" onClick={() => copy(state.password)} style={{ flex: 1, justifyContent: 'center' }}><I2.copy width={14} height={14} /> Copiar contraseña</button>
+              <button className="btn btn-accent" onClick={() => copy(shareText(state.password))} style={{ flex: 1, justifyContent: 'center' }}><I2.whatsapp width={14} height={14} /> Copiar mensaje</button>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', minHeight: 16 }}>{copied ? 'Copiado.' : 'El mensaje incluye usuario, contraseña y link, listo para pegar.'}</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 13.5, padding: '10px 12px', borderRadius: 8, color: 'var(--red)', background: 'var(--red-soft)' }}>{state.text}</div>
+            <button className="btn" onClick={() => setOpen(false)} style={{ alignSelf: 'flex-end' }}>Cerrar</button>
+          </div>
+        )}
+      </Modal>
+    </>
+  )
+}
+
 function TeamManager({ open, onClose }) {
   const { data, teamStore } = useApp()
   const team = data.team || []
@@ -7541,6 +7610,7 @@ function TeamManager({ open, onClose }) {
               <select className="input" value={u.role || ''} onChange={(e) => update(u.id, { role: e.target.value })} title="Rango (define en qué filtro de Proyectos aparece)" style={{ flex: '0 0 88px', padding: '6px 9px', fontSize: 12.5 }}>
                 {TEAM_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
               </select>
+              <ResetPasswordButton user={u} />
               <button className="btn btn-sm btn-ghost" onClick={() => remove(u.id)} title="Quitar del equipo" style={{ padding: 6, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
             </div>
           ))}
@@ -9054,6 +9124,7 @@ function UsuariosView({ onOpenProject }) {
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                     {u.access === 'project' && u.assignedProjectId && <button className="btn btn-sm btn-ghost" onClick={() => onOpenProject && onOpenProject(u.assignedProjectId)}>Ver proyecto</button>}
+                    {u.status !== 'pending' && <ResetPasswordButton user={u} />}
                     {meFounder && u.id !== myId && <button className="btn btn-sm btn-ghost" title="Borrar usuario" onClick={() => deleteUser(u)} style={{ padding: 6, color: 'var(--red)' }}><I2.trash width={15} height={15} /></button>}
                   </div>
                 </td>
