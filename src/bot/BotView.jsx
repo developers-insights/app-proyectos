@@ -223,8 +223,11 @@ export default function BotView() {
   }
   /* días sin respuesta del equipo si superó el umbral (solo grupos activos) */
   const overdueDays = (g) => {
-    if (!g || !g.active || !g.last_team_msg_at) return null
-    const days = Math.floor((now - new Date(g.last_team_msg_at).getTime()) / DAY)
+    if (!g || !g.active || g.bot_member === false) return null
+    /* lo anterior a bot_member_since el bot no lo vio: contar desde ahí evita días de silencio inventados */
+    const base = [g.last_team_msg_at, g.bot_member_since].filter(Boolean).map((t) => new Date(t).getTime())
+    if (!base.length) return null
+    const days = Math.floor((now - Math.max(...base)) / DAY)
     const thr = g.inactivity_threshold_days ?? 3
     return days > thr ? days : null
   }
@@ -368,9 +371,16 @@ export default function BotView() {
 /* ============================================================================
    1 · RESUMEN — hero de estado + stats + actividad reciente
 ============================================================================ */
+function fmtPhone(n) {
+  const m = (n || '').match(/^549(\d{2})(\d{4})(\d{4})$/)
+  if (m) return `+54 9 ${m[1]} ${m[2]}-${m[3]}`
+  return n ? `+${n}` : 'el número del bot'
+}
+
 function Resumen({ loading, st, status, hb, groups, alerts, recent, todayCount, now, isMobile, groupOf, groupTitle, overdueDays, onOpenChat }) {
   const activos = groups.filter((g) => g.active)
   const sinRespuesta = activos.filter((g) => overdueDays(g))
+  const fueraDelBot = activos.filter((g) => g.bot_member === false)
   const lastAlert = alerts[0]?.sent_at
 
   const stats = [
@@ -427,6 +437,27 @@ function Resumen({ loading, st, status, hb, groups, alerts, recent, todayCount, 
           </motion.div>
         ))}
       </motion.div>
+
+      {fueraDelBot.length > 0 && (
+        <motion.div variants={rise} initial="hidden" animate="show" className="surface"
+          style={{ padding: '16px 18px', marginBottom: 14, borderColor: 'var(--yellow-line)', background: 'var(--yellow-soft)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, fontWeight: 650, color: 'var(--yellow)' }}>
+            <span style={{ width: 27, height: 27, borderRadius: 9, display: 'grid', placeItems: 'center', background: 'var(--yellow-soft)', flexShrink: 0 }}><I.alert width={15} height={15} /></span>
+            {fueraDelBot.length === 1 ? 'El bot no está en un grupo' : `El bot no está en ${fueraDelBot.length} grupos`}
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-dim)', marginTop: 6, lineHeight: 1.5 }}>
+            No le llegan sus mensajes. Sumá {fmtPhone(status?.bot_number)} a cada uno para volver a leerlos.
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+            {fueraDelBot.map((g) => (
+              <span key={g.group_jid}
+                style={{ display: 'inline-flex', alignItems: 'center', padding: '7px 12px', borderRadius: 11, fontSize: 12.5, fontWeight: 600, background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                {groupTitle(g)}
+              </span>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* grupos vencidos (si hay) */}
       {sinRespuesta.length > 0 && (
@@ -745,6 +776,7 @@ function Grupos({ isMobile, groups, projects, clients, now, loading, groupTitle,
     patchGroup(g.group_jid, { project_id: projectId || null, client_id: (p && p.clientId) || null })
   }
   const lastActivity = (g) => {
+    if (g.active && g.bot_member === false) return 'el bot no está en el grupo'
     const t = [g.last_team_msg_at, g.last_client_msg_at].filter(Boolean).sort().pop()
     return t ? fmtRel(t, now) : 'sin actividad'
   }
