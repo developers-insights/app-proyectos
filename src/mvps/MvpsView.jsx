@@ -54,6 +54,12 @@ const MVP_CSS = `
 }
 `
 
+const NO_DEMO = {
+  'no-publicada': { label: 'No publicada', hint: 'El repo está listo para Render pero la demo nunca se subió (o la borraron). Si la publicaron en otro lado, cargá el link.' },
+  'sin-config': { label: 'Sin deploy', hint: 'El repo no tiene configuración de deploy ni link en el README. Si la demo existe, cargá el link.' },
+  default: { label: 'Sin demo · cargar', hint: 'No encontramos la demo publicada: cargá el link a mano.' },
+}
+
 const ago = (iso) => {
   if (!iso) return ''
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
@@ -149,7 +155,8 @@ function MvpRow({ m, project, onOpenProject, onLink, onUnlink, onEdit, onStatus 
         <div className="mv-hd">
           <span className="mv-tt" title={m.title}>{m.title}</span>
           {isNewMvp(m) && <span className="mv-new">Nuevo</span>}
-          {m.demoSuspended && <span className="tag" style={{ fontSize: 10.5, color: 'var(--yellow)', borderColor: 'var(--border)' }}>Demo suspendida</span>}
+          {m.demoSuspended && !m.demoUrlManual && <span className="tag" style={{ fontSize: 10.5, color: 'var(--yellow)', borderColor: 'var(--border)' }}
+            title="La demo existe pero alguien la pausó en Render: el link abre una página de servicio suspendido hasta que la reactiven">Pausada en Render</span>}
         </div>
         {(m.description || m.notes) && <div className="mv-ds">{m.notes || m.description}</div>}
         <div className="mv-mt">
@@ -160,7 +167,7 @@ function MvpRow({ m, project, onOpenProject, onLink, onUnlink, onEdit, onStatus 
       <div className="mv-act">
         {demo
           ? <a className="mv-demo" href={demo} target="_blank" rel="noreferrer" title={demo}><I2.ext width={14} height={14} /> Ver demo</a>
-          : <button className="mv-demo" data-off="1" onClick={onEdit} title="No encontramos la demo publicada: cargá el link a mano">Sin demo · cargar</button>}
+          : <button className="mv-demo" data-off="1" onClick={onEdit} title={NO_DEMO[m.demoState]?.hint || NO_DEMO.default.hint}>{NO_DEMO[m.demoState]?.label || NO_DEMO.default.label}</button>}
         {project ? (
           <span className="mv-pj" title={m.linkedBy === 'auto' ? 'Vinculado solo por coincidencia de nombre' : 'Proyecto vinculado'}>
             <I2.folder width={14} height={14} style={{ flex: 'none', color: 'var(--green)' }} />
