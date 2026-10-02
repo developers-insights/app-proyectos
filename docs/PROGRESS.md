@@ -147,3 +147,17 @@ ya no aparece. Edge Function `onboarding-signup` redeployada (v2) creando proyec
   mal cargado en `developers-insights/app-proyectos`. El deploy igual sale por el autoDeploy propio de
   Render, pero el workflow no sirve de nada hasta arreglar el secret.
 - Nadie miró la app con ojos humanos todavía (el Browser pane no compone frames; se midió el DOM).
+
+---
+
+# 2026-10-01 · Sección MVPs (pedido de Licho)
+
+Las demos de ventas caen solas al CRM y se vinculan a un proyecto (creado o futuro).
+
+- **Fuente**: org GitHub `insightsapps-mvp` + repos `*-demo`/`*-mvp` de `developers-insights` (las dos cuentas se usan hoy).
+- **Link de demo**: Render API (workspace INSIGHTS) → `homepage` del repo → GitHub Pages → `render.yaml` + HEAD a `https://<name>.onrender.com` (las del org nuevo se publican desde otra cuenta de Render que no vemos). Si no aparece, se carga a mano (`demoUrlManual`).
+- **Tabla** `mvps` (patrón por-fila, RLS authenticated, realtime). Migración en `docs/migrations/2026-10-01-mvps.sql`.
+- **Edge Function** `mvp-sync` (deployada, verify_jwt off, valida JWT de miembro interno o header `x-cron-key`). Secrets: `GITHUB_TOKEN_MVP`, `RENDER_API_KEY`, `MVP_CRON_KEY`. Escribe por la RPC `mvp_apply_sync` que nunca pisa `projectId`/notas/demo manual.
+- **pg_cron** `mvp-sync` cada 15 min.
+- **Auto-vínculo**: solo si el nombre coincide fuerte y la coincidencia es única en los dos sentidos (GoReach tiene dos demos → lo decide una persona). Desvincular a mano marca `autoLinkOff`.
+- **UI**: sidebar "MVPs" (badge = nuevos sin vincular de los últimos 7 días), `src/mvps/MvpsView.jsx`; en el detalle del proyecto, "Demo de ventas"/"Repo de la demo" en Enlaces y panel "MVP / demo" con sugerencias.

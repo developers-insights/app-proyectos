@@ -41,6 +41,8 @@ import { projectProgress, progressBreakdown, progressColorVar } from './lib/prog
 import { buildContextMarkdown } from './lib/contextExport.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
+import MvpsView, { ProjectMvpModal, projectMvps } from './mvps/MvpsView.jsx'
+import { normalizeMvp, mvpDemoUrl, isNewMvp, suggestMvpsForProject } from './lib/mvps.js'
 
 /* ============================================================================
    0 · SUPABASE (cloud persistence + auth) — optional, enabled via env vars
@@ -6256,6 +6258,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [intakeOpen, setIntakeOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
   const [vaultOpen, setVaultOpen] = useState(false)
+  const [mvpOpen, setMvpOpen] = useState(false)
 
   if (!project) return null
   const patch = (fn) => projectStore.patch(projectId, fn)
@@ -6320,6 +6323,8 @@ function ProjectDetail({ projectId, onBack }) {
   if (planUrl) { try { const u = new URL(planUrl); planDashUrl = `${u.origin}/dashboard${u.pathname}` } catch (e) { planDashUrl = '' } }
   const scopeN = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0)
   const vaultN = (project.vault || []).length
+  const linkedMvp = projectMvps(project, data.mvps)[0] || null
+  const mvpSuggested = !linkedMvp && suggestMvpsForProject(project, data.mvps || [], data.clients).length > 0
   const adv = lastAdvanceInfo(project)
   const me = (data.team || []).find((u) => u.id === myId)
 
@@ -6352,6 +6357,8 @@ function ProjectDetail({ projectId, onBack }) {
               { Ico: I2.ext, label: 'Testing', url: testingUrl, onEmpty: () => setEditOpen(true) },
               { Ico: I2.rocket, label: 'Producción', url: project.productionUrl, onEmpty: () => setEditOpen(true) },
               { Ico: I2.folder, label: 'Drive', url: project.driveUrl, onEmpty: () => setDriveOpen(true) },
+              { Ico: I2.spark, label: 'Demo de ventas', url: mvpDemoUrl(linkedMvp), onEmpty: () => setMvpOpen(true) },
+              { Ico: I2.github, label: 'Repo de la demo', url: linkedMvp?.repoUrl || '', onEmpty: () => setMvpOpen(true) },
               { Ico: I2.calendar, label: 'Plan público', url: planUrl, onEmpty: () => setPlanOpen(true) },
               { Ico: I2.gantt, label: 'Progreso', url: planDashUrl, onEmpty: () => setPlanOpen(true) },
             ]} />
@@ -6363,6 +6370,8 @@ function ProjectDetail({ projectId, onBack }) {
               ...(intakeFor(project.name) ? [{ Ico: I2.tasks, label: 'Cuestionario', onClick: () => setIntakeOpen(true),
                 title: 'Lo que el cliente contestó para poder publicar la app' }] : []),
               { Ico: I2.calendar, label: 'Plan', onClick: () => setPlanOpen(true), title: linkedPlan ? 'Plan asociado — cambiar o publicar' : 'Asociar un plan de ejecución' },
+              { Ico: I2.rocket, label: 'MVP / demo', dot: linkedMvp ? 'var(--green)' : undefined, count: mvpSuggested ? 1 : 0, tone: mvpSuggested ? 'accent' : undefined, onClick: () => setMvpOpen(true),
+                title: linkedMvp ? 'Demo de ventas vinculada' : mvpSuggested ? 'Encontramos una demo que puede ser de este proyecto' : 'Vincular la demo que armó ventas' },
             ]} />
             <span className="pdh-sep" aria-hidden="true" />
             <StageMenu variant="header" stage={stage} onChange={setStage} />
@@ -6544,6 +6553,7 @@ function ProjectDetail({ projectId, onBack }) {
         onClose={() => setStageAsk(null)} onConfirm={commitStage} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
       <VaultModal open={vaultOpen} project={project} onClose={() => setVaultOpen(false)} patch={patch} />
+      <ProjectMvpModal open={mvpOpen} project={project} onClose={() => setMvpOpen(false)} />
       <Modal open={driveOpen} onClose={() => setDriveOpen(false)} title="Drive del proyecto" sub={project.name} width={440}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Field label="Enlace de Google Drive (compartido con el cliente)">
@@ -7698,6 +7708,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
   const { data, myId } = useApp()
   const me = (data.team || []).find((u) => u.id === myId) || null
   const pendingUsers = (data.team || []).filter((u) => u.status === 'pending').length
+  const newMvps = (data.mvps || []).filter((m) => isNewMvp(m)).length
   const meCanApprove = canApproveUsers(me)
   const meCollab = isCollab(me)
   // Colaborador (dev externo restringido a un proyecto): solo Proyectos + Tareas + Planificador.
@@ -7708,6 +7719,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'projects', label: 'Projects', icon: I2.folder },
     { key: 'tasks', label: 'Tareas', icon: I2.tasks },
     { key: 'clients', label: 'Clients', icon: I2.users },
+    { key: 'mvps', label: 'MVPs', icon: I2.rocket, badge: newMvps },
     { key: 'calls', label: 'Calls', icon: I2.phone },
     { key: 'sops', label: 'SOP', icon: I2.doc },
     { key: 'cuentas', label: 'Cuentas', icon: I2.key },
@@ -8147,7 +8159,7 @@ function UpdateButton() {
    · SISTEMA (izq. del bloque derecho): estado de sync + versión. Informan, no son tuyos.
    · USUARIO: notificaciones, ajustes, tema y salir. Todos icon-buttons de 32px. */
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
+  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', mvps: 'MVPs', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
   const dark = theme === 'dark'
   return (
     <header className="hd">
@@ -8534,6 +8546,7 @@ function AppShell({ session, onLogout }) {
   const chatStore = useRowCollection({ table: 'assistant_chats', normalize: normalizeChat, seed: () => [], cacheKey: 'rc_chats_v1' })
   const videoStore = useRowCollection({ table: 'videos', normalize: normalizeVideo, seed: seedVideos, cacheKey: 'rc_videos_v1' })
   const agencyAccountStore = useRowCollection({ table: 'agency_accounts', normalize: normalizeAgencyAccount, seed: () => [], cacheKey: 'rc_agencyaccounts_v1' })
+  const mvpStore = useRowCollection({ table: 'mvps', normalize: normalizeMvp, seed: () => [], cacheKey: 'rc_mvps_v1' })
 
   // Vista de solo lectura con la forma histórica de `data` — para que TODOS los
   // reads `data.projects`/`data.team`/… sigan funcionando sin tocarlos. Toda
@@ -8550,12 +8563,13 @@ function AppShell({ session, onLogout }) {
     tasks: taskStore.tasks,
     videos: videoStore.items,
     agencyAccounts: agencyAccountStore.items,
-  }), [teamStore.items, clientStore.items, projectStore.items, callStore.items, activityStore.items, chatStore.items, sops, taskStore.tasks, videoStore.items, agencyAccountStore.items])
-  const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore }
+    mvps: mvpStore.items,
+  }), [teamStore.items, clientStore.items, projectStore.items, callStore.items, activityStore.items, chatStore.items, sops, taskStore.tasks, videoStore.items, agencyAccountStore.items, mvpStore.items])
+  const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore, mvpStore }
   const botComms = useBotComms()   // proyecto → último mensaje del equipo en WhatsApp (del bot)
 
   // Badge de sync: agregado del estado de todas las tablas.
-  const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore]
+  const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore, mvpStore]
   const anyLoading = !planStore.plansReady || !taskStore.tasksReady || allStores.some((s) => !s.ready)
   const anySaving = allStores.some((s) => s.saving)
   const sync = !cloudEnabled ? 'local' : anyLoading ? 'loading' : anySaving ? 'saving' : 'saved'
@@ -8724,6 +8738,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'planner' && <PlannerView />}
               {route.view === 'bot' && <BotView />}
               {route.view === 'usuarios' && <UsuariosView onOpenProject={openProject} />}
+              {route.view === 'mvps' && <MvpsView onOpenProject={openProject} />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
             </motion.div>
             {/* el iframe del editor NO se desmonta al navegar: solo se oculta (ver editorEverOpenedRef) */}
