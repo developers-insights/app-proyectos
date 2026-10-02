@@ -34,6 +34,12 @@ export const isNewMvp = (m, days = 7) =>
   m.status !== 'descartado' && !m.projectId && !!m.repoCreatedAt &&
   Date.now() - new Date(m.repoCreatedAt).getTime() < days * 86400000
 
+// Sin `seenAt` (nunca abrió la sección) cuenta lo de la última semana; después, solo
+// lo que llegó al CRM desde la última visita. `createdAt` es cuándo lo trajo mvp-sync.
+export const unseenMvpCount = (mvps, seenAt) => (mvps || []).filter((m) =>
+  m.status !== 'descartado' && !m.projectId &&
+  (seenAt ? (m.createdAt || m.repoCreatedAt || '') > seenAt : isNewMvp(m))).length
+
 export function suggestProjectsForMvp(mvp, projects, clients, limit = 3) {
   const companyOf = (id) => { const c = clients.find((x) => x.id === id); return c ? `${c.company || ''} ${c.name || ''}` : '' }
   return projects

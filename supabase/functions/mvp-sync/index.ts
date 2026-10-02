@@ -79,20 +79,43 @@ const repoKey = (url: string) => {
 
 // Las demos del org nuevo se publican desde otra cuenta de Render que no vemos por
 // API: el nombre del servicio sale del render.yaml del repo y se confirma pidiendo la
-// URL. Render contesta 404 + `x-render-routing: no-server` cuando el servicio no existe.
-async function guessRenderDemo(fullName: string, token: string) {
-  const r = await gh(`/repos/${fullName}/contents/render.yaml`, token, 'application/vnd.github.raw')
-  if (!r.ok) return ''
-  const yaml = await r.text()
-  const m = yaml.match(/^\s*-?\s*name:\s*["']?([a-z0-9-]+)["']?\s*$/im)
-  if (!m) return ''
-  const url = `https://${m[1]}.onrender.com`
+// URL. Render contesta al instante con `x-render-routing: no-server` si el servicio no
+// existe y `suspend-by-user` si lo pausaron; si tarda, es un servicio gratis despertando.
+async function probe(url: string) {
   try {
-    const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(12000) })
+    const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10000) })
     await res.body?.cancel()
-    if (res.headers.get('x-render-routing') === 'no-server' || res.status >= 400) return ''
-    return url
-  } catch { return '' }
+    const routing = res.headers.get('x-render-routing') || ''
+    if (routing === 'no-server') return 'missing'
+    if (routing.startsWith('suspend')) return 'paused'
+    return res.status >= 400 && res.status !== 401 && res.status !== 403 ? 'missing' : 'ok'
+  } catch (e) { return (e as Error)?.name === 'TimeoutError' ? 'ok' : 'missing' }
+}
+
+const DEPLOY_URL = /https:\/\/[a-z0-9.-]+\.(onrender\.com|vercel\.app|netlify\.app|pages\.dev|github\.io)[^\s)"'`<>\]]*/gi
+
+async function findDemo(fullName: string, token: string, cachedName: string) {
+  let renderName = cachedName
+  if (!renderName) {
+    const r = await gh(`/repos/${fullName}/contents/render.yaml`, token, 'application/vnd.github.raw')
+    if (r.ok) renderName = ((await r.text()).match(/^\s*-?\s*name:\s*["']?([a-z0-9-]+)["']?\s*$/im) || [])[1] || ''
+  }
+  if (renderName) {
+    const url = `https://${renderName}.onrender.com`
+    const st = await probe(url)
+    if (st === 'ok') return { renderName, demoUrl: url, demoSource: 'guess', demoState: 'publicada', demoSuspended: false }
+    if (st === 'paused') return { renderName, demoUrl: url, demoSource: 'guess', demoState: 'pausada', demoSuspended: true }
+  }
+  for (const f of ['README.md', 'PROGRESO.md']) {
+    const r = await gh(`/repos/${fullName}/contents/${f}`, token, 'application/vnd.github.raw')
+    if (!r.ok) continue
+    const urls = [...new Set(((await r.text()).match(DEPLOY_URL) || []).map((u) => u.replace(/[.,;:]+$/, '')))]
+    for (const u of urls.slice(0, 4)) {
+      const st = await probe(u)
+      if (st !== 'missing') return { renderName, demoUrl: u, demoSource: 'readme', demoState: st === 'paused' ? 'pausada' : 'publicada', demoSuspended: st === 'paused' }
+    }
+  }
+  return { renderName, demoUrl: '', demoSource: '', demoState: renderName ? 'no-publicada' : 'sin-config', demoSuspended: false }
 }
 
 async function authorized(req: Request, admin: ReturnType<typeof createClient>) {
@@ -148,6 +171,7 @@ Deno.serve(async (req) => {
         demoUrl: svc?.serviceDetails?.url || r.homepage || (r.has_pages ? `https://${r.owner.login.toLowerCase()}.github.io/${r.name}/` : ''),
         demoSource: svc ? 'render' : r.homepage ? 'homepage' : r.has_pages ? 'pages' : '',
         demoSuspended: svc ? svc.suspended === 'suspended' : false,
+        demoState: svc ? (svc.suspended === 'suspended' ? 'pausada' : 'publicada') : (r.homepage || r.has_pages) ? 'publicada' : '',
       })
     }
     // Demos en Render cuyo repo no vimos por GitHub (borrado o de otra cuenta).
@@ -163,19 +187,14 @@ Deno.serve(async (req) => {
         repoUrl: `https://github.com/${LEGACY_OWNER}/${name}`, private: true,
         repoCreatedAt: s.createdAt, pushedAt: s.updatedAt,
         demoUrl: s.serviceDetails?.url || '', demoSource: 'render', demoSuspended: s.suspended === 'suspended',
+        demoState: s.suspended === 'suspended' ? 'pausada' : 'publicada',
       })
     }
 
-    const toGuess = auto.filter((m) => {
-      if (m.demoUrl) return false
-      const prev = existing.get(m.id)?.data
-      if (prev?.demoSource === 'guess' && prev?.demoUrl) { m.demoUrl = prev.demoUrl; m.demoSource = 'guess'; return false }
-      return m.source === 'github'
-    })
+    const toGuess = auto.filter((m) => !m.demoUrl && m.source === 'github')
     for (let i = 0; i < toGuess.length; i += 6) {
       await Promise.all(toGuess.slice(i, i + 6).map(async (m) => {
-        const url = await guessRenderDemo(m.fullName, token)
-        if (url) { m.demoUrl = url; m.demoSource = 'guess' }
+        Object.assign(m, await findDemo(m.fullName, token, existing.get(m.id)?.data?.renderName || ''))
       }))
     }
 
@@ -197,7 +216,7 @@ Deno.serve(async (req) => {
       for (const p of hits) perProject.set(p.id, (perProject.get(p.id) || 0) + 1)
     }
 
-    const AUTO_KEYS = ['source', 'owner', 'repo', 'fullName', 'title', 'description', 'repoUrl', 'private', 'repoCreatedAt', 'pushedAt', 'demoUrl', 'demoSource', 'demoSuspended']
+    const AUTO_KEYS = ['source', 'owner', 'repo', 'fullName', 'title', 'description', 'repoUrl', 'private', 'repoCreatedAt', 'pushedAt', 'demoUrl', 'demoSource', 'demoSuspended', 'demoState', 'renderName']
     const now = new Date().toISOString()
     const changed: any[] = []
     let created = 0, linked = 0

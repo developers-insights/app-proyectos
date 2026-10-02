@@ -42,7 +42,7 @@ import { buildContextMarkdown } from './lib/contextExport.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
 import MvpsView, { ProjectMvpModal, projectMvps } from './mvps/MvpsView.jsx'
-import { normalizeMvp, mvpDemoUrl, isNewMvp, suggestMvpsForProject } from './lib/mvps.js'
+import { normalizeMvp, mvpDemoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
 
 /* ============================================================================
    0 · SUPABASE (cloud persistence + auth) — optional, enabled via env vars
@@ -7708,7 +7708,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
   const { data, myId } = useApp()
   const me = (data.team || []).find((u) => u.id === myId) || null
   const pendingUsers = (data.team || []).filter((u) => u.status === 'pending').length
-  const newMvps = (data.mvps || []).filter((m) => isNewMvp(m)).length
+  const newMvps = unseenMvpCount(data.mvps, me?.mvpsSeenAt)
   const meCanApprove = canApproveUsers(me)
   const meCollab = isCollab(me)
   // Colaborador (dev externo restringido a un proyecto): solo Proyectos + Tareas + Planificador.
@@ -8676,6 +8676,15 @@ function AppShell({ session, onLogout }) {
   }, [teamStore.ready, myId])
 
   const openProject = (id) => setRoute({ view: 'project', projectId: id })
+
+  // Entrar a MVPs las da por vistas (como la campanita). Si llega una nueva mientras
+  // estás adentro, también se marca: el badge es para lo que todavía no viste.
+  const mvpSeenAt = teamStore.items.find((u) => u.id === myId)?.mvpsSeenAt
+  const unseenMvps = route.view === 'mvps' ? unseenMvpCount(mvpStore.items, mvpSeenAt) : 0
+  useEffect(() => {
+    if (route.view !== 'mvps' || !myId || !teamStore.ready || unseenMvps === 0) return
+    teamStore.patch(myId, (u) => ({ ...u, mvpsSeenAt: new Date().toISOString() }))
+  }, [route.view, myId, teamStore.ready, unseenMvps])
   const logActivity = (entry) => {
     const nacho = teamStore.items.find((u) => /nacho/i.test(u.name || '') || String(u.email || '').toLowerCase() === 'nachocachaza@insightsapps.tech')
     const actorId = localStorage.getItem('my_team_id') || (nacho ? nacho.id : '')
