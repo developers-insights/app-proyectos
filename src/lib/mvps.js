@@ -28,7 +28,21 @@ export const normalizeMvp = (m) => ({
   demoUrlManual: m.demoUrlManual || '',
 })
 
-export const mvpDemoUrl = (m) => (m && (m.demoUrlManual || m.demoUrl)) || ''
+// Los links de mvps los puede escribir cualquier usuario autenticado (RLS abierta): sin
+// esto, un `javascript:` en demoUrlManual o repoUrl es XSS al hacer click.
+export function safeUrl(u) {
+  const s = String(u || '').trim()
+  if (!s) return ''
+  try {
+    const url = new URL(s)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+export const mvpDemoUrl = (m) => (m && (safeUrl(m.demoUrlManual) || safeUrl(m.demoUrl))) || ''
+export const mvpRepoUrl = (m) => (m && safeUrl(m.repoUrl)) || ''
 
 export const isNewMvp = (m, days = 7) =>
   m.status !== 'descartado' && !m.projectId && !!m.repoCreatedAt &&
