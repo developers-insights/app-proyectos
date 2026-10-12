@@ -8814,8 +8814,11 @@ function ClientView({ shareId }) {
   // que ya manda el plan y sus KPIs. Igual se contempla el payload sin avance —un
   // proyecto sin plan asociado—: en ese caso no mostramos ni tarjetas ni tabla vacía,
   // se salta la sección entera.
-  const kpis = p.kpis && Number(p.kpis.total) > 0 ? p.kpis : null
-  const planWeeks = [...(Array.isArray(p.plan?.weeks) ? p.plan.weeks : [])].sort((a, b) => (a.n || 0) - (b.n || 0))
+  // Con cuestionario, el link es para que el cliente conteste: el avance por
+  // semana compite por la atención y se saca (pedido de Manuel, 2026-10-12).
+  const withIntake = !!intakeFor(p.name)
+  const kpis = !withIntake && p.kpis && Number(p.kpis.total) > 0 ? p.kpis : null
+  const planWeeks = withIntake ? [] : [...(Array.isArray(p.plan?.weeks) ? p.plan.weeks : [])].sort((a, b) => (a.n || 0) - (b.n || 0))
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '30px 22px 70px' }}>

@@ -624,98 +624,128 @@ const MAREX = {
 // Comunidad Latina
 // ---------------------------------------------------------------------------
 
-// Es una PWA en comunidadlatina.com, no una app de tienda: acá no hay testers ni
-// cuentas de Google Play/Apple. Publicarla en tiendas se dejó fuera de alcance en
-// la call del 27/7 ("cambio de producto, no una tarea"); no se pregunta para no
-// prometer algo que no está cotizado.
+// Hoy es una PWA en comunidadlatina.com; esto es solo lo de las tiendas. Nada de
+// Supabase ni Vercel acá: eso se habla aparte (pedido de Manuel, 2026-10-12).
 const COMUNIDAD_LATINA = {
   projectName: 'Comunidad Latina',
   intro:
-    'La plataforma ya está construida y funcionando en comunidadlatina.com. Para abrirla a ' +
-    'gente real faltan cosas que no podemos hacer nosotros: cuentas a tu nombre, datos ' +
-    'legales y algunas decisiones. Casi todas tienen una respuesta recomendada: si te parece ' +
-    'bien, tocás y seguís.',
+    'La plataforma ya funciona en comunidadlatina.com. El paso siguiente es publicarla en ' +
+    'Google Play y en la App Store, y para eso faltan cuentas a tu nombre y algunas ' +
+    'decisiones. Están las dos tiendas juntas: contestás todo de una vez y después no ' +
+    'frenamos. Casi todas tienen una respuesta recomendada: si te parece bien, tocás y seguís.',
   sections: [
-    { key: 'cuentas', title: 'Las cuentas a tu nombre' },
-    { key: 'datos', title: 'Lo que queda a la vista' },
-    { key: 'servicios', title: 'Lo que falta encender' },
-    { key: 'lanzamiento', title: 'El día que abrimos' },
+    { key: 'identidad', title: 'Quién publica la app' },
+    { key: 'lanzamiento', title: 'Cómo sale a la calle' },
+    { key: 'apple', title: 'La App Store del iPhone' },
   ],
   questions: [
     {
-      id: 'cl.accounts_email',
-      section: 'cuentas',
-      kind: 'email',
-      title: 'El correo nuevo para todas las cuentas',
+      id: 'cl.play_account',
+      section: 'identidad',
+      kind: 'choice',
+      title: '¿Ya tenés la cuenta de Google Play Console?',
       why:
-        'Nos pediste cuentas nuevas, sin mezclarlas con las que te abrió otro proveedor. Para ' +
-        'eso conviene un único correo, tuyo, con el que se abren todas: la base de datos, el ' +
-        'hosting, Stripe y los servicios chicos. Si mañana cambia el equipo que te trabaja, el ' +
-        'acceso sigue siendo tuyo.',
+        'Es la cuenta desde la que se publica la app en Android. Google exige que la abra el ' +
+        'titular en persona, con su documento: nosotros no la podemos abrir por vos. Cuesta ' +
+        'US$25 una sola vez. Una vez abierta, nos sumás como administradores y del resto nos ' +
+        'encargamos nosotros.',
       simple:
-        'Es el mail con el que vamos a abrir todas las cuentas de la plataforma. Tiene que ser ' +
-        'tuyo y nuevo, para que nada quede mezclado con otros proyectos.',
-      hint:
-        'Ideal uno del propio dominio, como admin@comunidadlatina.com. Activale la verificación ' +
-        'en dos pasos: es la llave de todo.',
-      placeholder: 'admin@comunidadlatina.com',
+        'Para que la app esté en la tienda de Android hace falta una cuenta de Google a tu ' +
+        'nombre. Se paga una sola vez y después nos das acceso.',
+      options: [
+        { value: 'abro', label: 'Todavía no, la abro yo', hint: 'Te pasamos el paso a paso', recommended: true },
+        { value: 'tengo', label: 'Sí, ya la tengo' },
+      ],
+      followUp: { when: 'tengo', kind: 'email', label: 'El correo de esa cuenta' },
+      note: 'Si no tenés un celular Android para la verificación, avisanos: lo resolvemos nosotros.',
     },
     {
-      id: 'cl.hosting',
-      section: 'cuentas',
+      id: 'cl.holder',
+      section: 'identidad',
       kind: 'choice',
-      title: 'La base de datos y el hosting, a tu nombre',
+      title: '¿A nombre de quién van las cuentas de las tiendas?',
       why:
-        'Hoy la plataforma vive en cuentas de Insights. Para que sea tuya hay que mudarla a dos ' +
-        'cuentas a tu nombre: Supabase (la base de datos, desde US$25 por mes) y Vercel (el ' +
-        'hosting, desde US$20 por mes). Los planes gratis no sirven: el de Supabase apaga el ' +
-        'proyecto si pasa una semana sin uso, y el de Vercel prohíbe el uso comercial. La mudanza ' +
-        'se hace sin cortar el servicio.',
+        'Quien figure como titular es quien firma con Google y con Apple, y quien aparece ' +
+        'como responsable en las fichas de la app. Las dos cuentas van a nombre de la misma ' +
+        'persona.',
+      simple: 'Decidís a nombre de quién quedan las cuentas de Google y de Apple.',
+      options: [
+        { value: 'persona', label: 'A mi nombre personal' },
+        { value: 'otro', label: 'A otro nombre' },
+      ],
+      followUp: {
+        persona: { label: 'Tu nombre completo, tal cual querés que figure' },
+        otro: { label: '¿A nombre de quién?' },
+      },
+    },
+    {
+      id: 'cl.developer_name',
+      section: 'identidad',
+      kind: 'choice',
+      title: 'El nombre que ven los usuarios debajo de la app',
+      why:
+        'Las tiendas muestran el nombre del desarrollador debajo del nombre de la app. Puede ' +
+        'ser tu marca y no tu nombre personal.',
+      simple: 'Es el nombre chiquito que aparece debajo de la app en la tienda.',
+      options: [
+        { value: 'marca', label: '«Comunidad Latina»', recommended: true },
+        { value: 'otro', label: 'Otro nombre' },
+      ],
+      followUp: { when: 'otro', kind: 'text', label: '¿Qué nombre?' },
+    },
+    {
+      id: 'cl.testers',
+      section: 'lanzamiento',
+      kind: 'emails',
+      min: 12,
+      suggested: 14,
+      title: 'Los 12 testers',
+      why:
+        'Google exige que la app pase por una prueba cerrada con 12 personas distintas durante ' +
+        '14 días seguidos antes de dejarnos publicarla. El reloj no arranca hasta tener las 12, ' +
+        'y si el grupo baja de 12 vuelve a cero.',
       simple:
-        'La plataforma tiene que vivir en cuentas tuyas y no en las nuestras. Son dos servicios ' +
-        'que se pagan por mes con tu tarjeta.',
+        'Antes de que cualquiera pueda bajar la app, Google pide que 12 personas la prueben ' +
+        'durante dos semanas seguidas. Nos pasás sus mails de Gmail y arrancamos ese conteo.',
+      body: 'Tienen que ser cuentas de **Gmail** reales, y cada persona va a instalar la app y usarla.',
+      hint:
+        'Cargá 14 o 15 en vez de 12: siempre hay alguien que se olvida de instalar. **Y si no ' +
+        'llegás a 12, decinos: nosotros ponemos los que falten.** Sirve gente de la comunidad, ' +
+        'familia o amigos — no hace falta que sean técnicos.',
+      placeholder: 'nombre@gmail.com',
+    },
+    {
+      id: 'cl.countries',
+      section: 'lanzamiento',
+      kind: 'choice',
+      title: '¿En qué países se publica?',
+      why:
+        'Las tiendas la ofrecen en todo el mundo por defecto, y eso no es gratis. Si queda ' +
+        'disponible en la Unión Europea, Apple exige declararte comerciante y publicar tu ' +
+        'teléfono, tu dirección y tu correo en la ficha, y la ley europea de datos pide un ' +
+        'representante con domicilio allá. Se puede ampliar más adelante sin rehacer nada.',
+      simple:
+        'Elegís en qué países se puede bajar la app. Si entra Europa, se suman trámites que ' +
+        'hoy no hacen falta.',
       options: [
         {
-          value: 'yo',
-          label: 'Abro las dos cuentas con mi tarjeta y los invito',
-          hint: 'Te pasamos el paso a paso. Son unos 15 minutos',
+          value: 'us',
+          label: 'Solo Estados Unidos',
+          hint: 'Sin trámites extra. Se amplía cuando quieras',
           recommended: true,
         },
-        { value: 'llamada', label: 'Prefiero hacerlo con ustedes en una llamada' },
-        {
-          value: 'ayuda',
-          label: 'No tengo una tarjeta que sirva, necesito ayuda',
-          hint: 'Lo vemos juntos — la tarjeta la seguís poniendo vos, nunca adelantamos nosotros',
-        },
+        { value: 'us_latam', label: 'Estados Unidos y algunos países de Latinoamérica' },
+        { value: 'global', label: 'Todo el mundo, Europa incluida', hint: 'Implica el trámite europeo antes de publicar' },
       ],
-    },
-    {
-      id: 'cl.legal_entity',
-      section: 'datos',
-      kind: 'fields',
-      title: '¿Quién es el responsable legal de la plataforma?',
-      why:
-        'La política de privacidad y los términos tienen que decir quién es el responsable de ' +
-        'los datos y dónde se lo puede encontrar. Hoy no nombran a nadie. Stripe, además, pide ' +
-        'exactamente estos mismos datos para abrir la cuenta de cobros.',
-      simple:
-        'Necesitamos saber a nombre de quién está la plataforma —una persona o una empresa— y ' +
-        'su dirección, para ponerlo en los papeles legales.',
-      fields: [
-        { key: 'name', label: 'Nombre o razón social', placeholder: 'Comunidad Latina LLC', required: true },
-        { key: 'address', label: 'Dirección postal', placeholder: 'Calle, ciudad, estado y código postal' },
-        { key: 'legal_email', label: 'Correo para avisos legales', placeholder: 'Puede ser el mismo de soporte' },
-      ],
-      note: 'La dirección queda pública. Si no querés mostrar la de tu casa, usá una postal comercial.',
     },
     {
       id: 'cl.support_email',
-      section: 'datos',
+      section: 'lanzamiento',
       kind: 'confirm',
       title: '¿Este es el correo de soporte?',
       body:
-        'Es el que aparece en el botón de ayuda de la app y en las páginas legales. Ahí van a ' +
-        'escribir los usuarios con problemas, así que tiene que leerlo alguien todos los días.',
+        'Las dos tiendas lo publican en la ficha, a la vista de cualquiera que instale la app. ' +
+        'Ahí van a escribir los usuarios con problemas, así que tiene que leerlo alguien.',
       simple:
         'Es el mail al que te va a escribir la gente cuando algo no le anda. Confirmás que es ' +
         'el correcto o nos pasás otro.',
@@ -725,131 +755,25 @@ const COMUNIDAD_LATINA = {
       correctionPlaceholder: '¿Qué correo usamos?',
     },
     {
-      id: 'cl.domain',
-      section: 'datos',
+      id: 'cl.in_app_payments',
+      section: 'lanzamiento',
       kind: 'choice',
-      title: '¿Quién maneja el dominio comunidadlatina.com?',
+      title: '¿Se puede pagar desde la app del celular?',
       why:
-        'Hoy los correos de la plataforma —la bienvenida, recuperar la contraseña— salen desde ' +
-        'un dominio nuestro, no del tuyo. Para que salgan de @comunidadlatina.com hay que sumarle ' +
-        'unos registros al dominio. Y algo más importante: si el dominio vence sin renovarse, se ' +
-        'cae todo. Tiene que estar a tu nombre y con renovación automática.',
+        'Las membresías y los impulsos se cobran con Stripe. Si ese pago se hace dentro de la ' +
+        'app de la tienda, Apple y Google pueden exigir que se cobre con su propio sistema, que ' +
+        'se queda con entre el 15 % y el 30 %. Si el pago se hace solo en la web, no aplica.',
       simple:
-        'Necesitamos tocar una configuración del dominio para que los mails lleguen con tu ' +
-        'nombre y no con el nuestro. Nos decís quién tiene la cuenta donde se compró.',
+        'Si la gente paga adentro de la app del celular, las tiendas se quedan con una parte. ' +
+        'Si paga en la página web, no.',
       options: [
         {
-          value: 'yo',
-          label: 'Lo manejo yo: pásenme los cambios y los cargo',
-          hint: 'Son tres o cuatro líneas para copiar y pegar',
+          value: 'web',
+          label: 'Que se pague solo desde la web',
+          hint: 'La app del celular muestra todo, pero no vende',
           recommended: true,
         },
-        { value: 'acceso', label: 'Les doy acceso a la cuenta donde lo compré' },
-        { value: 'otro', label: 'Lo compró otra persona' },
-      ],
-      followUp: { when: 'otro', kind: 'text', label: '¿Quién? Nombre y cómo contactarlo' },
-    },
-    {
-      id: 'cl.stripe',
-      section: 'servicios',
-      kind: 'choice',
-      title: 'La cuenta de Stripe para cobrar',
-      why:
-        'Las membresías, Impulsar y la verificación de identidad ya están construidas, pero hoy ' +
-        'corren con claves de prueba: no entra un dólar. Stripe exige que la cuenta la abra el ' +
-        'titular en persona, con los datos de la empresa, una cuenta bancaria de Estados Unidos ' +
-        'y un documento. No cobra un fijo por mes: se queda un porcentaje de cada cobro.',
-      simple:
-        'Stripe es el que cobra con tarjeta y te deposita la plata. Hoy la plataforma cobra de ' +
-        'mentira, para probar. Para cobrar de verdad, la cuenta la tenés que abrir vos.',
-      options: [
-        { value: 'abro', label: 'La abro yo y los invito como desarrolladores', recommended: true },
-        { value: 'tengo', label: 'Ya tengo una cuenta de Stripe que quiero usar' },
-        { value: 'despues', label: 'Abrimos sin cobrar y la sumo después' },
-      ],
-      followUp: { when: 'tengo', kind: 'email', label: 'El correo de esa cuenta' },
-    },
-    {
-      id: 'cl.creator_money',
-      section: 'servicios',
-      kind: 'choice',
-      title: 'El marketplace de creadores, ¿mueve plata real desde el día uno?',
-      why:
-        'Hoy funciona de punta a punta en modo demostración: el contrato pasa por todos sus ' +
-        'pasos, pero no se mueve dinero. Para que el creador cobre de verdad, Stripe tiene que ' +
-        'aprobar a la plataforma como intermediaria de pagos, y cada creador tiene que verificar ' +
-        'su identidad y su cuenta bancaria. Es la parte con más responsabilidad: impuestos, ' +
-        'reclamos y devoluciones pasan por vos.',
-      simple:
-        'Decidís si los creadores cobran de verdad desde el lanzamiento o si esa parte arranca ' +
-        'más adelante, cuando la comunidad ya esté andando.',
-      options: [
-        {
-          value: 'despues',
-          label: 'No: primero la comunidad, la plata en una segunda etapa',
-          hint: 'Se abre antes y con menos riesgo. Se activa sin rehacer nada',
-          recommended: true,
-        },
-        {
-          value: 'ya',
-          label: 'Sí, desde el primer día',
-          hint: 'Suma la aprobación de Stripe antes de abrir, que tarda',
-        },
-      ],
-    },
-    {
-      id: 'cl.phone_signup',
-      section: 'servicios',
-      kind: 'choice',
-      title: '¿El registro pide el teléfono obligatorio?',
-      why:
-        'Está en el contrato y nuestra parte está lista: el código por mensaje, el vencimiento, ' +
-        'una cuenta por teléfono. Falta el proveedor de mensajes de texto (Twilio), que cobra cada ' +
-        'envío y, en Estados Unidos, exige registrar la marca ante las compañías de teléfono antes ' +
-        'de mandar el primero: lleva días o semanas. Y el teléfono es un dato sensible más para ' +
-        'guardar, en una comunidad que cuida mucho su exposición.',
-      simple:
-        'Elegís si para registrarse alcanza con el mail o si también hay que validar el ' +
-        'celular con un código. Lo segundo tiene un costo por mensaje y un trámite previo.',
-      options: [
-        {
-          value: 'no',
-          label: 'Arrancar solo con correo',
-          hint: 'El teléfono se suma después sin rehacer nada',
-          recommended: true,
-        },
-        {
-          value: 'si',
-          label: 'Teléfono obligatorio desde el primer día',
-          hint: 'Abrís la cuenta de Twilio a tu nombre y hacemos el registro juntos',
-        },
-      ],
-    },
-    {
-      id: 'cl.services',
-      section: 'servicios',
-      kind: 'choice',
-      title: 'Los servicios de moderación, video y alertas',
-      body:
-        '**OpenAI** revisa los textos antes de publicarlos. **Google Vision** revisa las fotos: ' +
-        'sin él, cada foto espera a que la apruebe una persona. **Anthropic** responde en el ' +
-        'Asistente Comunitario. **Mux** procesa los videos largos. **Sentry** nos avisa cuando ' +
-        'algo falla.',
-      why:
-        'Hoy varios están apagados o con claves de prueba, y la app lo disimula bien —pero ' +
-        'funciona a medias. Cada uno pide una tarjeta, así que van a tu nombre. Todos cobran ' +
-        'por uso: al arrancar, la mayoría son unos pocos dólares por mes.',
-      simple:
-        'Son cinco servicios chicos que hacen funcionar partes de la app: revisar lo que se ' +
-        'publica, los videos y los avisos de errores. Hay que abrirlos a tu nombre.',
-      options: [
-        {
-          value: 'llamada',
-          label: 'Los abrimos juntos en una llamada',
-          hint: 'Media hora: vos ponés la tarjeta, nosotros la configuración',
-          recommended: true,
-        },
-        { value: 'yo', label: 'Los abro yo, pásenme el paso a paso' },
+        { value: 'app', label: 'Que también se pueda pagar desde la app', hint: 'Suma la comisión de cada tienda' },
       ],
     },
     {
@@ -858,51 +782,84 @@ const COMUNIDAD_LATINA = {
       kind: 'emails',
       min: 1,
       suggested: 2,
-      title: '¿Quiénes moderan el contenido?',
+      title: '¿Quiénes responden los reportes?',
       why:
-        'Las fotos de los avisos, los reportes de usuarios y los registros de voluntarios los ' +
-        'revisa una persona, desde el panel de moderación. Necesitamos los correos de quienes lo ' +
-        'van a usar para darles el permiso.',
+        'Apple exige que una app donde la gente publica y se escribe tenga a alguien que ' +
+        'atienda los reportes de contenido ofensivo, y que actúe rápido. Necesitamos los ' +
+        'correos de quienes van a usar el panel de moderación para darles el permiso.',
       simple:
-        'Alguien tiene que revisar lo que la gente publica y denuncia. Nos pasás los mails de ' +
-        'quienes se van a encargar de eso.',
+        'Alguien tiene que revisar lo que la gente denuncia dentro de la app. Nos pasás los ' +
+        'mails de quienes se van a encargar.',
       hint:
         'Puede ser solo vos al principio. Con dos personas, nada espera un fin de semana entero. ' +
         'Cada una tiene que crearse antes su cuenta en la app con ese mismo correo.',
       placeholder: 'nombre@correo.com',
     },
     {
-      id: 'cl.demo_data',
-      section: 'lanzamiento',
+      id: 'cl.apple_device',
+      section: 'apple',
       kind: 'choice',
-      title: '¿Qué hacemos con los datos de prueba?',
+      title: '¿Tenés a mano un iPhone o un iPad?',
       why:
-        'Hoy hay cuentas y avisos de ejemplo —María, Carlos, departamentos en Queens— que ' +
-        'armamos para las demos. En una plataforma que promete avisos contrastados, que alguien ' +
-        'quiera alquilar un departamento inventado es justo lo que no puede pasar.',
+        'Apple verifica la identidad del titular desde su app Apple Developer, que solo existe ' +
+        'en iPhone y iPad: se escanea un documento y listo. Lo tiene que hacer el titular en ' +
+        'persona.',
       simple:
-        'Hay contenido inventado que usamos para mostrarte la app. Decidís si lo borramos antes ' +
-        'de abrir o si dejamos algo de muestra.',
+        'Apple pide verificar quién sos escaneando tu documento desde un iPhone o iPad. Sin uno ' +
+        'de esos aparatos a mano, ese paso no se puede hacer.',
+      body:
+        'También hace falta que el Apple ID tenga activada la verificación en dos pasos. Sin eso, ' +
+        'Apple no deja ni empezar.',
       options: [
-        { value: 'borrar', label: 'Borrar todo lo de prueba antes de abrir', recommended: true },
+        { value: 'si', label: 'Sí, tengo uno', recommended: true },
         {
-          value: 'dejar',
-          label: 'Dejar algo de ejemplo para que no se vea vacía',
-          hint: 'Lo marcamos bien visible como ejemplo, y nunca en vivienda',
+          value: 'prestado',
+          label: 'No, pero consigo uno prestado',
+          hint: 'Alcanza con cinco minutos: la verificación queda en tu cuenta, no en el teléfono',
+        },
+        { value: 'no', label: 'No consigo ninguno', hint: 'Decinos y lo encaramos por la web, que es más lento pero sale' },
+      ],
+    },
+    {
+      id: 'cl.apple_fee',
+      section: 'apple',
+      kind: 'choice',
+      title: 'Los US$99 por año de Apple',
+      why:
+        'Es una suscripción anual, no un pago único: el día que se deja de pagar, la app ' +
+        'desaparece de la App Store. Google son US$25 una sola vez. Preferimos que lo sepas ' +
+        'ahora y no cuando llegue la primera renovación.',
+      simple:
+        'A diferencia de Google, que cobra una sola vez, Apple cobra todos los años. Si algún ' +
+        'año no se paga, la app se cae de la tienda.',
+      options: [
+        {
+          value: 'cliente',
+          label: 'Lo pago yo con mi tarjeta',
+          hint: 'La cuenta queda tuya desde el día uno',
+          recommended: true,
+        },
+        {
+          value: 'ayuda',
+          label: 'No tengo una tarjeta que sirva, necesito ayuda',
+          hint: 'Lo vemos juntos — la carga la seguís poniendo vos, nunca la adelantamos nosotros',
         },
       ],
     },
     {
-      id: 'cl.launch_date',
-      section: 'lanzamiento',
-      kind: 'text',
-      title: '¿Tenés una fecha de lanzamiento en mente?',
+      id: 'cl.apple_invite',
+      section: 'apple',
+      kind: 'action',
+      title: 'Cuando Apple te apruebe, sumanos como administradores',
       why:
-        'Varias cosas de esta lista tardan días o semanas y no dependen de nosotros: la ' +
-        'aprobación de Stripe, el registro de los mensajes de texto, la mudanza de las cuentas. ' +
-        'Con la fecha ordenamos qué arranca primero.',
-      simple: 'Nos decís para cuándo querés abrir, así organizamos los trámites que tardan.',
-      placeholder: 'Por ejemplo: primera semana de noviembre',
+        'En App Store Connect, entrá a **Usuarios y acceso** e invitá nuestro correo con el rol ' +
+        '**Admin**. Sin ese rol no podemos firmar ni subir la app. La cuenta sigue siendo tuya: ' +
+        'los acuerdos con Apple los aceptás solo vos.',
+      simple:
+        'Cuando Apple te habilite la cuenta, nos das acceso desde su página para que podamos ' +
+        'subir la app por vos.',
+      hint: 'Te pasamos el correo a invitar y una captura de dónde está cada botón.',
+      doneLabel: 'Ya los invité',
     },
   ],
 }
