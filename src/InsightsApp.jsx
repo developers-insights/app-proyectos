@@ -42,7 +42,7 @@ import { buildContextMarkdown } from './lib/contextExport.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
 import MvpsView, { ProjectMvpModal, projectMvps } from './mvps/MvpsView.jsx'
-import { normalizeMvp, mvpDemoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
+import { normalizeMvp, mvpDemoUrl, mvpRepoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
 
 /* ============================================================================
    0 · SUPABASE (cloud persistence + auth) — optional, enabled via env vars
@@ -923,6 +923,9 @@ const isFounder = (u) => !!u && (FOUNDER_IDS.includes(u.id) || FOUNDER_EMAILS.in
 const APPROVER_IDS = ['u7']
 const APPROVER_EMAILS = ['nachocachaza@insightsapps.tech']
 const canApproveUsers = (u) => isFounder(u) || (!!u && (APPROVER_IDS.includes(u.id) || APPROVER_EMAILS.includes(String(u.email || '').toLowerCase())))
+/* Solo esconde el botón: quién puede resetear lo decide RESETTER_EMAILS de la Edge Function reset-password. */
+const RESETTER_EXTRA_EMAILS = ['manuelnavarro@insightsapps.tech']
+const canResetPasswords = (u) => canApproveUsers(u) || (!!u && RESETTER_EXTRA_EMAILS.includes(String(u.email || '').toLowerCase()))
 function seedTeam() {
   return [
     { id: 'u1', name: 'Federico Garbarino', email: SEED_EMAILS.u1, color: '#F97316', initials: 'FG', role: SEED_ROLES.u1 },
@@ -6358,7 +6361,7 @@ function ProjectDetail({ projectId, onBack }) {
               { Ico: I2.rocket, label: 'Producción', url: project.productionUrl, onEmpty: () => setEditOpen(true) },
               { Ico: I2.folder, label: 'Drive', url: project.driveUrl, onEmpty: () => setDriveOpen(true) },
               { Ico: I2.spark, label: 'Demo de ventas', url: mvpDemoUrl(linkedMvp), onEmpty: () => setMvpOpen(true) },
-              { Ico: I2.github, label: 'Repo de la demo', url: linkedMvp?.repoUrl || '', onEmpty: () => setMvpOpen(true) },
+              { Ico: I2.github, label: 'Repo de la demo', url: mvpRepoUrl(linkedMvp), onEmpty: () => setMvpOpen(true) },
               { Ico: I2.calendar, label: 'Plan público', url: planUrl, onEmpty: () => setPlanOpen(true) },
               { Ico: I2.gantt, label: 'Progreso', url: planDashUrl, onEmpty: () => setPlanOpen(true) },
             ]} />
@@ -7513,31 +7516,29 @@ const RESET_ERRORS = {
   no_account: 'Esta persona todavía no tiene cuenta para entrar. Quitala y volvé a agregarla con su email para mandarle el acceso.',
   forbidden: 'No tenés permiso para generar contraseñas.',
   forbidden_founder: 'La contraseña de un fundador solo la puede regenerar otro fundador.',
+  email_failed: 'No pudimos mandar el mail, así que su contraseña sigue siendo la de antes. Probá de nuevo en un rato.',
   self: 'Para cambiar tu propia contraseña andá a Mi perfil → Cambiar contraseña.',
 }
 
 function ResetPasswordButton({ user }) {
-  const { myId } = useApp()
+  const { data, myId } = useApp()
   const [open, setOpen] = useState(false)
   const [state, setState] = useState({ step: 'confirm' })
-  const [copied, setCopied] = useState(false)
   const email = String(user.email || '').trim().toLowerCase()
-  if (!cloudEnabled || !email || user.id === myId) return null
-  const first = String(user.name || '').split(/\s+/)[0] || 'Hola'
-  const shareText = (pw) => `${first}, te generé una contraseña nueva para el portal de proyectos:\n\nUsuario: ${email}\nContraseña: ${pw}\n\nEntrá en https://proyectos.insightsapps.tech y te va a pedir que elijas la tuya.`
-  const openModal = () => { setState({ step: 'confirm' }); setCopied(false); setOpen(true) }
+  const me = (data.team || []).find((u) => u.id === myId)
+  if (!cloudEnabled || !email || user.id === myId || !canResetPasswords(me)) return null
+  const openModal = () => { setState({ step: 'confirm' }); setOpen(true) }
   const generate = async () => {
     setState({ step: 'busy' })
     try {
       const { data: res, error } = await supabase.functions.invoke('reset-password', { body: { email } })
       if (error) throw error
-      if (res?.ok) setState({ step: 'done', password: res.password, emailed: res.emailed })
+      if (res?.ok) setState({ step: 'done' })
       else setState({ step: 'error', text: RESET_ERRORS[res?.error] || `No se pudo generar (${res?.error || 'error'}).` })
     } catch (e) {
       setState({ step: 'error', text: `No se pudo generar (${String(e.message || e)}).` })
     }
   }
-  const copy = async (text) => { try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch (e) { /* ignore */ } }
   return (
     <>
       <button className="btn btn-sm btn-ghost" onClick={openModal} title="Generar contraseña nueva" aria-label={`Generar contraseña nueva para ${user.name || email}`} style={{ padding: 6, color: 'var(--text-faint)' }}><I2.key width={14} height={14} /></button>
@@ -7545,27 +7546,19 @@ function ResetPasswordButton({ user }) {
         {state.step === 'confirm' || state.step === 'busy' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.55 }}>
-              Le generamos una contraseña temporal y se la mandamos por mail. También te la mostramos acá para que se la pases por WhatsApp. Su contraseña actual deja de funcionar, y al entrar va a tener que elegir una propia.
+              Le mandamos una contraseña temporal a {email}. Su contraseña actual deja de funcionar, y al entrar va a tener que elegir una propia.
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn" onClick={() => setOpen(false)} disabled={state.step === 'busy'}>Cancelar</button>
-              <button className="btn btn-accent" onClick={generate} disabled={state.step === 'busy'}><I2.key width={14} height={14} /> {state.step === 'busy' ? 'Generando…' : 'Generar contraseña'}</button>
+              <button className="btn btn-accent" onClick={generate} disabled={state.step === 'busy'}><I2.key width={14} height={14} /> {state.step === 'busy' ? 'Mandando…' : 'Mandar contraseña nueva'}</button>
             </div>
           </div>
         ) : state.step === 'done' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
-              <div className="label" style={{ marginBottom: 6 }}>Contraseña temporal</div>
-              <div className="mono" style={{ fontSize: 22, fontWeight: 700, letterSpacing: '.06em', userSelect: 'all' }}>{state.password}</div>
+            <div style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.55 }}>
+              Listo. Le mandamos un mail a <span className="mono" style={{ color: 'var(--text)' }}>{email}</span> con su contraseña temporal. Si no lo ve, que revise spam.
             </div>
-            <div style={{ fontSize: 12.5, color: state.emailed ? 'var(--green)' : 'var(--yellow)' }}>
-              {state.emailed ? `También se la mandamos por mail a ${email}.` : 'No pudimos mandarle el mail: pasásela vos.'}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn" onClick={() => copy(state.password)} style={{ flex: 1, justifyContent: 'center' }}><I2.copy width={14} height={14} /> Copiar contraseña</button>
-              <button className="btn btn-accent" onClick={() => copy(shareText(state.password))} style={{ flex: 1, justifyContent: 'center' }}><I2.whatsapp width={14} height={14} /> Copiar mensaje</button>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-faint)', minHeight: 16 }}>{copied ? 'Copiado.' : 'El mensaje incluye usuario, contraseña y link, listo para pegar.'}</div>
+            <button className="btn btn-accent" onClick={() => setOpen(false)} style={{ alignSelf: 'flex-end' }}>Entendido</button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

@@ -12,12 +12,11 @@ const json = (body: unknown) =>
 const APP_URL = 'https://proyectos.insightsapps.tech'
 const FROM = 'insights. <accesos@speedfunnels.app>'
 
-// La contraseña nueva vuelve a quien la generó, así que resetear a un fundador es tomar su
-// cuenta: solo otro fundador puede. Tiene que coincidir con isFounder() de src/InsightsApp.jsx.
-const FOUNDER_IDS = ['u1', 'u5']
+// Quién puede resetear sale del email verificado del JWT, nunca de team_members: la RLS
+// de esa tabla deja que cualquier autenticado edite cualquier fila (id, email, access).
+// Tiene que coincidir con FOUNDER_EMAILS/APPROVER_EMAILS/canResetPasswords de src/InsightsApp.jsx.
 const FOUNDER_EMAILS = ['federicog@insightsapps.tech', 'juanp@insightsapps.tech']
-const isFounder = (m: Record<string, unknown> | undefined, email: string) =>
-  !!m && (FOUNDER_IDS.includes(String(m.id)) || FOUNDER_EMAILS.includes(email))
+const RESETTER_EMAILS = [...FOUNDER_EMAILS, 'nachocachaza@insightsapps.tech', 'manuelnavarro@insightsapps.tech']
 
 const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
 const LOWER = 'abcdefghijkmnpqrstuvwxyz'
@@ -76,33 +75,26 @@ Deno.serve(async (req) => {
     const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
     const { data: caller } = await admin.auth.getUser(token)
     const callerEmail = String(caller?.user?.email || '').toLowerCase()
-    if (!callerEmail) return json({ error: 'unauthorized' })
-    const { data: rows, error: tErr } = await admin.from('team_members').select('data').is('deleted_at', null)
-    if (tErr) return json({ error: tErr.message })
-    const members = (rows || []).map((r) => r.data || {})
-    const resetter = members.find((m) => String(m.email || '').toLowerCase() === callerEmail)
-    if (!resetter || resetter.status === 'pending' || resetter.access === 'project' || resetter.access === 'collab') return json({ error: 'forbidden' })
+    if (!callerEmail || !caller?.user?.email_confirmed_at) return json({ error: 'unauthorized' })
+    if (!RESETTER_EMAILS.includes(callerEmail)) return json({ error: 'forbidden' })
 
     const b = await req.json().catch(() => ({}))
     const email = String(b.email || '').trim().toLowerCase()
     if (!email) return json({ error: 'Falta el email.' })
     if (email === callerEmail) return json({ error: 'self' })
-
-    const member = members.find((m) => String(m.email || '').toLowerCase() === email)
-    if (isFounder(member, email) && !isFounder(resetter, callerEmail)) return json({ error: 'forbidden_founder' })
+    if (FOUNDER_EMAILS.includes(email) && !FOUNDER_EMAILS.includes(callerEmail)) return json({ error: 'forbidden_founder' })
 
     const target = await findUserByEmail(admin, email)
     if (!target) return json({ error: 'no_account' })
 
-    const password = tempPassword()
-    const { error: uErr } = await admin.auth.admin.updateUserById(target.id, {
-      password,
-      user_metadata: { ...(target.user_metadata || {}), must_change_password: true },
-    })
-    if (uErr) return json({ error: uErr.message })
-
+    const { data: rows } = await admin.from('team_members').select('data').is('deleted_at', null)
+    const member = (rows || []).map((r) => r.data || {}).find((m) => String(m.email || '').toLowerCase() === email)
     const name = String(member?.name || target.user_metadata?.name || '').trim()
     const first = name.split(/\s+/)[0] || email.split('@')[0]
+    const password = tempPassword()
+
+    // La contraseña solo viaja al mail del dueño de la cuenta. Primero el mail: si Resend
+    // falla, la cuenta queda como estaba en vez de con una contraseña que nadie conoce.
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${Deno.env.get('RESEND_API_KEY')}`, 'content-type': 'application/json' },
@@ -115,8 +107,15 @@ Deno.serve(async (req) => {
         text: `Hola ${first}, te generamos una contraseña temporal para el portal de proyectos de insights.\n\nUsuario: ${email}\nContraseña temporal: ${password}\n\nEntrá en ${APP_URL}. Apenas entres te vamos a pedir que elijas tu propia contraseña.`,
       }),
     })
-    // La contraseña ya cambió: se devuelve igual para que quien la generó se la pase por otro canal.
-    return json({ ok: true, password, emailed: r.ok })
+    if (!r.ok) return json({ error: 'email_failed' })
+
+    const { error: uErr } = await admin.auth.admin.updateUserById(target.id, {
+      password,
+      user_metadata: { ...(target.user_metadata || {}), must_change_password: true },
+    })
+    if (uErr) return json({ error: uErr.message })
+
+    return json({ ok: true })
   } catch (e) {
     return json({ error: (e as Error).message })
   }

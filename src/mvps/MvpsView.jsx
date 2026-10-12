@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useApp, Modal, Field, stagger, rise } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
-import { mvpDemoUrl, isNewMvp, suggestProjectsForMvp, suggestMvpsForProject } from '../lib/mvps.js'
+import { mvpDemoUrl, mvpRepoUrl, safeUrl, isNewMvp, suggestProjectsForMvp, suggestMvpsForProject } from '../lib/mvps.js'
 
 const MVP_CSS = `
 .mv-list{display:flex;flex-direction:column;gap:8px}
@@ -130,16 +130,23 @@ function LinkProjectModal({ mvp, onClose, onPick }) {
 function EditMvpModal({ mvp, onClose, onSave }) {
   const [demo, setDemo] = useState(mvp.demoUrlManual || '')
   const [notes, setNotes] = useState(mvp.notes || '')
+  const [bad, setBad] = useState(false)
+  const save = () => {
+    const d = demo.trim()
+    if (d && !safeUrl(d)) { setBad(true); return }
+    onSave({ demoUrlManual: d ? safeUrl(d) : '', notes: notes.trim() })
+  }
   return (
     <Modal open onClose={onClose} title="Editar MVP" sub={mvp.fullName} width={480}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Field label={mvp.demoUrl ? `Link de la demo (detectado: ${mvp.demoUrl})` : 'Link de la demo'}>
-          <input className="input mono" value={demo} onChange={(e) => setDemo(e.target.value)} placeholder={mvp.demoUrl || 'https://…'} style={{ fontSize: 13 }} />
+          <input className="input mono" value={demo} onChange={(e) => { setDemo(e.target.value); setBad(false) }} placeholder={mvp.demoUrl || 'https://…'} style={{ fontSize: 13 }} />
+          {bad && <div style={{ fontSize: 12.5, color: 'var(--red)', marginTop: 6 }}>Pegá el link completo, empezando con https://</div>}
         </Field>
         <Field label="Notas"><textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Para quién es, quién la armó, qué falta…" style={{ resize: 'none' }} /></Field>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-accent" onClick={() => onSave({ demoUrlManual: demo.trim(), notes: notes.trim() })}><I2.check width={15} height={15} /> Guardar</button>
+          <button className="btn btn-accent" onClick={save}><I2.check width={15} height={15} /> Guardar</button>
         </div>
       </div>
     </Modal>
@@ -160,7 +167,7 @@ function MvpRow({ m, project, onOpenProject, onLink, onUnlink, onEdit, onStatus 
         </div>
         {(m.description || m.notes) && <div className="mv-ds">{m.notes || m.description}</div>}
         <div className="mv-mt">
-          <a href={m.repoUrl} target="_blank" rel="noreferrer" title="Abrir el repo en GitHub"><I2.github width={12} height={12} />{m.fullName}</a>
+          <a href={mvpRepoUrl(m) || undefined} target="_blank" rel="noreferrer" title="Abrir el repo en GitHub"><I2.github width={12} height={12} />{m.fullName}</a>
           <span>creado {ago(m.repoCreatedAt)}</span>
         </div>
       </div>
@@ -347,7 +354,7 @@ export function ProjectMvpModal({ open, project, onClose }) {
                   <button className="pj-ib" onClick={() => actions.unlink(m)} title="Desvincular" aria-label="Desvincular"><I2.x width={14} height={14} /></button>
                 </div>
                 <div className="mv-mt" style={{ marginTop: 8 }}>
-                  <a href={m.repoUrl} target="_blank" rel="noreferrer"><I2.github width={12} height={12} />{m.fullName}</a>
+                  <a href={mvpRepoUrl(m) || undefined} target="_blank" rel="noreferrer"><I2.github width={12} height={12} />{m.fullName}</a>
                   {demo ? <a href={demo} target="_blank" rel="noreferrer"><I2.ext width={12} height={12} />{demo.replace(/^https?:\/\//, '')}</a> : <span>sin link de demo</span>}
                 </div>
               </div>
