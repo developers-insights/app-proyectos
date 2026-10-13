@@ -21,7 +21,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { I2 } from './ui/icons2.jsx'
-import { intakeFor, isAnswered, intakeProgress, pendingUrgent } from './lib/intake.js'
+import { intakeFor, isAnswered, intakeProgress, pendingUrgent, visibleQuestions } from './lib/intake.js'
 
 /* ── utilidades de presentación ─────────────────────────────────────────── */
 
@@ -89,7 +89,16 @@ export default function ClientIntake({ supabase, shareId, password, projectName 
     let alive = true
     if (!intake || !supabase) { setAnswers({}); return }
     call({ action: 'get' })
-      .then((d) => { if (alive) setAnswers((d && d.answers) || {}) })
+      .then((d) => {
+        if (!alive) return
+        const a = (d && d.answers) || {}
+        setAnswers(a)
+        // El link abre directo en la primera pregunta sin contestar (pedido de
+        // Manuel, 2026-10-13): la tarjeta con «Empezar» queda solo para volver.
+        const qs = visibleQuestions(intake, a)
+        const i = qs.findIndex((x) => !isAnswered(a[x.id]))
+        if (i !== -1) { setIdx(i); setOpen(true) }
+      })
       .catch(() => { if (alive) setAnswers({}) })
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,7 +111,7 @@ export default function ClientIntake({ supabase, shareId, password, projectName 
 
   if (!intake || answers === null) return null
 
-  const questions = intake.questions
+  const questions = visibleQuestions(intake, answers)
   const progress = intakeProgress(intake, answers)
   const urgent = pendingUrgent(intake, answers)
   const q = questions[Math.min(idx, questions.length - 1)]

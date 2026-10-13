@@ -26,6 +26,9 @@
  * escondemos: verlo es parte de la respuesta, porque le avisa que tiene que
  * mover a alguien más y eso tarda.
  *
+ * `hideIf: { id, value }` — la pregunta desaparece (del flujo y del total) cuando
+ * otra ya se contestó con ese valor. Ej.: con cuenta de empresa no hay testers.
+ *
  * `simple` — una o dos frases que explican la pregunta sin ningún término
  * técnico, como se lo diría un amigo. Va colapsado detrás de un desplegable
  * ("¿No entendés del todo?") porque el cliente que ya entendió el `why` no
@@ -640,53 +643,45 @@ const COMUNIDAD_LATINA = {
   ],
   questions: [
     {
-      id: 'cl.play_account',
-      section: 'identidad',
-      kind: 'choice',
-      title: '¿Ya tenés la cuenta de Google Play Console?',
-      why:
-        'Es la cuenta desde la que se publica la app en Android. Google exige que la abra el ' +
-        'titular en persona, con su documento: nosotros no la podemos abrir por vos. Cuesta ' +
-        'US$25 una sola vez. Una vez abierta, nos sumás como administradores y del resto nos ' +
-        'encargamos nosotros.',
-      simple:
-        'Para que la app esté en la tienda de Android hace falta una cuenta de Google a tu ' +
-        'nombre. Se paga una sola vez y después nos das acceso.',
-      options: [
-        { value: 'abro', label: 'Todavía no, la abro yo', hint: 'Te pasamos el paso a paso', recommended: true },
-        { value: 'tengo', label: 'Sí, ya la tengo' },
-      ],
-      followUp: { when: 'tengo', kind: 'email', label: 'El correo de esa cuenta' },
-      note: 'Si no tenés un celular Android para la verificación, avisanos: lo resolvemos nosotros.',
-    },
-    {
       id: 'cl.holder',
       section: 'identidad',
       kind: 'choice',
-      title: '¿A nombre de quién van las cuentas de las tiendas?',
+      title: '¿Las cuentas de las tiendas van a tu nombre o al de una empresa?',
       why:
-        'Quien figure como titular es quien firma con Google y con Apple, y quien aparece ' +
-        'como responsable en las fichas de la app. Las dos cuentas van a nombre de la misma ' +
-        'persona.',
-      simple: 'Decidís a nombre de quién quedan las cuentas de Google y de Apple.',
+        'Quien figure como titular es quien firma con Google y con Apple, y quien aparece como ' +
+        'responsable en las fichas de la app. A tu nombre es lo más rápido: la verificación sale ' +
+        'en uno o dos días. A nombre de una empresa, Google y Apple piden un número D-U-N-S ' +
+        '(gratis, se tramita online) y suma una o dos semanas, pero Google no exige la prueba ' +
+        'con 12 testers.',
+      simple:
+        'Decidís si las cuentas de Google y de Apple quedan a tu nombre o al de tu empresa. ' +
+        'Con empresa tarda un poco más, pero te ahorrás conseguir 12 personas que prueben la app.',
       options: [
-        { value: 'persona', label: 'A mi nombre personal' },
-        { value: 'otro', label: 'A otro nombre' },
+        { value: 'persona', label: 'A mi nombre personal', hint: 'Lo más rápido. Pide 12 testers en Google' },
+        {
+          value: 'empresa',
+          label: 'A nombre de una empresa',
+          hint: 'Necesita estar registrada y un número D-U-N-S. Sin testers',
+        },
       ],
       followUp: {
-        persona: { label: 'Tu nombre completo, tal cual querés que figure' },
-        otro: { label: '¿A nombre de quién?' },
+        persona: { label: 'Tu nombre completo, tal cual figura en tu documento' },
+        empresa: { label: 'El nombre legal de la empresa, tal cual está registrada' },
       },
     },
     {
       id: 'cl.developer_name',
       section: 'identidad',
       kind: 'choice',
-      title: 'El nombre que ven los usuarios debajo de la app',
+      title: 'El nombre que aparece debajo de la app',
       why:
-        'Las tiendas muestran el nombre del desarrollador debajo del nombre de la app. Puede ' +
-        'ser tu marca y no tu nombre personal.',
-      simple: 'Es el nombre chiquito que aparece debajo de la app en la tienda.',
+        'En la tienda, debajo del nombre de la app, figura quién la publica. En Google se elige: ' +
+        'puede ser cualquier nombre, mientras no sea una marca ajena. En Apple no se elige: ' +
+        'aparece el nombre del titular de la cuenta —el tuyo si es personal, el de la empresa ' +
+        'si es de empresa.',
+      simple:
+        'Es el nombre chiquito que se ve debajo de la app en la tienda, como el «Meta» debajo ' +
+        'de Instagram. En Google lo elegís vos; en Apple sale solo del titular.',
       options: [
         { value: 'marca', label: '«Comunidad Latina»', recommended: true },
         { value: 'otro', label: 'Otro nombre' },
@@ -697,6 +692,7 @@ const COMUNIDAD_LATINA = {
       id: 'cl.testers',
       section: 'lanzamiento',
       kind: 'emails',
+      hideIf: { id: 'cl.holder', value: 'empresa' },
       min: 12,
       suggested: 14,
       title: 'Los 12 testers',
@@ -758,22 +754,29 @@ const COMUNIDAD_LATINA = {
       id: 'cl.in_app_payments',
       section: 'lanzamiento',
       kind: 'choice',
-      title: '¿Se puede pagar desde la app del celular?',
+      title: '¿Cómo se paga desde la app del celular?',
       why:
-        'Las membresías y los impulsos se cobran con Stripe. Si ese pago se hace dentro de la ' +
-        'app de la tienda, Apple y Google pueden exigir que se cobre con su propio sistema, que ' +
-        'se queda con entre el 15 % y el 30 %. Si el pago se hace solo en la web, no aplica.',
+        'Las membresías y los impulsos se cobran con Stripe. Si el pago se hace con el sistema ' +
+        'de Apple o de Google, cada tienda se queda con entre el 15 % y el 30 %. En Estados ' +
+        'Unidos, desde 2025 la app puede tener un botón que abre la página web para pagar ahí: ' +
+        'es lo que hacen Spotify o Kindle. Por esos pagos hoy Apple no cobra y Google cobra ' +
+        'menos, aunque las reglas siguen en juicio y pueden cambiar.',
       simple:
-        'Si la gente paga adentro de la app del celular, las tiendas se quedan con una parte. ' +
-        'Si paga en la página web, no.',
+        'Si la gente paga con el sistema de la tienda, Apple o Google se quedan con una parte. ' +
+        'Con un botón que lleva a pagar en la web, la parte es mucho menor o ninguna.',
       options: [
         {
-          value: 'web',
-          label: 'Que se pague solo desde la web',
-          hint: 'La app del celular muestra todo, pero no vende',
+          value: 'boton_web',
+          label: 'Un botón en la app que lleva a pagar en la web',
+          hint: 'Un toque más para el usuario y casi sin comisión. Solo en Estados Unidos',
           recommended: true,
         },
-        { value: 'app', label: 'Que también se pueda pagar desde la app', hint: 'Suma la comisión de cada tienda' },
+        {
+          value: 'tienda',
+          label: 'Con el sistema de pago de Apple y Google',
+          hint: 'Lo más cómodo para el usuario, pero cada tienda se queda con hasta el 30 %',
+        },
+        { value: 'web', label: 'Que la app no venda nada: se paga solo entrando a la web' },
       ],
     },
     {
@@ -891,15 +894,24 @@ export function isAnswered(value) {
  * Progreso del cuestionario. Las preguntas del abogado cuentan igual: esconderlas
  * del total daría un 100% que miente sobre lo que falta para publicar.
  */
+export function visibleQuestions(intake, answers) {
+  return ((intake && intake.questions) || []).filter((q) => {
+    const h = q.hideIf
+    if (!h) return true
+    const v = answers && answers[h.id]
+    return !(v && v.value === h.value)
+  })
+}
+
 export function intakeProgress(intake, answers) {
-  const qs = (intake && intake.questions) || []
+  const qs = visibleQuestions(intake, answers)
   const done = qs.filter((q) => isAnswered(answers && answers[q.id])).length
   return { done, total: qs.length, pct: qs.length ? Math.round((done / qs.length) * 100) : 0 }
 }
 
 /** Lo urgente que todavía no está hecho. Es lo que abre la vista. */
 export function pendingUrgent(intake, answers) {
-  return ((intake && intake.questions) || []).filter(
+  return visibleQuestions(intake, answers).filter(
     (q) => q.urgent && !isAnswered(answers && answers[q.id]),
   )
 }
