@@ -19,7 +19,7 @@ import { createClient } from '@supabase/supabase-js'
 import OnboardingLanding from './Onboarding'
 import OnboardingV2 from './OnboardingV2'
 import ClientIntake from './ClientIntake.jsx'
-import { intakeFor, isAnswered, intakeProgress } from './lib/intake.js'
+import { intakeFor, isAnswered, intakeProgress, visibleQuestions } from './lib/intake.js'
 import { uid, AppCtx, useApp, Modal, Field, stagger, rise } from './ui.jsx'
 import { I2 } from './ui/icons2.jsx'
 import {
@@ -5355,7 +5355,7 @@ function IntakeAnswersModal({ open, onClose, project }) {
       {!answers && !err && <div style={{ fontSize: 13, color: 'var(--text-dim)' }}>Leyendo…</div>}
       {answers && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {intake.questions.map((q) => {
+          {visibleQuestions(intake, answers).map((q) => {
             const txt = show(q, answers[q.id])
             return (
               <div key={q.id} style={{ padding: '11px 0', borderBottom: '1px solid var(--border)' }}>
