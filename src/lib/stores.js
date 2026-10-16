@@ -33,9 +33,13 @@ export const storesFilterLabel = (key, short = false) => {
 export const storeLabel = (key) => (STORE_LIST.find((s) => s.key === key) || { label: key }).label
 
 const validIso = (v) => typeof v === 'string' && v !== '' && !Number.isNaN(new Date(v).getTime())
+const storesOf = (project) => {
+  const v = project && project.stores
+  return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
+}
 
 export function storeEntry(project, key) {
-  const raw = project && project.stores && project.stores[key]
+  const raw = storesOf(project)[key]
   const status = raw && (raw.status === 'tramite' || raw.status === 'publicada') ? raw.status : 'none'
   if (status === 'none') return { status, startedAt: null, publishedAt: null }
   return {
@@ -49,7 +53,7 @@ export function storeEntry(project, key) {
 // trámite lo deja como estaba: un click equivocado no pierde datos. Solo
 // "Sin empezar" borra las fechas, porque es el reinicio explícito.
 export function applyStoreStatus(project, key, status, now = new Date()) {
-  const current = (project && project.stores) || {}
+  const current = storesOf(project)
   const prev = storeEntry(project, key)
   const stamp = now.toISOString()
   if (status === 'tramite') {
@@ -67,7 +71,7 @@ export function applyStoreStatus(project, key, status, now = new Date()) {
 const plausibleDay = (iso, now) => validIso(iso) && new Date(iso).getFullYear() >= 2000 && daysBetween(iso, now) >= 0
 
 export function applyStoreDate(project, key, iso, now = new Date()) {
-  const current = (project && project.stores) || {}
+  const current = storesOf(project)
   const prev = storeEntry(project, key)
   if (prev.status === 'none' || !plausibleDay(iso, now)) return { stores: current }
   const field = prev.status === 'publicada' ? 'publishedAt' : 'startedAt'
