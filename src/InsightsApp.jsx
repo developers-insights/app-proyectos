@@ -716,6 +716,8 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .st-pill[data-s="none"] .ln{font-weight:500}
 .st-pill[data-s="tramite"] .ln,.st-pill[data-s="publicada"] .ln{color:color-mix(in srgb,var(--text) 78%,transparent)}
 
+.st-inl{--st-ring:var(--bg-elevated);display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:7px;font-size:12px;color:var(--text-dim)}
+.st-inl > span{display:inline-flex;align-items:center;gap:7px}
 .st-mh{display:flex;align-items:center;gap:8px}
 .pdh-item[data-st="none"]{--sc:var(--text-faint)}
 .pdh-item[data-st="tramite"]{--sc:var(--yellow)}
@@ -4093,13 +4095,13 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
 function PmStartupAlert({ open, projects, clients, onClose, onOpenProject }) {
   const { botComms } = useApp()
   const clientOf = (id) => clients.find((c) => c.id === id)
-  const rows = projects.map((p) => ({ p, av: trackInfo(p, 'avance'), comm: trackInfo(p, 'comm', (botComms || {})[p.id]) }))
+  const rows = projects.map((p) => ({ p, av: trackInfo(p, 'avance'), comm: trackInfo(p, 'comm', (botComms || {})[p.id]), stores: storesSummary(p) }))
     .sort((a, b) => (b.comm.overdue || b.av.overdue ? 1 : 0) - (a.comm.overdue || a.av.overdue ? 1 : 0))
   return (
     <Modal open={open} onClose={onClose} title="Seguimiento de tus clientes" sub="Como PM, tené al día la comunicación y los avances" width={640}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.5 }}>Recordatorio: si pasaron más de <strong style={{ color: 'var(--text-dim)' }}>3 días hábiles</strong> sin comunicarte, más de <strong style={{ color: 'var(--text-dim)' }}>5 días hábiles</strong> sin un avance (o <strong style={{ color: 'var(--text-dim)' }}>7</strong> sin el primer avance), escribile al cliente para reportar cómo va el proyecto.</div>
-        {rows.map(({ p, av, comm }) => {
+        {rows.map(({ p, av, comm, stores }) => {
           const commBad = comm.overdue, avBad = av.overdue
           const fmtD = (t, firstLabel) => t.first ? firstLabel : t.days === 0 ? 'hoy' : `hace ${t.days}d háb.`
           return (
@@ -4111,6 +4113,16 @@ function PmStartupAlert({ open, projects, clients, onClose, onOpenProject }) {
                   <span style={{ color: commBad ? 'var(--red)' : 'var(--text-dim)' }}><I2.phone width={11} height={11} /> Comunicación: <strong>{fmtD(comm, 'sin primer mensaje')}</strong></span>
                   <span style={{ color: avBad ? 'var(--red)' : 'var(--text-dim)' }}><I2.folder width={11} height={11} /> Avance: <strong>{fmtD(av, 'sin primer avance')}</strong></span>
                 </div>
+                {stores.any && (
+                  <div className="st-inl">
+                    {stores.active.map((it) => (
+                      <span key={it.key}>
+                        <StoreIcon store={it.key} size={14} state={it.status} decorative />
+                        {it.label}: <strong>{storeShortLine(it)}</strong>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <a href={p.whatsappUrl || undefined} target="_blank" rel="noreferrer" onClick={(e) => { if (!p.whatsappUrl) e.preventDefault() }}
                 className="btn btn-sm" title={p.whatsappUrl ? 'Abrir grupo de WhatsApp' : 'Sin link de WhatsApp cargado'} style={{ color: p.whatsappUrl ? 'var(--green)' : 'var(--text-faint)', opacity: p.whatsappUrl ? 1 : 0.5, flexShrink: 0 }}><I2.whatsapp width={15} height={15} /> WhatsApp</a>

@@ -177,6 +177,7 @@ Pedido de Nacho en la reunión del 16/10: marcar que una app se está desplegand
 - **Card**: chip arriba a la izquierda (frente al selector de etapa) con los logos de las tiendas que tienen estado. Punto ámbar que late = en trámite, tilde verde = publicada; el texto dice "Desplegando" o "Publicada". Solo lee: el tooltip y el `aria-label` de la card traen el detalle y los días.
 - **Detalle**: grupo "Tiendas" en la fila de Equipo y Etiquetas. Sin nada marcado es un botón "Marcar despliegue" (Google Play, App Store o las dos); con algo marcado, una pastilla por tienda con su estado y los días ("En trámite · hace 13 d"). Un click abre el menú con los tres estados y la fecha editable. Cada cambio queda en la actividad.
 - **Listado**: atajo "Desplegando en tiendas · N" en la barra (cuenta todas las etapas; al activarlo pasa a "Todas las etapas" y al soltarlo vuelve a la pestaña anterior), filtro "Tiendas" en el panel y `?stores=` en la URL.
+- **Seguimiento del PM** (el pop-up de inicio con comunicación y avance de sus proyectos): cada proyecto con algo marcado suma su línea de tiendas, para que al escribirle al cliente no se pase el trámite.
 - **Export de contexto** (Ajustes → Descargar .md): línea en el resumen, sección 3 "Despliegue en tiendas" (en trámite primero, la más antigua arriba) y columna "Tiendas" en el detalle. Las secciones 3 a 8 pasaron a 4 a 9.
 - **Asistente IA** (global y por proyecto): una línea "Despliegue en tiendas" solo cuando hay algo marcado.
 
