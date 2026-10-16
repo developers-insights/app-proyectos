@@ -32,6 +32,7 @@ import {
 import {
   STORE_LIST, STORE_STATES, STORE_FILTERS, isStoresFilter, storesFilterLabel, storesSummary, storesTitle,
   storeShortLine, storeActivityText, storesLine, applyStoreStatus, applyStoreDate, matchesStoresFilter, toDateInput, fromDateInput,
+  upgradeLegacyDeploying,
 } from './lib/stores.js'
 import { StoreIcon } from './ui/storeLogos.jsx'
 import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
@@ -2147,7 +2148,7 @@ const stripRemovedAssign = (as) => {
 }
 function normalizeProject(p) {
   // devUrl y sprints eliminados del modelo (igual que migrate)
-  const { devUrl, sprints, _sprintsImportRDE1, ...rest } = p
+  const { devUrl, sprints, _sprintsImportRDE1, ...rest } = upgradeLegacyDeploying(p)
   return {
     ...rest,
     assignments: stripRemovedAssign(rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null }),

@@ -165,6 +165,21 @@ export function storeActivityText(projectName, key, status) {
   return `sacó el trámite de ${store} de ${projectName}`
 }
 
+// La etapa "Desplegando" (#10, revertida) guardaba project.stores como arreglo de
+// claves ('apple' | 'google'; vacío o ausente = las dos). Se lee como trámite en
+// paralelo y el proyecto vuelve a Desarrollo (eran la misma fase 1, el cobro no se
+// mueve). Sin fecha de inicio: no hay de dónde sacarla y inventarla mentiría los días.
+export function upgradeLegacyDeploying(project) {
+  if (!project || project.stage !== 'desplegando') return project
+  const legacy = Array.isArray(project.stores) ? project.stores : []
+  const wants = (k) => legacy.length === 0 || legacy.includes(k)
+  const stores = { ...storesOf(project) }
+  const open = { status: 'tramite', startedAt: null, publishedAt: null }
+  if (wants('apple') && !stores.apple) stores.apple = open
+  if (wants('google') && !stores.play) stores.play = { ...open }
+  return { ...project, stage: 'desarrollo', stores }
+}
+
 export function matchesStoresFilter(project, filter) {
   if (!isStoresFilter(filter)) return true
   const s = storesSummary(project)
