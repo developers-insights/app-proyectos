@@ -24,6 +24,8 @@ import { normalizeLifecycle, advancePhase } from './lifecycle.js'
  */
 export const PROJECT_STAGES = [
   { key: 'desarrollo', label: 'Desarrollo',  group: 'obra',          phase: 1, colorVar: '--accent', hint: 'Se está construyendo' },
+  // Fase 1 a propósito: mientras las tiendas no aprueban, la prueba gratis no arranca.
+  { key: 'desplegando', label: 'Desplegando', group: 'obra',        phase: 1, colorVar: '--text',   hint: 'Publicándose en App Store / Google Play' },
   { key: 'free',       label: 'Free Maint.', group: 'mantenimiento', phase: 2, colorVar: '--blue',   hint: 'Mantenimiento sin cargo' },
   { key: 'starter',    label: 'Starter',     group: 'mantenimiento', phase: 3, colorVar: '--green',  hint: 'Plan mensual' },
   { key: 'kaizen',     label: 'Kaizen',      group: 'mantenimiento', phase: 3, colorVar: '--yellow', hint: 'Plan mensual' },
@@ -63,6 +65,18 @@ export function projectStage(project) {
   if (phase === 3) return 'starter'
   if (phase === 2) return 'free'
   return 'desarrollo'
+}
+
+export const APP_STORES = [
+  { key: 'apple',  label: 'App Store' },
+  { key: 'google', label: 'Google Play' },
+]
+
+/** Tiendas en las que se está publicando. Sin dato = las dos (lo más común). */
+export function projectStores(project) {
+  const raw = Array.isArray(project && project.stores) ? project.stores : null
+  const list = raw ? APP_STORES.map((s) => s.key).filter((k) => raw.includes(k)) : null
+  return list && list.length ? list : APP_STORES.map((s) => s.key)
 }
 
 /** ¿La etapa cobra? (los tres planes pagos). */

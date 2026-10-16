@@ -27,6 +27,7 @@ import {
 } from './lib/lifecycle.js'
 import {
   PROJECT_STAGES, STAGE_GROUPS, stageMeta, projectStage, applyStage, stageIsRegression, isPaidStage,
+  APP_STORES, projectStores,
 } from './lib/stages.js'
 import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
 import { isDev, isCollab, visibleProjects, collabProjectIds } from './lib/visibility.js'
@@ -462,6 +463,25 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 [data-stage="starter"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
 [data-stage="kaizen"]{--sc:var(--yellow);--ss:var(--yellow-soft);--sl:var(--yellow-line)}
 [data-stage="scale"]{--sc:var(--violet);--ss:var(--violet-soft);--sl:var(--violet-line)}
+[data-stage="desplegando"]{--sc:var(--text);--ss:color-mix(in srgb,var(--text) 7%,transparent);--sl:var(--border-strong)}
+
+.pdh-item.pdh-store .ic{color:var(--text)}
+.pdh-item.pdh-store[aria-checked="true"] .ck{opacity:1;transform:none}
+
+/* Distintivo de tiendas en la card: monocromo a propósito (un logo de color al
+   lado del anillo verde compite). El "procesando" lo dice un brillo que cruza
+   cada tanto, no un spinner: la card no tiene que gritar. */
+.pj-stores{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:6px;height:22px;
+  padding:0 8px;border-radius:999px;color:var(--text);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--text) 7%,transparent),color-mix(in srgb,var(--text) 3%,transparent));
+  box-shadow:inset 0 0 0 1px var(--border-strong),0 1px 2px rgba(0,0,0,.12)}
+.pj-stores svg{display:block;flex:none}
+.pj-stores .sep{width:1px;height:10px;background:var(--border-strong)}
+.pj-stores::after{content:"";position:absolute;top:0;bottom:0;left:0;width:60%;pointer-events:none;
+  background:linear-gradient(100deg,transparent,color-mix(in srgb,var(--text) 16%,transparent),transparent);
+  transform:translateX(-120%);animation:pjStoreSheen 3.6s var(--e) infinite}
+@keyframes pjStoreSheen{0%,55%{transform:translateX(-120%)}100%{transform:translateX(220%)}}
+@media (prefers-reduced-motion: reduce){.pj-stores::after{animation:none;opacity:0}}
 
 .pdh-cluster .pd-btn:focus-visible,.pdh-cluster .pd-cta:focus-visible,.pdh-stage:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px}
@@ -2468,12 +2488,43 @@ function MenuSurface({ pos, onClose, label, role = 'menu', children }) {
    · header  → el control con color del detalle del proyecto
    El menú agrupa "En obra" y "Mantenimiento": la diferencia entre estar
    construyendo y estar cobrando es la que manda en este negocio. */
-function StageMenu({ stage, onChange, variant = 'tag' }) {
+const STORE_PATHS = {
+  apple: 'M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701',
+  google: 'M22.018 13.298l-3.919 2.218-3.515-3.493 3.543-3.521 3.891 2.202a1.49 1.49 0 0 1 0 2.594zM1.337.924a1.486 1.486 0 0 0-.112.568v21.017c0 .217.045.419.124.6l11.155-11.087L1.337.924zm12.207 10.065l3.258-3.238L3.45.195a1.466 1.466 0 0 0-.946-.179l11.04 10.973zm0 2.067l-11 10.933c.298.036.612-.016.906-.183l13.324-7.54-3.23-3.21z',
+}
+const StoreGlyph = ({ store, size = 12 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={STORE_PATHS[store]} /></svg>
+)
+
+function StoresBadge({ stores }) {
+  const labels = stores.map((k) => APP_STORES.find((s) => s.key === k)?.label).filter(Boolean)
+  const text = `Publicándose en ${labels.join(' y ')}`
+  return (
+    <span className="pj-stores" title={text} aria-label={text} role="img">
+      {stores.map((k, i) => (
+        <React.Fragment key={k}>
+          {i > 0 && <span className="sep" aria-hidden="true" />}
+          <StoreGlyph store={k} size={k === 'apple' ? 12 : 11} />
+        </React.Fragment>
+      ))}
+    </span>
+  )
+}
+
+function StageMenu({ stage, onChange, variant = 'tag', stores, onStores }) {
   const key = stage && PROJECT_STAGES.some((s) => s.key === stage) ? stage : 'desarrollo'
   const meta = stageMeta(key)
-  const menuH = PROJECT_STAGES.length * 38 + STAGE_GROUPS.length * 26 + 14
+  const deploying = key === 'desplegando' && !!onStores
+  const menuH = PROJECT_STAGES.length * 38 + STAGE_GROUPS.length * 26 + 14 + (deploying ? 26 + APP_STORES.length * 38 : 0)
   const { open, pos, btnRef, toggle, setOpen } = useAnchoredMenu(216, menuH)
-  const pick = (e, k) => { e.stopPropagation(); if (k !== key) onChange(k); setOpen(false) }
+  // Elegir Desplegando deja el menú abierto: lo siguiente es marcar en qué tiendas.
+  const pick = (e, k) => { e.stopPropagation(); if (k !== key) onChange(k); if (!(k === 'desplegando' && onStores && k !== key)) setOpen(false) }
+  const cur = stores || APP_STORES.map((s) => s.key)
+  const toggleStore = (e, k) => {
+    e.stopPropagation()
+    const next = cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]
+    if (next.length) onStores(APP_STORES.map((s) => s.key).filter((x) => next.includes(x)))
+  }
   return (
     <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
       {variant === 'header' ? (
@@ -2485,7 +2536,7 @@ function StageMenu({ stage, onChange, variant = 'tag' }) {
         </button>
       ) : variant === 'compact' ? (
         <button ref={btnRef} onClick={toggle} className="pj-status" title={`Etapa: ${meta.label} — cambiar`} aria-haspopup="listbox" aria-expanded={open}>
-          <span className={`pj-dot${key === 'desarrollo' ? ' live' : ''}`} style={{ background: stageColor(key) }} />
+          <span className={`pj-dot${key === 'desarrollo' || key === 'desplegando' ? ' live' : ''}`} style={{ background: stageColor(key) }} />
           {meta.label}
           <I2.chevD className="cv" width={10} height={10} style={{ color: 'var(--text-faint)' }} />
         </button>
@@ -2512,6 +2563,19 @@ function StageMenu({ stage, onChange, variant = 'tag' }) {
               ))}
             </div>
           ))}
+          {deploying && (
+            <div role="group" aria-label="Tiendas">
+              <div className="pdh-head" aria-hidden="true">Tiendas</div>
+              {APP_STORES.map((s) => (
+                <button key={s.key} className="row-hover pdh-item pdh-store" role="menuitemcheckbox"
+                  aria-checked={cur.includes(s.key)} onClick={(e) => toggleStore(e, s.key)}>
+                  <span className="ic"><StoreGlyph store={s.key} size={13} /></span>
+                  <span className="lb">{s.label}</span>
+                  <I2.check className="ck" width={14} height={14} />
+                </button>
+              ))}
+            </div>
+          )}
         </MenuSurface>
       )}
     </span>
@@ -3139,7 +3203,7 @@ function phaseCounter(info) {
   return { n: info.countdown, unit: info.countdown === 1 ? 'día · cobro' : 'días · cobro', label: '' }
 }
 
-function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign, onScope, onLinks }) {
+function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onStores, onAssign, onScope, onLinks }) {
   const info = phaseInfo(p)
   const adv = lastAdvanceInfo(p)
   const sMeta = stageMeta(projectStage(p))
@@ -3161,8 +3225,9 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign,
       onClick={onOpen} onKeyDown={onKey}
       aria-label={`Abrir ${p.name}`}
     >
-      <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', minHeight: 24 }}>
-        <StageMenu variant="compact" stage={projectStage(p)} onChange={onStage} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minHeight: 24 }}>
+        {sMeta.key === 'desplegando' ? <StoresBadge stores={projectStores(p)} /> : <span />}
+        <StageMenu variant="compact" stage={projectStage(p)} onChange={onStage} stores={projectStores(p)} onStores={onStores} />
       </div>
 
       {/* el anillo mide avance, no fase: va siempre en verde. La fase se lee en el
@@ -3577,6 +3642,7 @@ function Projects({ onOpenProject }) {
               pct={projectProgress(p, planOf(p))}
               onOpen={() => onOpenProject(p.id)}
               onStage={(s) => setStage(p.id, s)}
+              onStores={(stores) => updateProject(p.id, { stores })}
               onAssign={(assignments) => updateProject(p.id, { assignments })}
               onScope={() => setScopeFor(p.id)}
               onLinks={() => setCardCfgFor(p.id)}
@@ -6377,7 +6443,8 @@ function ProjectDetail({ projectId, onBack }) {
                 title: linkedMvp ? 'Demo de ventas vinculada' : mvpSuggested ? 'Encontramos una demo que puede ser de este proyecto' : 'Vincular la demo que armó ventas' },
             ]} />
             <span className="pdh-sep" aria-hidden="true" />
-            <StageMenu variant="header" stage={stage} onChange={setStage} />
+            <StageMenu variant="header" stage={stage} onChange={setStage}
+              stores={projectStores(project)} onStores={(stores) => patch((p) => ({ ...p, stores }))} />
             <span className="pdh-sep" aria-hidden="true" />
             <button className="pd-cta" onClick={() => setEditOpen(true)}>
               Editar proyecto <i><I2.pencil width={13} height={13} /></i>
