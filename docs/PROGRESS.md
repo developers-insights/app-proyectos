@@ -161,3 +161,32 @@ Las demos de ventas caen solas al CRM y se vinculan a un proyecto (creado o futu
 - **pg_cron** `mvp-sync` cada 15 min.
 - **Auto-vínculo**: solo si el nombre coincide fuerte y la coincidencia es única en los dos sentidos (GoReach tiene dos demos → lo decide una persona). Desvincular a mano marca `autoLinkOff`.
 - **UI**: sidebar "MVPs" (badge = nuevos sin vincular de los últimos 7 días), `src/mvps/MvpsView.jsx`; en el detalle del proyecto, "Demo de ventas"/"Repo de la demo" en Enlaces y panel "MVP / demo" con sugerencias.
+
+---
+
+# 2026-10-16 · Despliegue en tiendas (Google Play / App Store), en paralelo a la etapa
+
+Pedido de Nacho en la reunión del 16/10: marcar que una app se está desplegando en las tiendas SIN reemplazar la etapa ("en paralelo, porque el proceso puede arrancar antes") y que se vea como una etiqueta chica con los logos.
+
+## Modelo
+- `project.stores = { play: { status, startedAt, publishedAt }, apple: { … } }` dentro del JSON del proyecto (tabla por-fila `projects`, columna `data`): **sin migración**. `status` es `tramite` o `publicada`; "sin empezar" es la clave ausente, así que los proyectos que ya existen quedan bien sin backfill.
+- Nunca toca `stage` ni `lifecycle` (de ahí sale el cobro). La lógica es pura y vive en `src/lib/stores.js`.
+- Publicar conserva `startedAt` (el export dice cuánto tardó); volver de Publicada a En trámite lo deja como estaba. Solo "Sin empezar" borra las fechas.
+
+## Dónde se ve
+- **Card**: chip arriba a la izquierda (frente al selector de etapa) con los logos de las tiendas que tienen estado. Punto ámbar que late = en trámite, tilde verde = publicada; el texto dice "Desplegando" o "Publicada". Solo lee: el tooltip y el `aria-label` de la card traen el detalle y los días.
+- **Detalle**: grupo "Tiendas" en la fila de Equipo y Etiquetas. Sin nada marcado es un botón "Marcar despliegue" (Google Play, App Store o las dos); con algo marcado, una pastilla por tienda con su estado y los días ("En trámite · hace 13 d"). Un click abre el menú con los tres estados y la fecha editable. Cada cambio queda en la actividad.
+- **Listado**: atajo "Desplegando en tiendas · N" en la barra (cuenta todas las etapas; al activarlo pasa a "Todas las etapas" y al soltarlo vuelve a la pestaña anterior), filtro "Tiendas" en el panel y `?stores=` en la URL.
+- **Export de contexto** (Ajustes → Descargar .md): línea en el resumen, sección 3 "Despliegue en tiendas" (en trámite primero, la más antigua arriba) y columna "Tiendas" en el detalle. Las secciones 3 a 8 pasaron a 4 a 9.
+- **Asistente IA** (global y por proyecto): una línea "Despliegue en tiendas" solo cuando hay algo marcado.
+
+## Trampas
+- Los logos son los paths de Wikimedia Commons (`Google_Play_2022_icon.svg`, `App_Store_(iOS).svg`), inline en `src/ui/storeLogos.jsx`. El gradiente del App Store lleva un id por instancia (`useId`).
+- La clase `.sb` ya es del sidebar: nombrar así el renglón de estado del pill le daba fondo y borde. Las clases nuevas llevan prefijo `st-`.
+- El estado no se dice con el color del texto (ámbar a 11px no llega a AA en claro): vive en la insignia del logo y en las palabras.
+
+## Verificado
+Build verde. Lógica pura con node (transiciones, fechas, filtros, export). En el navegador (modo local), dark y light a 1280, 768 y 375: card, detalle, menú, filtro, atajo y foco de teclado; contraste AA medido; sin errores de consola.
+
+## PENDIENTE
+- No se muestra en el link público del cliente: `project-share` arma su propio payload. Si Nacho quiere que el cliente vea "estamos publicando en Google Play", hay que sumarlo ahí.
