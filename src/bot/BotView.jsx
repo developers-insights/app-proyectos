@@ -22,6 +22,20 @@ const MIN = 60000
 const HOUR = 3600000
 const DAY = 86400000
 
+/* Espejo de bot_fede/src/lib/dias-habiles.ts: el umbral del bot no cuenta sábados ni domingos (hora AR, UTC-3 fijo). Si cambia allá, cambia acá. */
+const msHabiles = (desde, hasta) => {
+  let cur = desde - 3 * HOUR
+  const fin = hasta - 3 * HOUR
+  let total = 0
+  while (cur < fin) {
+    const tramoFin = Math.min((Math.floor(cur / DAY) + 1) * DAY, fin)
+    const dow = new Date(cur).getUTCDay()
+    if (dow !== 0 && dow !== 6) total += tramoFin - cur
+    cur = tramoFin
+  }
+  return total
+}
+
 const fmtRel = (iso, now = Date.now()) => {
   if (!iso) return '—'
   const t = new Date(iso).getTime()
@@ -227,7 +241,7 @@ export default function BotView() {
     /* lo anterior a bot_member_since el bot no lo vio: contar desde ahí evita días de silencio inventados */
     const base = [g.last_team_msg_at, g.bot_member_since].filter(Boolean).map((t) => new Date(t).getTime())
     if (!base.length) return null
-    const days = Math.floor((now - Math.max(...base)) / DAY)
+    const days = Math.floor(msHabiles(Math.max(...base), now) / DAY)
     const thr = g.inactivity_threshold_days ?? 3
     return days > thr ? days : null
   }
@@ -804,7 +818,7 @@ function Grupos({ isMobile, groups, projects, clients, now, loading, groupTitle,
     <div className="view" style={{ padding: isMobile ? '18px 14px 48px' : '22px 34px 60px' }}>
       <div style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '10px 15px', border: '1px dashed var(--border-strong)', borderRadius: 12, marginBottom: 16, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>
         <I.eye width={14} height={14} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
-        <span>Activo = el bot procesa y vigila ese grupo. El umbral son los días sin respuesta del equipo antes de avisar.</span>
+        <span>Activo = el bot procesa y vigila ese grupo. El umbral son los días hábiles (sin contar sábado ni domingo) sin respuesta del equipo antes de avisar.</span>
       </div>
 
       {loading && <Skel h={230} r={16} />}
@@ -842,7 +856,7 @@ function Grupos({ isMobile, groups, projects, clients, now, loading, groupTitle,
             <table className="bw-tbl">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                  {['Grupo', 'Proyecto', 'Activo', 'Umbral (días)', 'Última actividad'].map((h) => (
+                  {['Grupo', 'Proyecto', 'Activo', 'Umbral (días háb.)', 'Última actividad'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-faint)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -889,7 +903,7 @@ function Avisos({ isMobile, alerts, projects, now, loading }) {
         <div className="surface" style={{ padding: 46, textAlign: 'center', maxWidth: 560 }}>
           <EmptyIcon icon={I.bell} />
           <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 5 }}>Todavía no se enviaron avisos</div>
-          <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.55, maxWidth: 420, margin: '0 auto' }}>El chequeo corre todos los días a las 9:00. Cuando un cliente quede sin respuesta más días que el umbral, el aviso llega al grupo de seguimiento y queda registrado acá.</div>
+          <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.55, maxWidth: 420, margin: '0 auto' }}>El chequeo corre de lunes a viernes a las 9:00. Cuando un cliente quede sin respuesta más días hábiles que el umbral, el aviso llega al grupo de seguimiento y queda registrado acá.</div>
         </div>
       )}
       {!loading && alerts.length > 0 && (
