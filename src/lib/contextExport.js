@@ -10,6 +10,7 @@
 import { normalizeLifecycle, phaseInfo, daysBetween } from './lifecycle.js'
 import { projectStage, stageMeta, PROJECT_STAGES, isPaidStage } from './stages.js'
 import { projectProgress } from './progress.js'
+import { storesSummary, storeCell } from './stores.js'
 
 const num = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0)
 const money = (n) => 'US$ ' + num(n).toLocaleString('en-US')
@@ -60,6 +61,14 @@ export function computeContext({ projects = [], clients = [], team = [], activit
   const totalContract = projects.reduce((s, p) => s + num(p.totalAmount), 0)
   const totalPaid = projects.reduce((s, p) => s + num(p.paidAmount), 0)
 
+  // despliegue en tiendas: corre en paralelo a la etapa, así que se cuenta aparte
+  const storeRows = projects.map((p) => ({ p, s: storesSummary(p, now) })).filter((r) => r.s.any)
+  const maxDays = (r) => Math.max(0, ...r.s.deploying.map((i) => i.days ?? 0))
+  const lastPublished = (r) => Math.max(0, ...r.s.published.map((i) => new Date(i.publishedAt || 0).getTime()))
+  const storesDeploying = storeRows.filter((r) => r.s.deploying.length).sort((a, b) => maxDays(b) - maxDays(a))
+  const storesPublished = storeRows.filter((r) => !r.s.deploying.length).sort((a, b) => lastPublished(b) - lastPublished(a))
+  const storeCount = (key, status) => storeRows.filter((r) => r.s.items.find((i) => i.key === key).status === status).length
+
   // desde cuándo (primer proyecto / primera actividad)
   const startTs = projects.map((p) => normalizeLifecycle(p).startedAt).filter(Boolean).map((d) => new Date(d).getTime())
   const actTs = (activity || []).map((a) => new Date(a.date).getTime()).filter((t) => Number.isFinite(t))
@@ -72,6 +81,7 @@ export function computeContext({ projects = [], clients = [], team = [], activit
     totals: { projects: projects.length, clients: clients.length, team: team.length },
     avgDev, avgAll, avgDelivery, free, mrr, paidCount: paidList.length,
     totalContract, totalPaid, pending: totalContract - totalPaid,
+    stores: { rows: storeRows, deploying: storesDeploying, published: storesPublished, count: storeCount },
     since, sinceDays,
     distinctInStage: (key) => distinctClients(byStage[key] || []),
   }
@@ -100,6 +110,7 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   L.push(`- **Avance promedio (todos):** ${c.avgAll == null ? '—' : c.avgAll + '%'}`)
   L.push(`- **Tiempo promedio de entrega (desarrollo → mantenimiento):** ${c.avgDelivery == null ? 'sin datos aún' : `~${c.avgDelivery} días`}`)
   L.push(`- **Planes de mantenimiento pagos activos:** ${c.paidCount}${c.mrr ? ` · MRR ${money(c.mrr)}/mes` : ''}`)
+  L.push(`- **Desplegando en tiendas (en paralelo a la etapa):** ${c.stores.deploying.length} proyecto(s)${c.stores.deploying.length ? ` · en trámite: Google Play ${c.stores.count('play', 'tramite')}, App Store ${c.stores.count('apple', 'tramite')}` : ''} · publicados en alguna tienda: ${c.stores.rows.filter((r) => r.s.published.length).length}`)
   L.push(`- **Contratado (total):** ${money(c.totalContract)} · **Cobrado:** ${money(c.totalPaid)} · **Pendiente:** ${money(c.pending)}`)
   L.push('')
 
@@ -116,8 +127,26 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   L.push(`- **Cerrados:** Finalizado ${nStage('finalizado')} · Pausado ${nStage('pausado')} · Cancelado ${nStage('cancelado')}.`)
   L.push('')
 
-  // 3 · Mantenimiento gratuito (cuánto falta para que termine)
-  L.push('## 3 · Mantenimiento gratuito (prueba) — cuánto falta para que termine')
+  // 3 · Despliegue en tiendas
+  L.push('## 3 · Despliegue en tiendas (Google Play / App Store)')
+  L.push('')
+  L.push('> Corre en paralelo a la etapa: un proyecto en Desarrollo ya puede tener el trámite abierto en una tienda.')
+  L.push('')
+  const inStores = [...c.stores.deploying, ...c.stores.published]
+  if (!inStores.length) {
+    L.push('_Ningún proyecto tiene el despliegue en tiendas abierto._')
+  } else {
+    L.push('| Proyecto | Cliente | Etapa | Google Play | App Store |')
+    L.push('| --- | --- | --- | --- | --- |')
+    inStores.forEach(({ p, s }) => {
+      const cell = (key) => storeCell(s.items.find((i) => i.key === key), now)
+      L.push(`| ${p.name} | ${c.clientOf(p.clientId)?.company || '—'} | ${stg(projectStage(p))} | ${cell('play')} | ${cell('apple')} |`)
+    })
+  }
+  L.push('')
+
+  // 4 · Mantenimiento gratuito (cuánto falta para que termine)
+  L.push('## 4 · Mantenimiento gratuito (prueba) — cuánto falta para que termine')
   L.push('')
   if (!c.free.length) {
     L.push('_No hay proyectos en mantenimiento gratuito ahora mismo._')
@@ -131,8 +160,8 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   }
   L.push('')
 
-  // 4 · Planes pagos (Starter / Kaizen / Scale)
-  L.push('## 4 · Mantenimiento pago (Starter / Kaizen / Scale)')
+  // 5 · Planes pagos (Starter / Kaizen / Scale)
+  L.push('## 5 · Mantenimiento pago (Starter / Kaizen / Scale)')
   L.push('')
   const paid = [...(c.byStage.starter || []), ...(c.byStage.kaizen || []), ...(c.byStage.scale || [])]
   if (!paid.length) {
@@ -149,8 +178,8 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   }
   L.push('')
 
-  // 5 · Cerrados
-  L.push('## 5 · Proyectos cerrados')
+  // 6 · Cerrados
+  L.push('## 6 · Proyectos cerrados')
   L.push('')
   const closed = [...(c.byStage.finalizado || []), ...(c.byStage.pausado || []), ...(c.byStage.cancelado || [])]
   if (!closed.length) {
@@ -162,20 +191,22 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   }
   L.push('')
 
-  // 6 · Detalle de todos los proyectos
-  L.push('## 6 · Detalle de proyectos')
+  // 7 · Detalle de todos los proyectos
+  L.push('## 7 · Detalle de proyectos')
   L.push('')
-  L.push('| Proyecto | Cliente | Etapa | Avance | PM | Dev | Contrato | Cobrado |')
-  L.push('| --- | --- | --- | --- | --- | --- | --- | --- |')
+  L.push('| Proyecto | Cliente | Etapa | Tiendas | Avance | PM | Dev | Contrato | Cobrado |')
+  L.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- |')
   projects.slice().sort((a, b) => c.pctOf(b) - c.pctOf(a)).forEach((p) => {
     const pm = p.assignments?.pm ? (c.memberOf(p.assignments.pm.userId)?.name || '—') : '—'
     const dv = p.assignments?.dev ? (c.memberOf(p.assignments.dev.userId)?.name || '—') : '—'
-    L.push(`| ${p.name} | ${c.clientOf(p.clientId)?.company || (p.kind === 'interno' ? 'Interno · Insights' : '—')} | ${stg(projectStage(p))} | ${c.pctOf(p)}% | ${pm} | ${dv} | ${money(p.totalAmount)} | ${money(p.paidAmount)} |`)
+    const sm = storesSummary(p, now)
+    const tiendas = sm.any ? sm.active.map((i) => `${i.label}: ${storeCell(i, now)}`).join(' · ') : '—'
+    L.push(`| ${p.name} | ${c.clientOf(p.clientId)?.company || (p.kind === 'interno' ? 'Interno · Insights' : '—')} | ${stg(projectStage(p))} | ${tiendas} | ${c.pctOf(p)}% | ${pm} | ${dv} | ${money(p.totalAmount)} | ${money(p.paidAmount)} |`)
   })
   L.push('')
 
-  // 7 · Clientes
-  L.push('## 7 · Clientes')
+  // 8 · Clientes
+  L.push('## 8 · Clientes')
   L.push('')
   L.push('| Cliente | Empresa | Proyectos |')
   L.push('| --- | --- | --- |')
@@ -185,8 +216,8 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   })
   L.push('')
 
-  // 8 · Equipo
-  L.push('## 8 · Equipo')
+  // 9 · Equipo
+  L.push('## 9 · Equipo')
   L.push('')
   L.push('| Persona | Rol | Como PM | Como Dev |')
   L.push('| --- | --- | --- | --- |')

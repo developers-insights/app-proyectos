@@ -12,6 +12,7 @@ import React, {
   useMemo,
   useRef,
   useCallback,
+  useId,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -27,8 +28,13 @@ import {
 } from './lib/lifecycle.js'
 import {
   PROJECT_STAGES, STAGE_GROUPS, stageMeta, projectStage, applyStage, stageIsRegression, isPaidStage,
-  APP_STORES, projectStores,
 } from './lib/stages.js'
+import {
+  STORE_LIST, STORE_STATES, STORE_FILTERS, isStoresFilter, storesFilterLabel, storesSummary, storesTitle,
+  storeShortLine, storeActivityText, storesLine, applyStoreStatus, applyStoreDate, matchesStoresFilter, toDateInput, fromDateInput,
+  upgradeLegacyDeploying,
+} from './lib/stores.js'
+import { StoreIcon } from './ui/storeLogos.jsx'
 import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
 import { isDev, isCollab, visibleProjects, collabProjectIds } from './lib/visibility.js'
 import {
@@ -463,25 +469,6 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 [data-stage="starter"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
 [data-stage="kaizen"]{--sc:var(--yellow);--ss:var(--yellow-soft);--sl:var(--yellow-line)}
 [data-stage="scale"]{--sc:var(--violet);--ss:var(--violet-soft);--sl:var(--violet-line)}
-[data-stage="desplegando"]{--sc:var(--text);--ss:color-mix(in srgb,var(--text) 7%,transparent);--sl:var(--border-strong)}
-
-.pdh-item.pdh-store .ic{color:var(--text)}
-.pdh-item.pdh-store[aria-checked="true"] .ck{opacity:1;transform:none}
-
-/* Distintivo de tiendas en la card: monocromo a propósito (un logo de color al
-   lado del anillo verde compite). El "procesando" lo dice un brillo que cruza
-   cada tanto, no un spinner: la card no tiene que gritar. */
-.pj-stores{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:6px;height:22px;
-  padding:0 8px;border-radius:999px;color:var(--text);
-  background:linear-gradient(180deg,color-mix(in srgb,var(--text) 7%,transparent),color-mix(in srgb,var(--text) 3%,transparent));
-  box-shadow:inset 0 0 0 1px var(--border-strong),0 1px 2px rgba(0,0,0,.12)}
-.pj-stores svg{display:block;flex:none}
-.pj-stores .sep{width:1px;height:10px;background:var(--border-strong)}
-.pj-stores::after{content:"";position:absolute;top:0;bottom:0;left:0;width:60%;pointer-events:none;
-  background:linear-gradient(100deg,transparent,color-mix(in srgb,var(--text) 16%,transparent),transparent);
-  transform:translateX(-120%);animation:pjStoreSheen 3.6s var(--e) infinite}
-@keyframes pjStoreSheen{0%,55%{transform:translateX(-120%)}100%{transform:translateX(220%)}}
-@media (prefers-reduced-motion: reduce){.pj-stores::after{animation:none;opacity:0}}
 
 .pdh-cluster .pd-btn:focus-visible,.pdh-cluster .pd-cta:focus-visible,.pdh-stage:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px}
@@ -659,6 +646,119 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   .pd-lnk,.pd-btn{height:42px}
   .pd-cta{height:44px}
   .pd-cta i{width:32px;height:32px}
+}
+
+/* ============================================================================
+   DESPLIEGUE EN TIENDAS — corre EN PARALELO a la etapa
+   El estado vive en la insignia de la esquina del logo (punto ámbar que late =
+   en trámite, tilde verde = publicada), no en el color del texto: ámbar a 11px
+   no llega a AA en claro.
+============================================================================ */
+.st-ic{position:relative;display:inline-flex;flex:none;width:var(--sz,16px);height:var(--sz,16px)}
+.st-tile{display:grid;place-items:center;width:100%;height:100%;border-radius:22.5%;overflow:hidden;line-height:0}
+.st-tile svg{display:block}
+.st-tile[data-store="play"]{background:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.09)}
+.st-tile[data-store="play"] svg{width:56%;height:56%}
+.st-tile[data-store="apple"] svg{width:100%;height:100%}
+.st-bd{position:absolute;right:calc(var(--bd,9px) * -.32);bottom:calc(var(--bd,9px) * -.32);
+  width:var(--bd,9px);height:var(--bd,9px);border-radius:999px;display:grid;place-items:center;
+  color:var(--accent-contrast);box-shadow:0 0 0 1.5px var(--st-ring,var(--bg))}
+.st-bd svg{width:74%;height:74%}
+.st-bd[data-s="tramite"]{background:var(--yellow)}
+.st-bd[data-s="publicada"]{background:var(--green)}
+.st-bd[data-s="tramite"]::after{content:"";position:absolute;inset:-3px;border-radius:50%;background:var(--yellow);
+  opacity:0;animation:stPulse 2.8s var(--e) infinite;pointer-events:none}
+@keyframes stPulse{0%,100%{transform:scale(.45);opacity:.5}55%{transform:scale(1.4);opacity:0}}
+
+.pj-top{display:flex;align-items:center;gap:8px;width:100%;min-height:24px}
+.pj-top > :last-child{margin-left:auto;flex:none}
+.st-chip{--st-ring:var(--bg);display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 10px 0 4px;
+  min-width:0;max-width:100%;border-radius:999px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--border);
+  font-size:10.5px;font-weight:650;letter-spacing:.012em;color:var(--text-dim)}
+.st-chip .ics{display:inline-flex;align-items:center;gap:6px;flex:none}
+.st-chip .tx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.st-group{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;min-width:0;margin-left:auto}
+.st-row{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;min-width:0}
+.st-slot{display:inline-block}
+.st-ghost{--st-ring:var(--bg);display:inline-flex;align-items:center;gap:9px;height:34px;padding:0 10px 0 8px;
+  border-radius:10px;font-size:12.5px;font-weight:600;color:var(--text-dim);background:transparent;
+  outline:1px dashed var(--border-strong);outline-offset:-1px;
+  transition:color .26s var(--e),background .26s var(--e),transform .26s var(--e)}
+.st-ghost .ics{display:inline-flex;align-items:center;gap:4px;filter:grayscale(1);opacity:.55;
+  transition:filter .26s var(--e),opacity .26s var(--e)}
+.st-ghost .cv{flex:none;color:var(--text-faint)}
+.st-ghost:hover,.st-ghost[aria-expanded="true"]{color:var(--text);background:var(--card-hover)}
+.st-ghost:hover .ics,.st-ghost[aria-expanded="true"] .ics{filter:none;opacity:1}
+.st-ghost:active{transform:scale(.985)}
+.st-ghost:focus-visible{border-radius:10px}
+.st-duo{display:inline-flex;align-items:center;gap:4px}
+.st-pill{--st-ring:var(--bg);--sc:var(--text-dim);position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:10px;
+  min-height:40px;padding:6px 10px 6px 7px;border-radius:13px;text-align:left;color:var(--text);
+  background:var(--card);box-shadow:inset 0 0 0 1px var(--border);
+  transition:background .26s var(--e),box-shadow .26s var(--e),transform .26s var(--e)}
+.st-pill::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--sc);opacity:0;
+  transition:opacity .26s var(--e);pointer-events:none}
+.st-pill:hover::after{opacity:.07}
+.st-pill[aria-expanded="true"]::after{opacity:.11}
+.st-pill:active{transform:scale(.985)}
+.st-pill:focus-visible{border-radius:13px}
+.st-pill > *{position:relative;z-index:1}
+.st-pill .tx{display:flex;flex-direction:column;gap:3px;min-width:0}
+.st-pill .nm{font-size:12.5px;font-weight:650;letter-spacing:-.012em;line-height:1.1}
+.st-pill .ln{font-size:11px;font-weight:600;line-height:1.1;color:var(--text-dim);white-space:nowrap}
+.st-pill .cv{flex:none;color:var(--text-faint);transition:transform .3s var(--e)}
+.st-pill[aria-expanded="true"] .cv{transform:rotate(180deg)}
+.st-pill[data-s="tramite"]{--sc:var(--yellow);background:var(--yellow-soft);box-shadow:inset 0 0 0 1px var(--yellow-line)}
+.st-pill[data-s="publicada"]{--sc:var(--green);background:var(--green-soft);box-shadow:inset 0 0 0 1px var(--green-line)}
+.st-pill[data-s="none"]{background:transparent;box-shadow:none;outline:1px dashed var(--border-strong);outline-offset:-1px}
+.st-pill[data-s="none"] .st-tile{filter:grayscale(1);opacity:.5}
+.st-pill[data-s="none"] .nm{color:var(--text-dim)}
+.st-pill[data-s="none"] .ln{font-weight:500}
+.st-pill[data-s="tramite"] .ln,.st-pill[data-s="publicada"] .ln{color:color-mix(in srgb,var(--text) 78%,transparent)}
+
+.st-inl{--st-ring:var(--bg-elevated);display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:7px;font-size:12px;color:var(--text-dim)}
+.st-inl > span{display:inline-flex;align-items:center;gap:7px}
+.st-mh{display:flex;align-items:center;gap:8px}
+.pdh-item[data-st="none"]{--sc:var(--text-faint)}
+.pdh-item[data-st="tramite"]{--sc:var(--yellow)}
+.pdh-item[data-st="publicada"]{--sc:var(--green)}
+.pdh-item[data-st="none"] .pdh-dot{background:transparent;box-shadow:inset 0 0 0 1.5px var(--text-faint)}
+.st-date{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:3px;
+  padding:9px 9px 5px;border-top:1px solid var(--border)}
+.st-date label{font-size:12px;font-weight:600;color:var(--text-dim);white-space:nowrap}
+.st-date .input{width:auto;min-width:0;padding:5px 8px;font-size:12px}
+
+.st-bar{--st-ring:var(--bg-elevated);display:inline-flex;align-items:center;gap:10px;height:38px;padding:0 6px 0 8px;
+  border-radius:999px;flex:none;font-size:13px;font-weight:600;color:var(--text);
+  background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border);
+  transition:background .26s var(--e),box-shadow .26s var(--e)}
+.st-bar:hover{box-shadow:inset 0 0 0 1px var(--border-strong)}
+.st-bar:focus-visible{border-radius:999px}
+.st-bar .ics{display:inline-flex;align-items:center;gap:5px}
+.st-bar .n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:700;
+  min-width:22px;height:22px;padding:0 7px;border-radius:999px;display:grid;place-items:center;
+  color:var(--text-dim);background:var(--card);box-shadow:inset 0 0 0 1px var(--border)}
+.st-bar[aria-pressed="true"]{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.st-bar[aria-pressed="true"] .n{color:var(--accent-contrast);background:var(--accent);box-shadow:none}
+
+@media (prefers-reduced-motion: reduce){
+  .st-bd[data-s="tramite"]::after{animation:none;opacity:.22;transform:scale(1.1)}
+  .st-pill,.st-pill::after,.st-pill .cv,.st-bar,.st-ghost,.st-ghost .ics{transition:none}
+  .st-pill:active,.st-ghost:active{transform:none}
+}
+@media (max-width: 760px){
+  .st-bar{height:42px}
+  .st-pill{min-height:46px}
+  .st-ghost{height:44px}
+  .st-date .input{padding:8px 10px;font-size:13px}
+  .st-menu .pdh-item{min-height:44px}
+}
+@media (max-width: 640px){
+  .st-group,.st-row{width:100%;justify-content:flex-start;margin-left:0}
+  .st-slot{flex:1 1 100%}
+  .st-pill,.st-ghost{width:100%}
+  .st-ghost .cv,.st-pill .cv{margin-left:auto}
 }
 
 /* ============================================================================
@@ -2048,7 +2148,7 @@ const stripRemovedAssign = (as) => {
 }
 function normalizeProject(p) {
   // devUrl y sprints eliminados del modelo (igual que migrate)
-  const { devUrl, sprints, _sprintsImportRDE1, ...rest } = p
+  const { devUrl, sprints, _sprintsImportRDE1, ...rest } = upgradeLegacyDeploying(p)
   return {
     ...rest,
     assignments: stripRemovedAssign(rest.assignments || DEMO_ASSIGN[rest.id] || { pm: null, dev: null }),
@@ -2488,43 +2588,12 @@ function MenuSurface({ pos, onClose, label, role = 'menu', children }) {
    · header  → el control con color del detalle del proyecto
    El menú agrupa "En obra" y "Mantenimiento": la diferencia entre estar
    construyendo y estar cobrando es la que manda en este negocio. */
-const STORE_PATHS = {
-  apple: 'M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701',
-  google: 'M22.018 13.298l-3.919 2.218-3.515-3.493 3.543-3.521 3.891 2.202a1.49 1.49 0 0 1 0 2.594zM1.337.924a1.486 1.486 0 0 0-.112.568v21.017c0 .217.045.419.124.6l11.155-11.087L1.337.924zm12.207 10.065l3.258-3.238L3.45.195a1.466 1.466 0 0 0-.946-.179l11.04 10.973zm0 2.067l-11 10.933c.298.036.612-.016.906-.183l13.324-7.54-3.23-3.21z',
-}
-const StoreGlyph = ({ store, size = 12 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={STORE_PATHS[store]} /></svg>
-)
-
-function StoresBadge({ stores }) {
-  const labels = stores.map((k) => APP_STORES.find((s) => s.key === k)?.label).filter(Boolean)
-  const text = `Publicándose en ${labels.join(' y ')}`
-  return (
-    <span className="pj-stores" title={text} aria-label={text} role="img">
-      {stores.map((k, i) => (
-        <React.Fragment key={k}>
-          {i > 0 && <span className="sep" aria-hidden="true" />}
-          <StoreGlyph store={k} size={k === 'apple' ? 12 : 11} />
-        </React.Fragment>
-      ))}
-    </span>
-  )
-}
-
-function StageMenu({ stage, onChange, variant = 'tag', stores, onStores }) {
+function StageMenu({ stage, onChange, variant = 'tag' }) {
   const key = stage && PROJECT_STAGES.some((s) => s.key === stage) ? stage : 'desarrollo'
   const meta = stageMeta(key)
-  const deploying = key === 'desplegando' && !!onStores
-  const menuH = PROJECT_STAGES.length * 38 + STAGE_GROUPS.length * 26 + 14 + (deploying ? 26 + APP_STORES.length * 38 : 0)
+  const menuH = PROJECT_STAGES.length * 38 + STAGE_GROUPS.length * 26 + 14
   const { open, pos, btnRef, toggle, setOpen } = useAnchoredMenu(216, menuH)
-  // Elegir Desplegando deja el menú abierto: lo siguiente es marcar en qué tiendas.
-  const pick = (e, k) => { e.stopPropagation(); if (k !== key) onChange(k); if (!(k === 'desplegando' && onStores && k !== key)) setOpen(false) }
-  const cur = stores || APP_STORES.map((s) => s.key)
-  const toggleStore = (e, k) => {
-    e.stopPropagation()
-    const next = cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]
-    if (next.length) onStores(APP_STORES.map((s) => s.key).filter((x) => next.includes(x)))
-  }
+  const pick = (e, k) => { e.stopPropagation(); if (k !== key) onChange(k); setOpen(false) }
   return (
     <span style={{ display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
       {variant === 'header' ? (
@@ -2536,7 +2605,7 @@ function StageMenu({ stage, onChange, variant = 'tag', stores, onStores }) {
         </button>
       ) : variant === 'compact' ? (
         <button ref={btnRef} onClick={toggle} className="pj-status" title={`Etapa: ${meta.label} — cambiar`} aria-haspopup="listbox" aria-expanded={open}>
-          <span className={`pj-dot${key === 'desarrollo' || key === 'desplegando' ? ' live' : ''}`} style={{ background: stageColor(key) }} />
+          <span className={`pj-dot${key === 'desarrollo' ? ' live' : ''}`} style={{ background: stageColor(key) }} />
           {meta.label}
           <I2.chevD className="cv" width={10} height={10} style={{ color: 'var(--text-faint)' }} />
         </button>
@@ -2563,19 +2632,6 @@ function StageMenu({ stage, onChange, variant = 'tag', stores, onStores }) {
               ))}
             </div>
           ))}
-          {deploying && (
-            <div role="group" aria-label="Tiendas">
-              <div className="pdh-head" aria-hidden="true">Tiendas</div>
-              {APP_STORES.map((s) => (
-                <button key={s.key} className="row-hover pdh-item pdh-store" role="menuitemcheckbox"
-                  aria-checked={cur.includes(s.key)} onClick={(e) => toggleStore(e, s.key)}>
-                  <span className="ic"><StoreGlyph store={s.key} size={13} /></span>
-                  <span className="lb">{s.label}</span>
-                  <I2.check className="ck" width={14} height={14} />
-                </button>
-              ))}
-            </div>
-          )}
         </MenuSurface>
       )}
     </span>
@@ -2607,6 +2663,168 @@ function StageConfirmModal({ open, project, to, onClose, onConfirm }) {
         </div>
       </div>
     </Modal>
+  )
+}
+
+function StoresChip({ summary }) {
+  if (!summary.any) return null
+  return (
+    <span className="st-chip" title={storesTitle(summary)}>
+      <span className="ics">
+        {summary.active.map((it) => <StoreIcon key={it.key} store={it.key} state={it.status} decorative />)}
+      </span>
+      <span className="tx">{summary.phase === 'tramite' ? 'Desplegando' : 'Publicada'}</span>
+    </span>
+  )
+}
+
+function useMenuFocus(open, btnRef, menuRef, selector) {
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (open) {
+      wasOpen.current = true
+      const t = setTimeout(() => menuRef.current?.querySelector(selector)?.focus(), 0)
+      return () => clearTimeout(t)
+    }
+    if (wasOpen.current) {
+      wasOpen.current = false
+      if (!document.activeElement || document.activeElement === document.body) btnRef.current?.focus()
+    }
+  }, [open])
+}
+
+function StorePill({ project, storeKey, onStatus, onDate }) {
+  const item = storesSummary(project).items.find((i) => i.key === storeKey)
+  const { open, pos, btnRef, toggle, setOpen } = useAnchoredMenu(236, 236)
+  const menuRef = useRef(null)
+  const dateId = useId()
+  useMenuFocus(open, btnRef, menuRef, '[aria-selected="true"]')
+
+  const pick = (e, status) => {
+    e.stopPropagation()
+    if (status !== item.status) onStatus(storeKey, status)
+    setOpen(false)
+  }
+  const line = storeShortLine(item)
+  return (
+    <span className="st-slot">
+      <button ref={btnRef} type="button" className="st-pill" data-s={item.status} onClick={toggle}
+        aria-haspopup="dialog" aria-expanded={open} title={`${item.label}: ${line.toLowerCase()} — cambiar`}>
+        <StoreIcon store={storeKey} size={24} state={item.status} decorative />
+        <span className="tx">
+          <span className="nm">{item.label}</span>
+          <span className="ln">{line}</span>
+        </span>
+        <I2.chevD className="cv" width={12} height={12} />
+      </button>
+      {open && pos && (
+        <MenuSurface pos={pos} onClose={() => setOpen(false)} role="dialog" label={`Despliegue en ${item.label}`}>
+          <div ref={menuRef} className="st-menu">
+            <div className="pdh-head st-mh">
+              <StoreIcon store={storeKey} size={18} decorative />
+              <span>{item.label}</span>
+            </div>
+            <div role="listbox" aria-label={`Estado en ${item.label}`}>
+              {STORE_STATES.map((s) => (
+                <button key={s.key} type="button" className="row-hover pdh-item" role="option" data-st={s.key}
+                  aria-selected={s.key === item.status} onClick={(e) => pick(e, s.key)}>
+                  <span className="pdh-dot" aria-hidden="true" />
+                  <span className="lb">{s.label}</span>
+                  <I2.check className="ck" width={14} height={14} />
+                </button>
+              ))}
+            </div>
+            {item.status !== 'none' && (
+              <div className="st-date">
+                <label htmlFor={dateId}>{item.status === 'publicada' ? 'Publicada el' : 'Arrancó el'}</label>
+                <input id={dateId} type="date" className="input mono" defaultValue={item.at ? toDateInput(item.at) : ''}
+                  max={toDateInput(new Date().toISOString())}
+                  onChange={(e) => { const iso = fromDateInput(e.target.value); if (iso) onDate(storeKey, iso) }} />
+              </div>
+            )}
+          </div>
+        </MenuSurface>
+      )}
+    </span>
+  )
+}
+
+function StoresStart({ onStart }) {
+  const { open, pos, btnRef, toggle, setOpen } = useAnchoredMenu(232, 150)
+  const menuRef = useRef(null)
+  useMenuFocus(open, btnRef, menuRef, '[role="menuitem"]')
+  const start = (e, keys) => {
+    e.stopPropagation()
+    keys.forEach((k) => onStart(k))
+    setOpen(false)
+  }
+  return (
+    <span className="st-slot">
+      <button ref={btnRef} type="button" className="st-ghost" onClick={toggle} aria-haspopup="menu" aria-expanded={open}
+        title="Marcar que la app se está desplegando en las tiendas">
+        <span className="ics" aria-hidden="true">
+          <StoreIcon store="play" size={16} decorative />
+          <StoreIcon store="apple" size={16} decorative />
+        </span>
+        Marcar despliegue
+        <I2.chevD className="cv" width={12} height={12} />
+      </button>
+      {open && pos && (
+        <MenuSurface pos={pos} onClose={() => setOpen(false)} label="Marcar despliegue en tiendas">
+          <div ref={menuRef} className="st-menu">
+            <div className="pdh-head">Arrancó el trámite en</div>
+            <button type="button" className="row-hover pdh-item" role="menuitem" onClick={(e) => start(e, ['play'])}>
+              <StoreIcon store="play" size={18} decorative />
+              <span className="lb">Google Play</span>
+            </button>
+            <button type="button" className="row-hover pdh-item" role="menuitem" onClick={(e) => start(e, ['apple'])}>
+              <StoreIcon store="apple" size={18} decorative />
+              <span className="lb">App Store</span>
+            </button>
+            <button type="button" className="row-hover pdh-item" role="menuitem" onClick={(e) => start(e, ['play', 'apple'])}>
+              <span className="st-duo" aria-hidden="true">
+                <StoreIcon store="play" size={18} decorative />
+                <StoreIcon store="apple" size={18} decorative />
+              </span>
+              <span className="lb">Las dos tiendas</span>
+            </button>
+          </div>
+        </MenuSurface>
+      )}
+    </span>
+  )
+}
+
+function StoresRow({ project, onStatus, onDate, alwaysPills = false }) {
+  const any = storesSummary(project).any
+  const rowRef = useRef(null)
+  const wasAny = useRef(any)
+  // Al marcar la primera tienda el botón de arranque se desmonta: sin esto el
+  // foco caería al <body> y quien navega con teclado vuelve al principio de la página.
+  useEffect(() => {
+    if (any && !wasAny.current) rowRef.current?.querySelector('.st-pill')?.focus()
+    wasAny.current = any
+  }, [any])
+  if (!any && !alwaysPills) return <StoresStart onStart={(key) => onStatus(key, 'tramite')} />
+  return (
+    <div ref={rowRef} className="st-row" role="group" aria-label="Despliegue en tiendas">
+      {STORE_LIST.map((s) => <StorePill key={s.key} project={project} storeKey={s.key} onStatus={onStatus} onDate={onDate} />)}
+    </div>
+  )
+}
+
+function StoresBarPill({ count, on, onToggle }) {
+  return (
+    <button type="button" className="st-bar" aria-pressed={on} onClick={onToggle}
+      aria-label={`Desplegando en tiendas, ${count} proyecto${count === 1 ? '' : 's'}`}
+      title={on ? 'Quitar el filtro de tiendas' : 'Mostrar solo los proyectos que se están desplegando en tiendas'}>
+      <span className="ics" aria-hidden="true">
+        <StoreIcon store="play" size={18} decorative />
+        <StoreIcon store="apple" size={18} decorative />
+      </span>
+      <span aria-hidden="true">Desplegando en tiendas</span>
+      <span className="n" aria-hidden="true">{count}</span>
+    </button>
   )
 }
 
@@ -3203,10 +3421,11 @@ function phaseCounter(info) {
   return { n: info.countdown, unit: info.countdown === 1 ? 'día · cobro' : 'días · cobro', label: '' }
 }
 
-function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onStores, onAssign, onScope, onLinks }) {
+function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign, onScope, onLinks }) {
   const info = phaseInfo(p)
   const adv = lastAdvanceInfo(p)
   const sMeta = stageMeta(projectStage(p))
+  const stores = storesSummary(p)
   // En estados terminales (finalizado/pausado/cancelado) no hay contador de fase
   // ni seguimiento de avance: el desarrollo dejó de correr.
   const counter = sMeta.terminal ? { n: null, unit: sMeta.label, label: '' } : phaseCounter(info)
@@ -3223,11 +3442,11 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onStores,
     <motion.div
       variants={rise} className="pj-card" role="button" tabIndex={0}
       onClick={onOpen} onKeyDown={onKey}
-      aria-label={`Abrir ${p.name}`}
+      aria-label={`Abrir ${p.name}${stores.any ? `. ${storesTitle(stores)}` : ''}`}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minHeight: 24 }}>
-        {sMeta.key === 'desplegando' ? <StoresBadge stores={projectStores(p)} /> : <span />}
-        <StageMenu variant="compact" stage={projectStage(p)} onChange={onStage} stores={projectStores(p)} onStores={onStores} />
+      <div className="pj-top">
+        <StoresChip summary={stores} />
+        <StageMenu variant="compact" stage={projectStage(p)} onChange={onStage} />
       </div>
 
       {/* el anillo mide avance, no fase: va siempre en verde. La fase se lee en el
@@ -3455,6 +3674,8 @@ function Projects({ onOpenProject }) {
   const [tagFilter, setTagFilter] = useState(qp.get('tag') || 'all')
   const [prioFilter, setPrioFilter] = useState(qp.get('prio') || 'all')   // all | sort | alta | normal | baja
   const [kindFilter, setKindFilter] = useState(qp.get('kind') || 'all')   // all | cliente | interno
+  const [storesFilter, setStoresFilter] = useState(() => (isStoresFilter(qp.get('stores')) ? qp.get('stores') : 'all'))   // all | tramite | publicada
+  const prevTabRef = useRef('desarrollo')
   const [search, setSearch] = useState('')             // búsqueda en vivo (client-side): nombre, cliente, PM/Dev
   const [stageAsk, setStageAsk] = useState(null)       // { projectId, to } — retroceso de etapa a confirmar
   const [logModal, setLogModal] = useState(null)       // { projectId, kind } | null
@@ -3487,17 +3708,18 @@ function Projects({ onOpenProject }) {
     if (tagFilter !== 'all') p.set('tag', tagFilter)
     if (prioFilter !== 'all') p.set('prio', prioFilter)
     if (kindFilter !== 'all') p.set('kind', kindFilter)
+    if (storesFilter !== 'all') p.set('stores', storesFilter)
     const qs = p.toString()
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
-  }, [tab, clientFilter, pmFilter, devFilter, tagFilter, prioFilter, kindFilter])
+  }, [tab, clientFilter, pmFilter, devFilter, tagFilter, prioFilter, kindFilter, storesFilter])
 
   // Universo visible ANTES de filtrar: los contadores de las pestañas no pueden
   // contar proyectos que el dev no ve.
   const universe = useMemo(() => visibleProjects(data.projects, me), [data.projects, me])
   const devOnlyMine = isDev(me) && !isCollab(me)
   const allTags = [...new Set(universe.flatMap((p) => (p.tags || []).map((t) => t.text)))]
-  const filtersActive = clientFilter !== 'all' || pmFilter !== 'all' || devFilter !== 'all' || tagFilter !== 'all' || prioFilter !== 'all' || kindFilter !== 'all'
-  const clearFilters = () => { setClientFilter('all'); setPmFilter('all'); setDevFilter('all'); setTagFilter('all'); setPrioFilter('all'); setKindFilter('all') }
+  const filtersActive = clientFilter !== 'all' || pmFilter !== 'all' || devFilter !== 'all' || tagFilter !== 'all' || prioFilter !== 'all' || kindFilter !== 'all' || storesFilter !== 'all'
+  const clearFilters = () => { setClientFilter('all'); setPmFilter('all'); setDevFilter('all'); setTagFilter('all'); setPrioFilter('all'); setKindFilter('all'); setStoresFilter('all') }
   /* Lo aplicado se ve como chips: el usuario no tiene que abrir el panel para
      saber qué está filtrando, y saca uno sin tocar los otros. */
   const chips = []
@@ -3507,13 +3729,15 @@ function Projects({ onOpenProject }) {
   if (devFilter !== 'all') chips.push({ id: 'dev', k: 'Dev', v: userOf(devFilter)?.name || '—', off: () => setDevFilter('all') })
   if (tagFilter !== 'all') chips.push({ id: 'tag', k: 'Etiqueta', v: tagFilter, off: () => setTagFilter('all') })
   if (prioFilter !== 'all') chips.push({ id: 'prio', k: 'Prioridad', v: prioFilter === 'sort' ? 'Prioritarios primero' : prioFilter.charAt(0).toUpperCase() + prioFilter.slice(1), off: () => setPrioFilter('all') })
-  const matchesFilters = (p) =>
+  if (storesFilter !== 'all') chips.push({ id: 'stores', k: 'Tiendas', v: storesFilterLabel(storesFilter, true), off: () => setStoresFilter('all') })
+  const matchesBase = (p) =>
     (kindFilter === 'all' || (p.kind || 'cliente') === kindFilter) &&
     (clientFilter === 'all' || p.clientId === clientFilter) &&
     (pmFilter === 'all' || p.assignments?.pm?.userId === pmFilter) &&
     (devFilter === 'all' || p.assignments?.dev?.userId === devFilter) &&
     (tagFilter === 'all' || (p.tags || []).some((t) => t.text === tagFilter)) &&
     (prioFilter === 'all' || prioFilter === 'sort' || (p.priority || 'normal') === prioFilter)
+  const matchesFilters = (p) => matchesBase(p) && matchesStoresFilter(p, storesFilter)
   const q = search.trim().toLowerCase()
   const matchesSearch = (p) => {
     if (!q) return true
@@ -3523,6 +3747,19 @@ function Projects({ onOpenProject }) {
     return hay.includes(q)
   }
   const keep = (p) => matchesFilters(p) && matchesSearch(p)
+  /* El atajo cuenta todas las etapas (el trámite sigue abierto después de
+     Desarrollo) y por eso no mira el filtro de tiendas ni la pestaña. */
+  const deployingCount = universe.filter((p) => matchesBase(p) && matchesSearch(p) && storesSummary(p).deploying.length > 0).length
+  const toggleDeploying = () => {
+    if (storesFilter === 'tramite') {
+      setStoresFilter('all')
+      if (tab === 'all') setTab(prevTabRef.current)
+      return
+    }
+    prevTabRef.current = tab
+    setStoresFilter('tramite')
+    setTab('all')
+  }
   /* Una sola pasada para los contadores de las 8 etapas: antes se recorría el
      universo entero una vez por pestaña en cada render. */
   const matched = universe.filter(keep)
@@ -3546,6 +3783,10 @@ function Projects({ onOpenProject }) {
           y la acción principal. Antes eran tres franjas apiladas. */}
       <div className="pj-bar" style={{ marginBottom: 20 }}>
         <StageFilterMenu value={tab} onChange={setTab} counts={stageCounts} total={totalCount} />
+
+        {(deployingCount > 0 || storesFilter === 'tramite') && (
+          <StoresBarPill count={deployingCount} on={storesFilter === 'tramite'} onToggle={toggleDeploying} />
+        )}
 
         <FilterPanel count={chips.length} onClear={clearFilters}>
           <FilterSelect block title="Tipo" value={kindFilter} onChange={setKindFilter} active={kindFilter !== 'all'}>
@@ -3575,6 +3816,9 @@ function Projects({ onOpenProject }) {
             <option value="alta">Alta</option>
             <option value="normal">Normal</option>
             <option value="baja">Baja</option>
+          </FilterSelect>
+          <FilterSelect block title="Tiendas" value={storesFilter} onChange={setStoresFilter} active={storesFilter !== 'all'}>
+            {STORE_FILTERS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
           </FilterSelect>
         </FilterPanel>
 
@@ -3642,7 +3886,6 @@ function Projects({ onOpenProject }) {
               pct={projectProgress(p, planOf(p))}
               onOpen={() => onOpenProject(p.id)}
               onStage={(s) => setStage(p.id, s)}
-              onStores={(stores) => updateProject(p.id, { stores })}
               onAssign={(assignments) => updateProject(p.id, { assignments })}
               onScope={() => setScopeFor(p.id)}
               onLinks={() => setCardCfgFor(p.id)}
@@ -3853,13 +4096,13 @@ function ProjectLogModal({ open, kind, project, onClose, patch }) {
 function PmStartupAlert({ open, projects, clients, onClose, onOpenProject }) {
   const { botComms } = useApp()
   const clientOf = (id) => clients.find((c) => c.id === id)
-  const rows = projects.map((p) => ({ p, av: trackInfo(p, 'avance'), comm: trackInfo(p, 'comm', (botComms || {})[p.id]) }))
+  const rows = projects.map((p) => ({ p, av: trackInfo(p, 'avance'), comm: trackInfo(p, 'comm', (botComms || {})[p.id]), stores: storesSummary(p) }))
     .sort((a, b) => (b.comm.overdue || b.av.overdue ? 1 : 0) - (a.comm.overdue || a.av.overdue ? 1 : 0))
   return (
     <Modal open={open} onClose={onClose} title="Seguimiento de tus clientes" sub="Como PM, tené al día la comunicación y los avances" width={640}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.5 }}>Recordatorio: si pasaron más de <strong style={{ color: 'var(--text-dim)' }}>3 días hábiles</strong> sin comunicarte, más de <strong style={{ color: 'var(--text-dim)' }}>5 días hábiles</strong> sin un avance (o <strong style={{ color: 'var(--text-dim)' }}>7</strong> sin el primer avance), escribile al cliente para reportar cómo va el proyecto.</div>
-        {rows.map(({ p, av, comm }) => {
+        {rows.map(({ p, av, comm, stores }) => {
           const commBad = comm.overdue, avBad = av.overdue
           const fmtD = (t, firstLabel) => t.first ? firstLabel : t.days === 0 ? 'hoy' : `hace ${t.days}d háb.`
           return (
@@ -3871,6 +4114,16 @@ function PmStartupAlert({ open, projects, clients, onClose, onOpenProject }) {
                   <span style={{ color: commBad ? 'var(--red)' : 'var(--text-dim)' }}><I2.phone width={11} height={11} /> Comunicación: <strong>{fmtD(comm, 'sin primer mensaje')}</strong></span>
                   <span style={{ color: avBad ? 'var(--red)' : 'var(--text-dim)' }}><I2.folder width={11} height={11} /> Avance: <strong>{fmtD(av, 'sin primer avance')}</strong></span>
                 </div>
+                {stores.any && (
+                  <div className="st-inl">
+                    {stores.active.map((it) => (
+                      <span key={it.key}>
+                        <StoreIcon store={it.key} size={14} state={it.status} decorative />
+                        {it.label}: <strong>{storeShortLine(it)}</strong>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <a href={p.whatsappUrl || undefined} target="_blank" rel="noreferrer" onClick={(e) => { if (!p.whatsappUrl) e.preventDefault() }}
                 className="btn btn-sm" title={p.whatsappUrl ? 'Abrir grupo de WhatsApp' : 'Sin link de WhatsApp cargado'} style={{ color: p.whatsappUrl ? 'var(--green)' : 'var(--text-faint)', opacity: p.whatsappUrl ? 1 : 0.5, flexShrink: 0 }}><I2.whatsapp width={15} height={15} /> WhatsApp</a>
@@ -6364,6 +6617,11 @@ function ProjectDetail({ projectId, onBack }) {
     setStageAsk(null)
   }
   const setStage = (to) => (stageIsRegression(project, to) ? setStageAsk(to) : commitStage(to))
+  const setStore = (key, status) => {
+    patch((p) => ({ ...p, ...applyStoreStatus(p, key, status) }))
+    if (logActivity) logActivity({ type: 'stores', text: storeActivityText(project.name, key, status) })
+  }
+  const setStoreDay = (key, iso) => patch((p) => ({ ...p, ...applyStoreDate(p, key, iso) }))
 
   // tareas del equipo (vienen de la sección Tareas, filtradas por proyecto) y tareas/dependencias del cliente
   const userOf = (id) => (data.team || []).find((u) => u.id === id)
@@ -6443,8 +6701,7 @@ function ProjectDetail({ projectId, onBack }) {
                 title: linkedMvp ? 'Demo de ventas vinculada' : mvpSuggested ? 'Encontramos una demo que puede ser de este proyecto' : 'Vincular la demo que armó ventas' },
             ]} />
             <span className="pdh-sep" aria-hidden="true" />
-            <StageMenu variant="header" stage={stage} onChange={setStage}
-              stores={projectStores(project)} onStores={(stores) => patch((p) => ({ ...p, stores }))} />
+            <StageMenu variant="header" stage={stage} onChange={setStage} />
             <span className="pdh-sep" aria-hidden="true" />
             <button className="pd-cta" onClick={() => setEditOpen(true)}>
               Editar proyecto <i><I2.pencil width={13} height={13} /></i>
@@ -6462,6 +6719,10 @@ function ProjectDetail({ projectId, onBack }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <span className="pd-eyebrow">Etiquetas</span>
             <ProjectTags tags={project.tags} onChange={(tags) => patch((p) => ({ ...p, tags }))} />
+          </div>
+          <div className="st-group">
+            <span className="pd-eyebrow">Tiendas</span>
+            <StoresRow project={project} onStatus={setStore} onDate={setStoreDay} alwaysPills={!!intakeFor(project.name)} />
           </div>
         </div>
 
@@ -7044,7 +7305,7 @@ function buildSystemPrompt(project, client, plan) {
 KICK-OFF:
 ${project.kickoff}
 
-ETAPA: ${stageMeta(projectStage(project)).label}
+ETAPA: ${stageMeta(projectStage(project)).label}${storesLine(project, '\nTIENDAS (corre en paralelo a la etapa): ')}
 AVANCE: ${prog.pct}% · ${prog.done}/${prog.total} tareas del plan (equipo ${prog.equipoDone}/${prog.equipoTotal} · cliente ${prog.clienteDone}/${prog.clienteTotal})
 
 PLAN (${plan?.title || 'sin plan'}) — semanas y tareas:
@@ -7176,7 +7437,7 @@ function buildGlobalSystemPrompt(data, plans) {
     const pa = (p.pendingAgency || []).map((x) => `${x.title} [${x.priority}]`).join('; ') || 'ninguno'
     const pc = (p.pendingClient || []).map((x) => `${x.title} [${x.priority}]`).join('; ') || 'ninguno'
     const risks = (p.risks || []).map((r) => `${r.description} (${r.severity})`).join('; ') || 'ninguno'
-    return `### ${p.name} — ${clientName(p.clientId)} · etapa ${stageMeta(projectStage(p)).label} · avance ${prog.pct}% (${prog.done}/${prog.total} tareas, cliente ${prog.clienteDone}/${prog.clienteTotal})
+    return `### ${p.name} — ${clientName(p.clientId)} · etapa ${stageMeta(projectStage(p)).label} · avance ${prog.pct}% (${prog.done}/${prog.total} tareas, cliente ${prog.clienteDone}/${prog.clienteTotal})${storesLine(p, '\nDespliegue en tiendas (en paralelo a la etapa): ')}
 Kick-off: ${p.kickoff || '—'}
 Plan (${plan?.title || 'sin plan asociado'}):
 ${planPromptText(plan, '    ')}
@@ -8115,7 +8376,7 @@ function NotificationCenter() {
   const userOf = (id) => team.find((u) => u.id === id)
   const unread = activity.filter((a) => a.date > lastSeen).length
   const mentionsForMe = activity.filter((a) => a.targetId === myId && a.date > lastSeen).length
-  const ICONS = { 'call-add': I2.phone, 'task-add': I2.tasks, 'task-done': I2.check, 'project-add': I2.folder, 'plan-link': I2.calendar, 'plan-unlink': I2.calendar, comment: I2.comment, avance: I2.folder, comm: I2.phone, mention: I2.at, reply: I2.comment, react: I2.comment }
+  const ICONS = { 'call-add': I2.phone, 'task-add': I2.tasks, 'task-done': I2.check, 'project-add': I2.folder, 'plan-link': I2.calendar, 'plan-unlink': I2.calendar, stores: I2.rocket, comment: I2.comment, avance: I2.folder, comm: I2.phone, mention: I2.at, reply: I2.comment, react: I2.comment }
   const toggle = (e) => {
     e.stopPropagation()
     if (!open && btnRef.current) {
@@ -8282,7 +8543,7 @@ function Settings({ open, onClose, onManageTeam }) {
           <div className="label" style={{ marginBottom: 8 }}>Segundo cerebro · exportar contexto</div>
           <div className="surface" style={{ padding: 14, background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)', flexShrink: 0 }}><I2.doc width={19} height={19} /></div>
-            <div style={{ flex: 1, minWidth: 160 }}><div style={{ fontWeight: 700, fontSize: 14 }}>Snapshot en Markdown (para RAW)</div><div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.45 }}>Descarga un .md con todo el contexto en vivo: proyectos, avances, etapas, mantenimientos, tiempos y clientes.</div></div>
+            <div style={{ flex: 1, minWidth: 160 }}><div style={{ fontWeight: 700, fontSize: 14 }}>Snapshot en Markdown (para RAW)</div><div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.45 }}>Descarga un .md con todo el contexto en vivo: proyectos, avances, etapas, despliegue en tiendas, mantenimientos, tiempos y clientes.</div></div>
             <button className="btn btn-accent" onClick={exportContext}><I2.download width={15} height={15} /> Descargar .md</button>
           </div>
         </div>
