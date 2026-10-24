@@ -228,3 +228,13 @@ Prueba con 7 días o menos (o vencida), MVP con el plan ≥ 85% y Finalizados. S
 ## PENDIENTE
 - Umbrales por navegador: si el equipo quiere los mismos para todos, hace falta guardarlos en una tabla de settings.
 - Puente con Speed Funnels (avisar al closer) usando `offerCandidates`.
+
+# 2026-10-24 · Encuesta a clientes (pedido de Fede, call 23/10)
+
+21 preguntas en 5 bloques (cómo llegaron a la IA, qué consumen, por qué nos eligieron, cómo decidieron, cierre con NPS), en español e inglés. Fede la usa para marketing; Nacho la manda por privado.
+
+- **Cliente**: `/?encuesta=<token>` (`src/survey/SurveyPage.jsx`). Sin login, una pregunta por pantalla, avanza solo en las de opción única, guarda en localStorage al instante y en la base a los 900 ms (y al ocultar la pestaña). Al enviarla queda cerrada: la RPC no deja pisarla.
+- **Equipo**: sidebar → Encuesta (`src/survey/SurveyAdmin.jsx`). Por cliente: crear link (queda copiado el mensaje listo para WhatsApp), copiar link/mensaje, ver respuestas. Resumen: conteos por opción, promedio/NPS y lista de textos con el nombre del cliente.
+- **Base**: `docs/migrations/2026-10-24-client-surveys.sql`, **APLICADA** el 24/10 (aditiva). Tabla `client_surveys` (una fila por proyecto) + RPC `survey_public_get` / `survey_public_save` (anon, por token de 24 caracteres) + `survey_is_team()`.
+- **Trampa**: la base es compartida con otras apps y `auth.users` tiene gente ajena al equipo. Por eso `client_surveys` NO usa `to authenticated using (true)` como las tablas viejas: las políticas piden `survey_is_team()` (mail del JWT en `team_members` aprobado, sin colaboradores). Ensayado: un mail ajeno lee 0 filas.
+- Los ids de pregunta/opción son lo que queda guardado: cambiar textos es libre, cambiar ids deja respuestas huérfanas. `npm test` corre `src/survey/model.test.js`.
