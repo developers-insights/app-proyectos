@@ -49,6 +49,8 @@ import { buildContextMarkdown } from './lib/contextExport.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
 import MvpsView, { ProjectMvpModal, projectMvps } from './mvps/MvpsView.jsx'
+import SurveyAdmin from './survey/SurveyAdmin.jsx'
+import SurveyPage from './survey/SurveyPage.jsx'
 import { normalizeMvp, mvpDemoUrl, mvpRepoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
 
 /* ============================================================================
@@ -8042,6 +8044,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'clients', label: 'Clients', icon: I2.users },
     { key: 'mvps', label: 'MVPs', icon: I2.rocket, badge: newMvps },
     { key: 'calls', label: 'Calls', icon: I2.phone },
+    { key: 'encuesta', label: 'Encuesta', icon: I2.comment },
     { key: 'sops', label: 'SOP', icon: I2.doc },
     { key: 'cuentas', label: 'Cuentas', icon: I2.key },
     // Usuarios/aprobación: solo fundadores + Nacho Cachaza
@@ -9069,6 +9072,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'bot' && <BotView />}
               {route.view === 'usuarios' && <UsuariosView onOpenProject={openProject} />}
               {route.view === 'mvps' && <MvpsView onOpenProject={openProject} />}
+              {route.view === 'encuesta' && <SurveyAdmin />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
             </motion.div>
             {/* el iframe del editor NO se desmonta al navegar: solo se oculta (ver editorEverOpenedRef) */}
@@ -9576,6 +9580,7 @@ export default function InsightsApp() {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  if (params.get('encuesta')) return <SurveyPage supabase={supabase} token={params.get('encuesta')} />
   if (onbxStep) return <OnboardingV2 supabase={supabase} cloudEnabled={cloudEnabled} />
   if (onbStep) return <OnboardingLanding step={onbStep} supabase={supabase} cloudEnabled={cloudEnabled} />
   if (shareId) return <ClientView shareId={shareId} />
