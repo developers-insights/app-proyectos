@@ -5,7 +5,8 @@
  * desde 2026-08 (antes había un `status` activo/pendiente/pausado/entregado que
  * convivía con el ciclo de vida y decía la mitad de la historia cada uno).
  *
- *   Desarrollo  → se está construyendo
+ *   Desarrollo  → se está construyendo (el MVP que vendió el closer)
+ *   Fase 2      → venta nueva de ticket alto sobre el mismo cliente: otro desarrollo
  *   Free Maint. → mantenimiento sin cargo (la prueba gratis)
  *   Starter · Kaizen · Scale → planes de mantenimiento pagos
  *
@@ -24,6 +25,7 @@ import { normalizeLifecycle, advancePhase } from './lifecycle.js'
  */
 export const PROJECT_STAGES = [
   { key: 'desarrollo', label: 'Desarrollo',  group: 'obra',          phase: 1, colorVar: '--accent', hint: 'Se está construyendo' },
+  { key: 'fase2',      label: 'Fase 2',      group: 'obra',          phase: 1, colorVar: '--violet', hint: 'Venta nueva sobre el mismo cliente' },
   { key: 'free',       label: 'Free Maint.', group: 'mantenimiento', phase: 2, colorVar: '--blue',   hint: 'Mantenimiento sin cargo' },
   { key: 'starter',    label: 'Starter',     group: 'mantenimiento', phase: 3, colorVar: '--green',  hint: 'Plan mensual' },
   { key: 'kaizen',     label: 'Kaizen',      group: 'mantenimiento', phase: 3, colorVar: '--yellow', hint: 'Plan mensual' },
@@ -77,11 +79,24 @@ export const isPaidStage = (key) => stageMeta(key).phase === 3
  */
 export function applyStage(project, key, now = new Date()) {
   const meta = stageMeta(key)
+  const current = projectStage(project)
+  const stamp = now.toISOString()
+  // stageAt es la única fecha que tienen los terminales: sin ella no hay "días en
+  // stand-by". Moverse a la misma etapa no la reinicia.
+  const stageAt = current === meta.key && validIso(project && project.stageAt) ? project.stageAt : stamp
   // Estados terminales (finalizado/pausado/cancelado): solo marcan la etapa; NO
   // tocan el ciclo de vida ni sellan fechas de cobro. El desarrollo dejó de correr.
-  if (meta.terminal) return { stage: meta.key }
-  return { stage: meta.key, lifecycle: advancePhase(project, meta.phase, now) }
+  if (meta.terminal) return { stage: meta.key, stageAt }
+  const lifecycle = advancePhase(project, meta.phase, now)
+  if (meta.key === 'fase2') {
+    const prev = normalizeLifecycle(project).devAt
+    return { stage: meta.key, stageAt, lifecycle: { ...lifecycle, devAt: current === 'fase2' && prev ? prev : stamp } }
+  }
+  if (meta.key === 'desarrollo') return { stage: meta.key, stageAt, lifecycle: { ...lifecycle, devAt: null } }
+  return { stage: meta.key, stageAt, lifecycle }
 }
+
+const validIso = (v) => typeof v === 'string' && v !== '' && !Number.isNaN(new Date(v).getTime())
 
 /**
  * ¿Pasar a `key` borra fechas ya selladas? Sirve para pedir confirmación solo

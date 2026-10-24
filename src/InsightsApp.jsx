@@ -51,6 +51,7 @@ import BotView from './bot/BotView.jsx'
 import MvpsView, { ProjectMvpModal, projectMvps } from './mvps/MvpsView.jsx'
 import SurveyAdmin from './survey/SurveyAdmin.jsx'
 import SurveyPage from './survey/SurveyPage.jsx'
+import RecorridoView, { UpsellModal, UpsellPanel } from './journey/RecorridoView.jsx'
 import { normalizeMvp, mvpDemoUrl, mvpRepoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
 
 /* ============================================================================
@@ -225,6 +226,14 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 
 /* --- header: buscador, segmentados, selects, CTA --- */
 .pj-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.pj-views{display:inline-flex;gap:2px;padding:3px;border-radius:12px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border)}
+.pj-views button{position:relative;display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:9px;
+  font-size:13px;font-weight:600;color:var(--text-dim);transition:color .2s var(--e)}
+.pj-views button:hover{color:var(--text)}
+.pj-views button[aria-selected="true"]{color:var(--text)}
+.pj-views button > :not(.on){position:relative;z-index:1}
+.pj-views .on{position:absolute;inset:0;border-radius:9px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--border-strong),0 1px 2px rgba(0,0,0,.06)}
+.pj-views button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .pj-search{display:flex;align-items:center;gap:9px;width:290px;max-width:52vw;height:38px;padding:0 13px;
   border-radius:999px;background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border);
   transition:box-shadow .3s var(--e),background .3s var(--e)}
@@ -467,6 +476,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pdh-stage .pdh-dot{width:7px;height:7px;border-radius:999px;background:var(--sc);flex:none}
 .pdh-stage .pdh-chev{color:var(--sc)}
 [data-stage="desarrollo"]{--sc:var(--accent);--ss:var(--accent-soft);--sl:var(--accent-line)}
+[data-stage="fase2"]{--sc:var(--violet);--ss:var(--violet-soft);--sl:var(--violet-line)}
 [data-stage="free"]{--sc:var(--blue);--ss:var(--blue-soft);--sl:var(--blue-line)}
 [data-stage="starter"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
 [data-stage="kaizen"]{--sc:var(--yellow);--ss:var(--yellow-soft);--sl:var(--yellow-line)}
@@ -2607,7 +2617,7 @@ function StageMenu({ stage, onChange, variant = 'tag' }) {
         </button>
       ) : variant === 'compact' ? (
         <button ref={btnRef} onClick={toggle} className="pj-status" title={`Etapa: ${meta.label} — cambiar`} aria-haspopup="listbox" aria-expanded={open}>
-          <span className={`pj-dot${key === 'desarrollo' ? ' live' : ''}`} style={{ background: stageColor(key) }} />
+          <span className={`pj-dot${key === 'desarrollo' || key === 'fase2' ? ' live' : ''}`} style={{ background: stageColor(key) }} />
           {meta.label}
           <I2.chevD className="cv" width={10} height={10} style={{ color: 'var(--text-faint)' }} />
         </button>
@@ -2647,20 +2657,29 @@ function StageConfirmModal({ open, project, to, onClose, onConfirm }) {
   // El modal queda montado aunque `to` vuelva a null: desmontarlo de golpe se
   // saltea la animación de salida del <Modal>.
   const meta = stageMeta(to)
+  const f2 = meta.key === 'fase2'
+  const verb = f2 ? `Pasar a ${meta.label}` : `Volver a ${meta.label}`
   return (
-    <Modal open={open && !!to} onClose={onClose} width={460} title={`Volver a ${meta.label}`} sub={project?.name}>
+    <Modal open={open && !!to} onClose={onClose} width={460} title={verb} sub={project?.name}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className="pd-note" style={{ background: 'var(--yellow-soft)' }}>
           <span className="ic" style={{ background: 'var(--card)', color: 'var(--yellow)' }}><I2.alert width={15} height={15} /></span>
-          <div>
-            Volver atrás <b>borra las fechas de las etapas siguientes</b>. Si el proyecto estaba en un plan pago,
-            deja de contar el cobro y se pierde el día en que arrancó.
-          </div>
+          {f2 ? (
+            <div>
+              La Fase 2 es un desarrollo nuevo: <b>deja de contar el cobro del plan</b> y se pierde el día en que arrancó.
+              Si el cliente sigue pagando el mantenimiento aparte, dejalo en su plan y anotá la Fase 2 en Upsell.
+            </div>
+          ) : (
+            <div>
+              Volver atrás <b>borra las fechas de las etapas siguientes</b>. Si el proyecto estaba en un plan pago,
+              deja de contar el cobro y se pierde el día en que arrancó.
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button className="btn" onClick={onClose}>Cancelar</button>
           <button className="btn btn-accent" onClick={() => onConfirm(to)} autoFocus>
-            <I2.check width={15} height={15} /> Volver a {meta.label}
+            <I2.check width={15} height={15} /> {verb}
           </button>
         </div>
       </div>
@@ -3648,6 +3667,36 @@ function FilterPanel({ count, onClear, children }) {
   )
 }
 
+const PROJECT_VIEWS = [
+  { key: 'grilla', label: 'Grilla', Ico: I2.cards },
+  { key: 'recorrido', label: 'Recorrido', Ico: I2.gantt },
+]
+
+function ViewSwitch({ value, onChange }) {
+  const onKey = (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    e.preventDefault()
+    const i = PROJECT_VIEWS.findIndex((v) => v.key === value)
+    const next = PROJECT_VIEWS[(i + (e.key === 'ArrowRight' ? 1 : PROJECT_VIEWS.length - 1)) % PROJECT_VIEWS.length]
+    onChange(next.key)
+    e.currentTarget.querySelector(`[data-k="${next.key}"]`)?.focus()
+  }
+  return (
+    <div className="pj-views" role="tablist" aria-label="Vista de proyectos" onKeyDown={onKey}>
+      {PROJECT_VIEWS.map((v) => {
+        const on = v.key === value
+        return (
+          <button key={v.key} data-k={v.key} role="tab" aria-selected={on} tabIndex={on ? 0 : -1} onClick={() => onChange(v.key)}>
+            {on && <motion.span layoutId="pj-views-on" className="on" transition={{ type: 'spring', stiffness: 520, damping: 40 }} />}
+            <v.Ico width={15} height={15} />
+            <span>{v.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function Projects({ onOpenProject }) {
   const { data, myId, logActivity, projectStore, clientStore, botComms, plans, plansReady } = useApp()
   // Los planes llegan DESPUÉS que los proyectos. Si solo esperáramos projectStore,
@@ -3678,6 +3727,7 @@ function Projects({ onOpenProject }) {
   const [kindFilter, setKindFilter] = useState(qp.get('kind') || 'all')   // all | cliente | interno
   const [storesFilter, setStoresFilter] = useState(() => (isStoresFilter(qp.get('stores')) ? qp.get('stores') : 'all'))   // all | tramite | publicada
   const prevTabRef = useRef('desarrollo')
+  const [view, setView] = useState(() => (qp.get('vista') === 'recorrido' ? 'recorrido' : 'grilla'))
   const [search, setSearch] = useState('')             // búsqueda en vivo (client-side): nombre, cliente, PM/Dev
   const [stageAsk, setStageAsk] = useState(null)       // { projectId, to } — retroceso de etapa a confirmar
   const [logModal, setLogModal] = useState(null)       // { projectId, kind } | null
@@ -3703,6 +3753,7 @@ function Projects({ onOpenProject }) {
   // keep filters URL-friendly
   useEffect(() => {
     const p = new URLSearchParams()
+    if (view === 'recorrido') p.set('vista', 'recorrido')
     if (tab !== 'desarrollo') p.set('tab', tab)
     if (clientFilter !== 'all') p.set('client', clientFilter)
     if (pmFilter !== 'all') p.set('pm', pmFilter)
@@ -3713,7 +3764,7 @@ function Projects({ onOpenProject }) {
     if (storesFilter !== 'all') p.set('stores', storesFilter)
     const qs = p.toString()
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
-  }, [tab, clientFilter, pmFilter, devFilter, tagFilter, prioFilter, kindFilter, storesFilter])
+  }, [view, tab, clientFilter, pmFilter, devFilter, tagFilter, prioFilter, kindFilter, storesFilter])
 
   // Universo visible ANTES de filtrar: los contadores de las pestañas no pueden
   // contar proyectos que el dev no ve.
@@ -3779,7 +3830,12 @@ function Projects({ onOpenProject }) {
           <div className="label" style={{ marginBottom: 6 }}>Cartera</div>
           <h1 style={{ fontSize: 32, lineHeight: 1.05 }}>Proyectos</h1>
         </div>
+        <ViewSwitch value={view} onChange={setView} />
       </div>
+
+      {view === 'recorrido' ? (
+        <RecorridoView projects={universe} loading={loading} onOpenProject={onOpenProject} onBack={() => setView('grilla')} />
+      ) : (<>
 
       {/* Una sola fila de control: estado, filtros, lo que está aplicado, búsqueda
           y la acción principal. Antes eran tres franjas apiladas. */}
@@ -3895,6 +3951,7 @@ function Projects({ onOpenProject }) {
           ))}
         </motion.div>
       )}
+      </>)}
 
       <StageConfirmModal open={!!stageAsk} to={stageAsk?.to} project={data.projects.find((p) => p.id === stageAsk?.projectId)}
         onClose={() => setStageAsk(null)} onConfirm={(to) => { commitStage(stageAsk.projectId, to); setStageAsk(null) }} />
@@ -6583,6 +6640,7 @@ function ProjectDetail({ projectId, onBack }) {
   const [planOpen, setPlanOpen] = useState(false)
   const [vaultOpen, setVaultOpen] = useState(false)
   const [mvpOpen, setMvpOpen] = useState(false)
+  const [upsellOpen, setUpsellOpen] = useState(false)
 
   if (!project) return null
   const patch = (fn) => projectStore.patch(projectId, fn)
@@ -6780,6 +6838,8 @@ function ProjectDetail({ projectId, onBack }) {
         {/* AVISO DE COBRO — solo aparece cuando hay uno a la vista */}
         <BillingAlert project={project} client={client} patch={patch} replyTo={me?.email || ''} onEdit={() => setEditOpen(true)} />
 
+        {project.kind !== 'interno' && <UpsellPanel project={project} onOpen={() => setUpsellOpen(true)} />}
+
         {/* AVANCE DEL PLAN — acordeón de semanas, tachado + % en vivo para el
             cliente. Tachar una tarea marca "último avance" del proyecto. */}
         <PlanProgress linkedPlan={linkedPlan} patchPlan={patchPlan} onAssociate={() => setPlanOpen(true)} markProgress={() => patch((p) => ({ ...p, lastProgressAt: new Date().toISOString() }))} />
@@ -6887,6 +6947,7 @@ function ProjectDetail({ projectId, onBack }) {
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
       <VaultModal open={vaultOpen} project={project} onClose={() => setVaultOpen(false)} patch={patch} />
       <ProjectMvpModal open={mvpOpen} project={project} onClose={() => setMvpOpen(false)} />
+      <UpsellModal open={upsellOpen} project={project} onClose={() => setUpsellOpen(false)} />
       <Modal open={driveOpen} onClose={() => setDriveOpen(false)} title="Drive del proyecto" sub={project.name} width={440}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Field label="Enlace de Google Drive (compartido con el cliente)">
