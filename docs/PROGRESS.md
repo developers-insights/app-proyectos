@@ -194,3 +194,37 @@ Build verde. Lógica pura con node (transiciones, fechas, filtros, export, migra
 
 ## PENDIENTE
 - No se muestra en el link público del cliente: `project-share` arma su propio payload. Si Nacho quiere que el cliente vea "estamos publicando en Google Play", hay que sumarlo ahí.
+
+---
+
+# 2026-10-24 · Recorrido de clientes, Fase 2 y notas de upsell (pedido de Fede, call del 23/10)
+
+Fede entraba a Proyectos y solo veía porcentajes. Ahora hay una pestaña **Recorrido** (switch Grilla / Recorrido arriba a la derecha, `?vista=recorrido`) con el mapa Onboarding → MVP → 30 días gratis → Plan mensual / Fase 2 / Stand-by. La grilla no cambió.
+
+## Modelo
+- **Fase 2 es una etapa real** (`stage: 'fase2'`, grupo En obra, fase 1 del lifecycle, color `--violet`). Entrar sella `lifecycle.devAt`: los días de la Fase 2 se cuentan desde ahí y `startedAt` (el onboarding original) no se toca. Volver a Desarrollo limpia `devAt`. Desde un plan pago es retroceso (fase 3 → 1): pide confirmación con texto propio, porque deja de contar el cobro. Si el cliente sigue pagando mantenimiento aparte, se lo deja en su plan y la Fase 2 se anota en Upsell.
+- **`project.stageAt`**: `applyStage` lo sella en cada cambio de etapa (no al repetir la misma). Es la única fecha de los terminales: sin ella no hay "días en stand-by". Los proyectos viejos no la tienen y muestran "sin fecha" hasta su próximo cambio de etapa.
+- **Onboarding** = Desarrollo sin tareas de plan y sin avance heredado. **Stand-by** = Pausado + Finalizado. Cancelados e internos quedan fuera del mapa.
+- **`project.upsell = { entries: [{ id, offer: plan|fase2, status: ofrecido|acepta|paga|no_quiere, at, by, payDay, note }], objections }`** en el JSON del proyecto: sin migración. El último registro de cada oferta es su estado. `normalizeUpsell` descarta lo mal formado.
+- Lógica pura en `src/lib/journey.js` (`journeyBoard`, `journeyEntry`, `offerCandidates`, `upsellState`…), con `now` inyectable. **`offerCandidates(projects, ctx, now, thresholds)`** es lo que va a leer el puente con Speed Funnels para avisarle al closer.
+
+## Alertas (umbrales editables en "Umbrales", se guardan en localStorage del navegador)
+MVP > 90 días (amarillo) · desarrollo o Fase 2 > 120 días (rojo) · plan al 100% todavía en Desarrollo · prueba vencida sin plan · tienda en trámite > 15 días (rojo al doble) · stand-by > 30 días.
+
+## Para ofrecer
+Prueba con 7 días o menos (o vencida), MVP con el plan ≥ 85% y Finalizados. Sale si ya aceptó o paga todo lo ofrecible; si dijo que no, queda al final atenuado, con la objeción a la vista.
+
+## Dónde se ve
+- Recorrido: cada cliente es una fila con sus iniciales, días en el tramo, una barrita de cuánto lleva contra el umbral y su alerta o último estado de upsell. Click abre el proyecto. Debajo, "Para ofrecer" (con botón Anotar) y "Alertas" agrupadas por cliente.
+- Detalle del proyecto: tira "Upsell" debajo del aviso de cobro con el estado de cada oferta, la última nota y la objeción; abre el modal con el historial.
+
+## Trampas
+- La clase `.sb` es del sidebar (otra vez): el renglón secundario del punto se llama `.jr-sub`.
+- El mapa usa container queries (`.jr-wrap`): horizontal desde 900 px de contenido, línea de tiempo vertical abajo de eso. Los conectores dependen de que `.jr-sh` mida 44 px.
+
+## Verificado
+`npm test` (node --test, 15 casos: tramos, alertas, Fase 2 sin romper `billingNotice`, datos viejos, upsell mal formado, candidatos). `npm run build` verde. Navegador en modo local con datos de prueba: 1280, 768 y 375, oscuro y claro, modal de upsell guardando, panel en el detalle, umbrales, búsqueda vacía; sin errores de consola.
+
+## PENDIENTE
+- Umbrales por navegador: si el equipo quiere los mismos para todos, hace falta guardarlos en una tabla de settings.
+- Puente con Speed Funnels (avisar al closer) usando `offerCandidates`.

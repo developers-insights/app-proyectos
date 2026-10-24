@@ -16,6 +16,7 @@
  *   {
  *     phase: 1 | 2 | 3,
  *     startedAt: ISO,                    // arranque de fase 1
+ *     devAt: ISO | null,                 // arranque del desarrollo vigente si no es el primero (Fase 2)
  *     phase2At: ISO | null,
  *     phase3At: ISO | null,
  *     trialDays: 30,
@@ -131,6 +132,7 @@ export function normalizeLifecycle(project) {
   const raw = p.lifecycle && typeof p.lifecycle === 'object' ? p.lifecycle : {}
 
   const startedAt = iso(raw.startedAt) || iso(p.createdAt) || null
+  const devAt = iso(raw.devAt)
   const phase2At = iso(raw.phase2At)
   const phase3At = iso(raw.phase3At)
 
@@ -157,6 +159,7 @@ export function normalizeLifecycle(project) {
   return {
     phase,
     startedAt,
+    devAt,
     phase2At,
     phase3At,
     trialDays,
@@ -170,7 +173,9 @@ export function normalizeLifecycle(project) {
 function phaseAnchor(lc) {
   if (lc.phase === 3) return lc.phase3At || lc.phase2At || lc.startedAt
   if (lc.phase === 2) return lc.phase2At || lc.startedAt
-  return lc.startedAt
+  // Una Fase 2 vuelve a fase 1 sin perder el onboarding original: sus días se
+  // cuentan desde que arrancó la Fase 2, no desde la primera venta.
+  return lc.devAt || lc.startedAt
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
