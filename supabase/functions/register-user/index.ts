@@ -36,7 +36,17 @@ Deno.serve(async (req) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'El email no tiene un formato válido.' })
     if (password.length < 6) return json({ error: 'La contraseña tiene que tener al menos 6 caracteres.' })
 
+    // Esta función crea cuentas ya confirmadas sin probar que el mail es de quien lo pide.
+    // is_team() (RLS) confía en el mail confirmado y UGC da acceso a todo @insightsapps.tech:
+    // un mail del equipo o del dominio sólo entra por invite-member, que le manda la clave a
+    // ese buzón.
+    if (email.endsWith('@insightsapps.tech')) return json({ error: 'Con un mail de insights entrás por invitación: pedísela a tu equipo.' })
+
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+
+    const { data: rows, error: rErr } = await admin.from('team_members').select('data')
+    if (rErr) return json({ error: 'No pudimos crear la cuenta. Probá de nuevo en un rato.' })
+    if ((rows || []).some((r) => String(r.data?.email || '').trim().toLowerCase() === email)) return json({ error: 'already_registered' })
 
     // 1) crear el usuario YA confirmado (no manda mail → no hay rate limit)
     const { error: cErr } = await admin.auth.admin.createUser({

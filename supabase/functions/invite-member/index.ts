@@ -58,13 +58,14 @@ Deno.serve(async (req) => {
     const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
     const { data: caller } = await admin.auth.getUser(token)
     const callerEmail = String(caller?.user?.email || '').toLowerCase()
-    if (!callerEmail) return json({ error: 'unauthorized' })
+    if (!callerEmail || !caller?.user?.email_confirmed_at) return json({ error: 'unauthorized' })
     // Solo invita alguien del equipo interno: los registros públicos quedan en status
     // 'pending' o con access 'project' y no pueden dar de alta cuentas.
     const { data: rows, error: tErr } = await admin.from('team_members').select('data').is('deleted_at', null)
     if (tErr) return json({ error: tErr.message })
     const inviter = (rows || []).map((r) => r.data || {}).find((m) => String(m.email || '').toLowerCase() === callerEmail)
-    if (!inviter || inviter.status === 'pending' || inviter.access === 'project') return json({ error: 'forbidden' })
+    // Misma regla que is_team() en la base: aprobado y full explícitos. Un colaborador no da altas.
+    if (!inviter || inviter.status !== 'approved' || inviter.access !== 'full') return json({ error: 'forbidden' })
 
     const b = await req.json().catch(() => ({}))
     const name = String(b.name || '').trim()

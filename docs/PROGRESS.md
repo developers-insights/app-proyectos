@@ -264,3 +264,22 @@ Un solo secreto en los dos sentidos: `sf_puente_config.secret` acá, `if_platfor
 ## PENDIENTE
 - Acá no se ve si el closer leyó la nota (el "visto" vive en Speed Funnels).
 - La foto usa los umbrales default del Recorrido (`DEFAULT_THRESHOLDS`): los editados viven en el localStorage de cada navegador.
+
+# 2026-10-24 · Sólo el equipo lee y escribe proyectos, clientes, planes y miembros
+
+Auditoría del 24/10: con el signup abierto de la base compartida, cualquier cuenta podía insertarse en `team_members` (el default del front la daba por aprobada y full), leer `client_surveys`, mandarle notas a los closers por `sf_puente_aviso` y editar mails de clientes.
+
+## Qué quedó (APLICADO en `yzmtzyuncekspgtsetwk` el 24/10)
+- **Migración `docs/migrations/2026-10-24-solo-el-equipo.sql`**. `is_team()`: fila viva con `status='approved'` y `access='full'` explícitos y mail de `auth.users` confirmado (por `auth.uid()`, no por el JWT). Backfill explícito de las dos filas vivas sin status/access (u5, f9lvnlr3). `survey_is_team()` llama a `is_team()` (antes dejaba pasar a clientes del portal).
+- `projects`/`clients`/`plans`: el equipo todo; un colaborador lee y edita sus proyectos asignados y el cliente y plan de esos proyectos (puede crear planes); un cliente del portal sólo los lee. Sin política de DELETE (todo es soft-delete). anon sin grants; sin TRUNCATE para nadie de sesión.
+- `team_members`: un no-miembro sólo crea su fila `pending`/`project` con su mail, y sólo ve la suya (también con tombstone). `team_members_guard` frena que alguien fuera del equipo cambie status, access, proyectos asignados, email o deleted_at. Como el front guarda con upsert y Postgres aplica el WITH CHECK de INSERT a la fila propuesta, `pm_fila_propia_igual` deja pasar la fila propia sin cambios en lo protegido.
+- `sf_puente_aviso`: un aviso por proyecto cada 30 s; lo que cae en la ventana queda en `sf_puente_cola` y el cron `sf-puente-vaciar` (cada minuto) lo manda en un solo POST.
+- **Edge functions** (desplegadas): `register-user` (v9) rechaza `@insightsapps.tech` y mails que ya están en `team_members`, porque crea cuentas confirmadas sin probar el buzón; `invite-member` (v3) exige mail confirmado y aprobado+full (un colaborador ya no da altas).
+
+## Verificado
+Ensayo revertido `docs/migrations/2026-10-24-solo-el-equipo.ensayo.sql` (ajeno, mail sin confirmar, equipo, colaborador, service_role, anon y freno del puente): todo como se espera. En vivo: anon a `projects` 401, `survey_public_get` responde, `register-user` frena dominio y mail del equipo. `npm test` 31/31, `npm run build`.
+
+## PENDIENTE
+- Un colaborador que abre "Equipo" y agrega a alguien queda con un guardado que falla (la base lo rechaza): esconder ese botón para `collab`.
+- `tasks`, `activity`, `app_state`, `app_secrets`, `published_plans`, `plan_notes`, `fathom_calls`, `wa_*`, `mvps` siguen con políticas abiertas a cualquier `authenticated`: mismo arreglo con `is_team()`.
+- `onboarding-signup` es público y cada alta dispara el puente y Clarity: sin tope de volumen.
