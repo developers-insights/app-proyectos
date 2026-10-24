@@ -61,3 +61,11 @@ export function visibleProjects(projects, me) {
     return !!dev && dev.userId === me.id
   })
 }
+
+/**
+ * Externo: colaborador o cliente del portal. No da altas ni edita al equipo (la base
+ * lo rechaza desde 2026-10-24: sólo is_team() escribe filas ajenas de team_members).
+ */
+export function isExternalMember(member) {
+  return !!member && (member.access === 'collab' || member.access === 'project')
+}
