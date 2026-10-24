@@ -238,3 +238,29 @@ Prueba con 7 días o menos (o vencida), MVP con el plan ≥ 85% y Finalizados. S
 - **Base**: `docs/migrations/2026-10-24-client-surveys.sql`, **APLICADA** el 24/10 (aditiva). Tabla `client_surveys` (una fila por proyecto) + RPC `survey_public_get` / `survey_public_save` (anon, por token de 24 caracteres) + `survey_is_team()`.
 - **Trampa**: la base es compartida con otras apps y `auth.users` tiene gente ajena al equipo. Por eso `client_surveys` NO usa `to authenticated using (true)` como las tablas viejas: las políticas piden `survey_is_team()` (mail del JWT en `team_members` aprobado, sin colaboradores). Ensayado: un mail ajeno lee 0 filas.
 - Los ids de pregunta/opción son lo que queda guardado: cambiar textos es libre, cambiar ids deja respuestas huérfanas. `npm test` corre `src/survey/model.test.js`.
+
+# 2026-10-24 · Puente con Speed Funnels: notas para el closer y aviso "para ofrecer"
+
+Pedido de Juan y Fede (call del 23/10): el closer que le cobra a un cliente ve desde Speed Funnels (Propuestas → Cuotas) cómo va el proyecto, se entera de lo urgente que anota Nacho y sabe cuándo ofrecer el plan mensual o la Fase 2.
+
+## Qué se hizo acá
+- **Para el closer** (detalle del proyecto, debajo de Upsell): `project.closerNotes = [{ id, text, at, by, resolvedAt, resolvedBy }]` en el JSON del proyecto, sin migración. Lógica pura en `src/lib/closerNotes.js`. Una nota abierta viaja a Speed Funnels; "Resuelta" la saca de allá (queda en el historial y se puede reabrir).
+- **`src/lib/bridge.js`**: la foto que viaja por proyecto de cliente. Reusa `journeyEntry`, `offerCandidates`, `upsellState`, `projectProgress` y el plan (`currentWeekNumber`, `hitoForWeek`) para el próximo hito. Datos mínimos: nombre, empresa, mail y teléfono del cliente (para emparejar con la venta), etapa, tramo, días, avance, hito, alertas, upsell, candidato a oferta y notas abiertas. Sin presupuesto ni notas internas (lo fija `tests/puente.test.js`).
+- **Edge function `sf-puente`** (DESPLEGADA el 24/10, verify_jwt off): GET = todos, POST `{ids}` = esos (devuelve `bajas` para borrados o internos). Puerta `x-puente-secret` contra `sf_puente_config.secret`, en tiempo constante. Importa `../../../src/lib/bridge.js`, así que se despliega desde la raíz del repo con `supabase functions deploy sf-puente --project-ref yzmtzyuncekspgtsetwk --use-api --no-verify-jwt` (el CLI sube los archivos de `src/` que importa). Si cambian `journey.js`, `progress.js`, `stages.js`, `lifecycle.js` o `planModel.js`, hay que redesplegarla.
+- **Migración `docs/migrations/2026-10-24-sf-puente.sql`** (APLICADA el 24/10, aditiva): tabla `sf_puente_config` (RLS sin políticas ni grants a sesión) + trigger `sf_puente_aviso` en `projects` que, si cambian notas, upsell, etapa, lifecycle, plan, cliente, nombre o borrado, le avisa a Speed Funnels (`if-proyectos`) con el id. Nunca frena el guardado: un error queda como warning.
+- **`?proyecto=<id>`** abre el detalle de ese proyecto: es el link "Abrir en Proyectos" de la ficha de Speed Funnels.
+
+## Por qué así
+- La lógica del Recorrido vive en un solo lugar (acá): Speed Funnels no la copia, recibe el resultado.
+- Speed Funnels guarda la última foto y su pantalla nunca espera a esta base; si esto se cae, el closer ve lo último conocido con "hace N min".
+- Empuje (trigger) + reconciliación cada 15 min, el mismo patrón que Clarity (`clarity_aviso_proyecto`). Los cambios del plan no disparan el trigger y llegan por la reconciliación.
+
+## Seguridad
+Un solo secreto en los dos sentidos: `sf_puente_config.secret` acá, `if_platform_settings.proyectos.secret` en Speed Funnels, `PROYECTOS_PUENTE_SECRET` en envkit (`speed-funnels`). Rotarlo = cambiar los tres. Nunca pasa por el navegador. Speed Funnels lo usa sólo para el espacio Insights; un closer ve sólo los proyectos de sus ventas.
+
+## Verificado
+`npm test` (31 casos, 4 nuevos en `tests/puente.test.js`), `npm run build`. Navegador en modo local: nota creada y listada, 1280 y 375. `sf-puente` en vivo: sin secreto 401; con secreto 26 proyectos en ~2,5 s.
+
+## PENDIENTE
+- Acá no se ve si el closer leyó la nota (el "visto" vive en Speed Funnels).
+- La foto usa los umbrales default del Recorrido (`DEFAULT_THRESHOLDS`): los editados viven en el localStorage de cada navegador.

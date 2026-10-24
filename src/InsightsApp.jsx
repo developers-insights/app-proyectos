@@ -52,6 +52,7 @@ import MvpsView, { ProjectMvpModal, projectMvps } from './mvps/MvpsView.jsx'
 import SurveyAdmin from './survey/SurveyAdmin.jsx'
 import SurveyPage from './survey/SurveyPage.jsx'
 import RecorridoView, { UpsellModal, UpsellPanel } from './journey/RecorridoView.jsx'
+import { CloserNotesPanel } from './journey/CloserNotes.jsx'
 import { normalizeMvp, mvpDemoUrl, mvpRepoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
 
 /* ============================================================================
@@ -6839,6 +6840,7 @@ function ProjectDetail({ projectId, onBack }) {
         <BillingAlert project={project} client={client} patch={patch} replyTo={me?.email || ''} onEdit={() => setEditOpen(true)} />
 
         {project.kind !== 'interno' && <UpsellPanel project={project} onOpen={() => setUpsellOpen(true)} />}
+        {project.kind !== 'interno' && <CloserNotesPanel project={project} />}
 
         {/* AVANCE DEL PLAN — acordeón de semanas, tachado + % en vivo para el
             cliente. Tachar una tarea marca "último avance" del proyecto. */}
@@ -8959,7 +8961,11 @@ function AppShell({ session, onLogout }) {
   const anySaving = allStores.some((s) => s.saving)
   const sync = !cloudEnabled ? 'local' : anyLoading ? 'loading' : anySaving ? 'saving' : 'saved'
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
-  const [route, setRoute] = useState({ view: 'projects' })
+  // ?proyecto=<id> abre el detalle: es el link que lleva la ficha de Speed Funnels.
+  const [route, setRoute] = useState(() => {
+    const id = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('proyecto') : null
+    return id ? { view: 'project', projectId: id } : { view: 'projects' }
+  })
   const [collapsed, setCollapsed] = useState(true)
   const [settings, setSettings] = useState(false)
   const [teamOpen, setTeamOpen] = useState(false)
