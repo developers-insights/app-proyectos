@@ -36,7 +36,7 @@ import {
 } from './lib/stores.js'
 import { StoreIcon } from './ui/storeLogos.jsx'
 import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
-import { isDev, isCollab, visibleProjects, collabProjectIds } from './lib/visibility.js'
+import { isDev, isCollab, isExternalMember, visibleProjects, collabProjectIds } from './lib/visibility.js'
 import {
   taskText, taskDone, weekProgress,
   toggleTaskDone, hitoForWeek,
@@ -7965,8 +7965,9 @@ function ResetPasswordButton({ user }) {
 }
 
 function TeamManager({ open, onClose }) {
-  const { data, teamStore } = useApp()
+  const { data, teamStore, myId } = useApp()
   const team = data.team || []
+  const soloLectura = isExternalMember(team.find((u) => u.id === myId))
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('')
@@ -7999,7 +8000,7 @@ function TeamManager({ open, onClose }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {team.map((u) => (
-            <div key={u.id} className="surface" style={{ padding: '9px 11px', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <fieldset key={u.id} disabled={soloLectura} className="surface" style={{ padding: '9px 11px', margin: 0, minWidth: 0, background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <Avatar user={u} size={30} ring="var(--bg-elevated)" />
               <input className="input" value={u.name} onChange={(e) => update(u.id, { name: e.target.value, initials: autoInitials(e.target.value) })} placeholder="Nombre" style={{ flex: '1 1 130px', padding: '6px 9px', fontSize: 13 }} />
               <input className="input mono" value={u.email || ''} onChange={(e) => update(u.id, { email: e.target.value })} placeholder="email@insightsapps.tech" style={{ flex: '1 1 160px', padding: '6px 9px', fontSize: 12.5 }} />
@@ -8007,11 +8008,11 @@ function TeamManager({ open, onClose }) {
                 {TEAM_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
               </select>
               <ResetPasswordButton user={u} />
-              <button className="btn btn-sm btn-ghost" onClick={() => remove(u.id)} title="Quitar del equipo" style={{ padding: 6, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
-            </div>
+              {!soloLectura && <button className="btn btn-sm btn-ghost" onClick={() => remove(u.id)} title="Quitar del equipo" style={{ padding: 6, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>}
+            </fieldset>
           ))}
         </div>
-        <hr className="divider" />
+        {!soloLectura && <><hr className="divider" />
         <div>
           <div className="label" style={{ marginBottom: 8 }}>Agregar miembro</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -8026,7 +8027,7 @@ function TeamManager({ open, onClose }) {
           <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 9 }}>
             Si cargás un <strong>email</strong>, le llega un mail con su usuario y una contraseña temporal. Al entrar por primera vez elige la suya.
           </div>
-        </div>
+        </div></>}
       </div>
     </Modal>
   )
@@ -8074,7 +8075,7 @@ function UserProfile({ session, myId, setMyId, onLogout, open, onClose }) {
               </select>
             </Field>
             <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5, marginTop: 7 }}>{me ? 'Con esto sabemos qué proyectos son tuyos y a quién atribuir cada avance. Tu foto se ve en el menú y en las tarjetas donde estés asignado.' : 'Elegí tu nombre para ver tus proyectos y poder subir tu foto.'}</div>
-            <button className="btn" onClick={() => { setOpen(false); setTeamOpen(true) }} style={{ width: '100%', marginTop: 12, justifyContent: 'center' }}><I2.users width={15} height={15} /> Gestionar equipo</button>
+            {!isExternalMember(me) && <button className="btn" onClick={() => { setOpen(false); setTeamOpen(true) }} style={{ width: '100%', marginTop: 12, justifyContent: 'center' }}><I2.users width={15} height={15} /> Gestionar equipo</button>}
             {cloudEnabled && <button className="btn" onClick={() => { setOpen(false); setPwOpen(true) }} style={{ width: '100%', marginTop: 8, justifyContent: 'center' }}><I2.key width={15} height={15} /> Cambiar contraseña</button>}
           </div>
 
@@ -8347,10 +8348,10 @@ async function loadCarouselSrc() {
   if (!supabase) throw { kind: 'config', message: 'Supabase no está configurado en esta build.' }
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw { kind: 'session', message: 'No hay sesión iniciada.' }
-  const { data, error } = await supabase.from('app_secrets').select('value').eq('key', CAROUSEL_TOKEN_KEY).maybeSingle()
+  const { data: token, error } = await supabase.rpc('carousel_token')
   if (error) throw { kind: error.code === '42501' || error.code === 'PGRST301' ? 'session' : 'network', message: error.message }
-  if (!data?.value) throw { kind: 'missing', message: `No existe la fila "${CAROUSEL_TOKEN_KEY}" en app_secrets.` }
-  return `${CAROUSEL_BASE_URL}?cg_token=${encodeURIComponent(data.value)}`
+  if (!token) throw { kind: 'missing', message: `No existe la fila "${CAROUSEL_TOKEN_KEY}" en app_secrets.` }
+  return `${CAROUSEL_BASE_URL}?cg_token=${encodeURIComponent(token)}`
 }
 function getCarouselSrc() {
   if (!carouselSrcPromise) carouselSrcPromise = loadCarouselSrc().catch((e) => { carouselSrcPromise = null; throw e })

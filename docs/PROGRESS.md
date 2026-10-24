@@ -283,3 +283,17 @@ Ensayo revertido `docs/migrations/2026-10-24-solo-el-equipo.ensayo.sql` (ajeno, 
 - Un colaborador que abre "Equipo" y agrega a alguien queda con un guardado que falla (la base lo rechaza): esconder ese botón para `collab`.
 - `tasks`, `activity`, `app_state`, `app_secrets`, `published_plans`, `plan_notes`, `fathom_calls`, `wa_*`, `mvps` siguen con políticas abiertas a cualquier `authenticated`: mismo arreglo con `is_team()`.
 - `onboarding-signup` es público y cada alta dispara el puente y Clarity: sin tope de volumen.
+
+# 2026-10-24 · El resto de las tablas, sólo el equipo
+
+Siguiente paso del blindaje: `tasks`, `activity`, `app_state`, `app_secrets`, `calls`, `sops_*`, `assistant_chats`, `editor_projects`, `videos`, `mvps`, `fathom_calls`, `wa_*`, `published_plans` y `plan_notes` tenían políticas `true` para cualquier cuenta de la base compartida.
+
+## Qué quedó
+- **Migración `docs/migrations/2026-10-24-el-resto-solo-equipo.sql`** (APLICADA el 24/10). Sólo equipo (`is_team()`): app_state, calls, sops, assistant_chats, editor_projects (+delete), videos, mvps, fathom_calls, wa_* (el bot escribe con service_role). Colaborador: tareas de sus proyectos o sin proyecto asignadas a él, actividad propia (`actorId`), `wa_groups` de sus proyectos, publicar sus planes y marcar leídas sus notas.
+- **Link público del plan sin cambios**: anon sigue leyendo `published_plans`, `plan_acceptances` y `plan_notes`, y creando notas. Se sacaron las escrituras de anon que nadie usaba.
+- **Token del carrusel**: `carousel_token()` (definer, sólo equipo); el front lo pide por RPC. `delete_plan_note(uuid)` no existía (el borrado de notas fallaba mudo): ahora existe, para equipo o el colaborador dueño del plan.
+- **Front**: "Gestionar equipo" no aparece para colaboradores ni clientes del portal (`isExternalMember`), y si llegan al modal lo ven sólo lectura.
+
+## PENDIENTE
+- Cuando el front de este PR esté en producción: correr `docs/migrations/2026-10-24-app-secrets-sin-sesion.sql` (nadie con sesión lee `app_secrets`). Antes rompería el carrusel del front viejo.
+- `plan_notes` expone `delete_token_hash` a anon (hash sha256 del token de borrado).
