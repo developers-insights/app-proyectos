@@ -54,7 +54,7 @@ export function computeContext({ projects = [], clients = [], team = [], activit
   })
 
   // planes pagos → MRR (si el monto mensual está cargado)
-  const paidList = [...(byStage.starter || []), ...(byStage.kaizen || []), ...(byStage.scale || [])]
+  const paidList = byStage.plan || []
   const mrr = paidList.reduce((s, p) => s + num(normalizeLifecycle(p).maintenanceAmount), 0)
 
   // financiero
@@ -123,7 +123,7 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   L.push('')
   L.push(`- **En desarrollo:** ${nStage('desarrollo')} proyecto(s) · ${c.distinctInStage('desarrollo')} cliente(s).`)
   L.push(`- **En mantenimiento gratuito (Free Maint.):** ${nStage('free')} proyecto(s).`)
-  L.push(`- **En planes pagos:** Starter ${nStage('starter')} · Kaizen ${nStage('kaizen')} · Scale ${nStage('scale')}.`)
+  L.push(`- **En Plan mensual:** ${nStage('plan')} proyecto(s).`)
   L.push(`- **Cerrados:** Finalizado ${nStage('finalizado')} · Pausado ${nStage('pausado')} · Cancelado ${nStage('cancelado')}.`)
   L.push('')
 
@@ -160,12 +160,12 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   }
   L.push('')
 
-  // 5 · Planes pagos (Starter / Kaizen / Scale)
-  L.push('## 5 · Mantenimiento pago (Starter / Kaizen / Scale)')
+  // 5 · Plan mensual
+  L.push('## 5 · Mantenimiento pago (Plan mensual)')
   L.push('')
-  const paid = [...(c.byStage.starter || []), ...(c.byStage.kaizen || []), ...(c.byStage.scale || [])]
+  const paid = c.byStage.plan || []
   if (!paid.length) {
-    L.push('_Todavía no hay clientes en planes de mantenimiento pagos._')
+    L.push('_Todavía no hay clientes en el Plan mensual._')
   } else {
     L.push('| Proyecto | Cliente | Plan | Monto/mes |')
     L.push('| --- | --- | --- | --- |')

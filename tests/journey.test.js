@@ -70,7 +70,7 @@ test('umbrales basura vuelven al default', () => {
 })
 
 test('Fase 2: rama real, cuenta desde su arranque y no rompe el cobro', () => {
-  const paying = { id: 'g', stage: 'starter', lifecycle: { phase: 3, startedAt: daysAgo(300), phase2At: daysAgo(120), phase3At: daysAgo(90), billingDay: 5 } }
+  const paying = { id: 'g', stage: 'plan', lifecycle: { phase: 3, startedAt: daysAgo(300), phase2At: daysAgo(120), phase3At: daysAgo(90), billingDay: 5 } }
   assert.equal(stageIsRegression(paying, 'fase2'), true)
   const moved = { ...paying, ...applyStage(paying, 'fase2', new Date(daysAgo(10))) }
   assert.equal(projectStage(moved), 'fase2')

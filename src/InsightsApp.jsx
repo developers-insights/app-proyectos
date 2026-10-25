@@ -96,8 +96,8 @@ const THEMES = {
     '--blue': '#818CF8',
     '--blue-soft': 'rgba(129,140,248,0.14)',
     '--blue-line': 'rgba(129,140,248,0.34)',
-    /* violeta: el escalón más alto de mantenimiento (Scale). Es el único color
-       que no estaba en la paleta y entra solo para eso, no para decorar. */
+    /* violeta: Fase 2. Es el único color que no estaba en la paleta y entra solo
+       para eso, no para decorar. */
     '--violet': '#A78BFA',
     '--violet-soft': 'rgba(167,139,250,0.15)',
     '--violet-line': 'rgba(167,139,250,0.34)',
@@ -479,9 +479,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 [data-stage="desarrollo"]{--sc:var(--accent);--ss:var(--accent-soft);--sl:var(--accent-line)}
 [data-stage="fase2"]{--sc:var(--violet);--ss:var(--violet-soft);--sl:var(--violet-line)}
 [data-stage="free"]{--sc:var(--blue);--ss:var(--blue-soft);--sl:var(--blue-line)}
-[data-stage="starter"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
-[data-stage="kaizen"]{--sc:var(--yellow);--ss:var(--yellow-soft);--sl:var(--yellow-line)}
-[data-stage="scale"]{--sc:var(--violet);--ss:var(--violet-soft);--sl:var(--violet-line)}
+[data-stage="plan"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
 
 .pdh-cluster .pd-btn:focus-visible,.pdh-cluster .pd-cta:focus-visible,.pdh-stage:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px}
