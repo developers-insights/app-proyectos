@@ -8,7 +8,7 @@
  *   Desarrollo  → se está construyendo (el MVP que vendió el closer)
  *   Fase 2      → venta nueva de ticket alto sobre el mismo cliente: otro desarrollo
  *   Free Maint. → mantenimiento sin cargo (la prueba gratis)
- *   Starter · Kaizen · Scale → planes de mantenimiento pagos
+ *   Plan mensual → mantenimiento pago (un solo plan, US$97)
  *
  * La etapa NO reemplaza al lifecycle: lo MANDA. Cada etapa mapea a una fase del
  * ciclo de vida (1 · 2 · 3) y moverla sella las mismas fechas de siempre, así que
@@ -27,9 +27,7 @@ export const PROJECT_STAGES = [
   { key: 'desarrollo', label: 'Desarrollo',  group: 'obra',          phase: 1, colorVar: '--accent', hint: 'Se está construyendo' },
   { key: 'fase2',      label: 'Fase 2',      group: 'obra',          phase: 1, colorVar: '--violet', hint: 'Venta nueva sobre el mismo cliente' },
   { key: 'free',       label: 'Free Maint.', group: 'mantenimiento', phase: 2, colorVar: '--blue',   hint: 'Mantenimiento sin cargo' },
-  { key: 'starter',    label: 'Starter',     group: 'mantenimiento', phase: 3, colorVar: '--green',  hint: 'Plan mensual' },
-  { key: 'kaizen',     label: 'Kaizen',      group: 'mantenimiento', phase: 3, colorVar: '--yellow', hint: 'Plan mensual' },
-  { key: 'scale',      label: 'Scale',       group: 'mantenimiento', phase: 3, colorVar: '--violet', hint: 'Plan mensual' },
+  { key: 'plan',       label: 'Plan mensual', group: 'mantenimiento', phase: 3, colorVar: '--green',  hint: 'US$97 por mes' },
   // Estados TERMINALES (no tocan el ciclo de vida ni el cobro): el desarrollo ya no
   // corre. `terminal:true` los saca de los recordatorios y del contador de fase.
   { key: 'finalizado', label: 'Finalizado',  group: 'cerrado', phase: 9, colorVar: '--green',      hint: 'Desarrollo terminado, sin mantenimiento vendido', terminal: true, offerMaintenance: true },
@@ -44,38 +42,41 @@ export const STAGE_GROUPS = [
 ]
 
 /** ¿La etapa implica que el desarrollo ya terminó? (mantenimiento o finalizado → 100%). */
-export const isDevelopmentDone = (key) => ['free', 'starter', 'kaizen', 'scale', 'finalizado'].includes(key)
+export const isDevelopmentDone = (key) => ['free', 'plan', 'finalizado'].includes(key)
 
 /** Metadatos de una etapa por clave. Cualquier cosa rara cae en Desarrollo. */
-export const stageMeta = (key) => PROJECT_STAGES.find((s) => s.key === key) || PROJECT_STAGES[0]
+export const stageMeta = (key) => PROJECT_STAGES.find((s) => s.key === normalizeStageKey(key)) || PROJECT_STAGES[0]
+
+/* Starter/Kaizen/Scale quedaron guardados en proyectos viejos: hoy son un único plan. */
+const LEGACY_PLAN_KEYS = ['starter', 'kaizen', 'scale']
+const normalizeStageKey = (key) => (LEGACY_PLAN_KEYS.includes(key) ? 'plan' : key)
 
 /**
  * Etapa vigente de un proyecto, tenga o no el campo.
  *
  * Los proyectos anteriores a las etapas no tienen `stage`: se deriva de la fase
  * del ciclo de vida, que es el dato que sí venían llevando. Un proyecto en fase 3
- * (mantenimiento pago) cae en Starter porque el plan concreto nunca se registró
- * en ningún lado — no hay de dónde adivinar si era Kaizen o Scale, y elegir el
- * escalón más bajo es lo único que no infla una facturación.
+ * (mantenimiento pago) es el Plan mensual.
  */
 export function projectStage(project) {
   const raw = project && project.stage
-  if (raw && PROJECT_STAGES.some((s) => s.key === raw)) return raw
+  const key = normalizeStageKey(raw)
+  if (key && PROJECT_STAGES.some((s) => s.key === key)) return key
   const phase = normalizeLifecycle(project).phase
-  if (phase === 3) return 'starter'
+  if (phase === 3) return 'plan'
   if (phase === 2) return 'free'
   return 'desarrollo'
 }
 
-/** ¿La etapa cobra? (los tres planes pagos). */
+/** ¿La etapa cobra? (el Plan mensual). */
 export const isPaidStage = (key) => stageMeta(key).phase === 3
 
 /**
  * Campos NUEVOS del proyecto al moverlo a `key`: `{ stage, lifecycle }`. No muta.
  *
  * Delega en advancePhase, que es quien sabe qué sellos poner y cuáles borrar.
- * Moverse entre planes pagos (Starter → Scale) NO reinicia nada: los tres son
- * fase 3 y advancePhase respeta el phase3At que ya estaba.
+ * Moverse a un plan con el proyecto ya en fase 3 NO reinicia nada: advancePhase
+ * respeta el phase3At que ya estaba.
  */
 export function applyStage(project, key, now = new Date()) {
   const meta = stageMeta(key)
