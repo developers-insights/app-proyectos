@@ -36,7 +36,6 @@ button.jr-kpi:active{transform:scale(.97)}
 .jr-st[data-n="0"] .jr-node{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--lc) 55%,transparent)}
 .jr-sh .tx{flex:1;min-width:0}
 .jr-sh .lb{font-size:14px;font-weight:650;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.jr-sh .ht{margin-top:2px;font-size:11.5px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jr-sh .ct{flex:none;display:flex;align-items:center;line-height:1}
 .jr-sh .ct b{font-variant-numeric:tabular-nums lining-nums;font-feature-settings:'tnum','lnum';font-size:30px;font-weight:700;letter-spacing:-.055em;background:linear-gradient(180deg,var(--text) 35%,color-mix(in oklab,var(--text) 52%,transparent));-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:2px}
 .jr-st[data-n="0"] .jr-sh .ct b{background:none;color:var(--text-faint);opacity:.55}
@@ -296,7 +295,6 @@ function Station({ lane, items, clientOf, onOpen }) {
         <span className="jr-node" aria-hidden="true" />
         <span className="tx">
           <div className="lb">{lane.label}</div>
-          <div className="ht" title={lane.hint}>{lane.hint}</div>
         </span>
         <span className="ct" aria-hidden="true">
           <b>{items.length}</b>

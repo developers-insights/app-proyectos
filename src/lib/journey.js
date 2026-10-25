@@ -13,12 +13,12 @@ import { projectStage, stageMeta } from './stages.js'
 import { storesSummary } from './stores.js'
 
 export const JOURNEY_LANES = [
-  { key: 'onboarding', label: 'Onboarding', hint: 'Todavía sin plan cargado', colorVar: '--text-dim' },
-  { key: 'mvp', label: 'MVP', hint: 'Lo que vendió el closer', colorVar: '--accent' },
-  { key: 'prueba', label: '30 días gratis', hint: 'Mantenimiento sin cargo', colorVar: '--blue' },
-  { key: 'plan', label: 'Plan mensual', hint: 'Starter · Kaizen · Scale', colorVar: '--green', branch: true },
-  { key: 'fase2', label: 'Fase 2', hint: 'Venta nueva al mismo cliente', colorVar: '--violet', branch: true },
-  { key: 'standby', label: 'Stand-by', hint: 'No paga mantenimiento', colorVar: '--yellow', branch: true },
+  { key: 'onboarding', label: 'Onboarding', colorVar: '--text-dim' },
+  { key: 'mvp', label: 'MVP', colorVar: '--accent' },
+  { key: 'prueba', label: '30 días gratis', colorVar: '--blue' },
+  { key: 'plan', label: 'Plan mensual', colorVar: '--green', branch: true },
+  { key: 'fase2', label: 'Fase 2', colorVar: '--violet', branch: true },
+  { key: 'standby', label: 'Stand-by', colorVar: '--yellow', branch: true },
 ]
 
 export const laneMeta = (key) => JOURNEY_LANES.find((l) => l.key === key) || JOURNEY_LANES[1]
