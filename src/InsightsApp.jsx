@@ -3668,12 +3668,6 @@ function FilterPanel({ count, onClear, children }) {
   )
 }
 
-// Recorrido y Upsell quedan sólo para Manuel hasta presentárselos a Fede (pedido de Manuel, 25/10).
-// sessionEmail lo setea App antes de montar AppShell; sin nube (modo local) se ve siempre.
-const RECORRIDO_EMAILS = ['manuelnavarro@insightsapps.tech']
-let sessionEmail = ''
-const veRecorrido = () => !cloudEnabled || RECORRIDO_EMAILS.includes(sessionEmail)
-
 const PROJECT_VIEWS = [
   { key: 'grilla', label: 'Grilla', Ico: I2.cards },
   { key: 'recorrido', label: 'Recorrido', Ico: I2.gantt },
@@ -3734,7 +3728,7 @@ function Projects({ onOpenProject }) {
   const [kindFilter, setKindFilter] = useState(qp.get('kind') || 'all')   // all | cliente | interno
   const [storesFilter, setStoresFilter] = useState(() => (isStoresFilter(qp.get('stores')) ? qp.get('stores') : 'all'))   // all | tramite | publicada
   const prevTabRef = useRef('desarrollo')
-  const [view, setView] = useState(() => (qp.get('vista') === 'recorrido' && veRecorrido() ? 'recorrido' : 'grilla'))
+  const [view, setView] = useState(() => (qp.get('vista') === 'recorrido' ? 'recorrido' : 'grilla'))
   const [search, setSearch] = useState('')             // búsqueda en vivo (client-side): nombre, cliente, PM/Dev
   const [stageAsk, setStageAsk] = useState(null)       // { projectId, to } — retroceso de etapa a confirmar
   const [logModal, setLogModal] = useState(null)       // { projectId, kind } | null
@@ -3837,10 +3831,10 @@ function Projects({ onOpenProject }) {
           <div className="label" style={{ marginBottom: 6 }}>Cartera</div>
           <h1 style={{ fontSize: 32, lineHeight: 1.05 }}>Proyectos</h1>
         </div>
-        {veRecorrido() && <ViewSwitch value={view} onChange={setView} />}
+        <ViewSwitch value={view} onChange={setView} />
       </div>
 
-      {view === 'recorrido' && veRecorrido() ? (
+      {view === 'recorrido' ? (
         <RecorridoView projects={universe} loading={loading} onOpenProject={onOpenProject} onBack={() => setView('grilla')} />
       ) : (<>
 
@@ -6845,7 +6839,7 @@ function ProjectDetail({ projectId, onBack }) {
         {/* AVISO DE COBRO — solo aparece cuando hay uno a la vista */}
         <BillingAlert project={project} client={client} patch={patch} replyTo={me?.email || ''} onEdit={() => setEditOpen(true)} />
 
-        {project.kind !== 'interno' && veRecorrido() && <UpsellPanel project={project} onOpen={() => setUpsellOpen(true)} />}
+        {project.kind !== 'interno' && <UpsellPanel project={project} onOpen={() => setUpsellOpen(true)} />}
         {project.kind !== 'interno' && <CloserNotesPanel project={project} />}
 
         {/* AVANCE DEL PLAN — acordeón de semanas, tachado + % en vivo para el
@@ -9662,7 +9656,6 @@ export default function InsightsApp() {
   if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
   if (cloudEnabled && !session) return <Login />
   if (cloudEnabled && session.user?.user_metadata?.must_change_password) return <ForcePasswordChange session={session} onLogout={() => supabase.auth.signOut()} />
-  sessionEmail = String(session?.user?.email || '').trim().toLowerCase()
   return <AppShell session={session} onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
 }
 
