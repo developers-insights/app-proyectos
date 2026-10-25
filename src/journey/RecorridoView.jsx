@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useApp, Modal, stagger, rise } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
 import {
-  JOURNEY_LANES, THRESHOLD_FIELDS, DEFAULT_THRESHOLDS, normalizeThresholds, journeyBoard, laneAverage, alertLevel,
+  JOURNEY_LANES, THRESHOLD_FIELDS, DEFAULT_THRESHOLDS, normalizeThresholds, journeyBoard, alertLevel,
   laneMeta, upsellState, upsellLine, offerLabel, upsellStatusMeta, UPSELL_OFFERS, UPSELL_STATUS,
   addUpsellEntry, removeUpsellEntry, setUpsellObjections,
 } from '../lib/journey.js'
@@ -37,9 +37,9 @@ button.jr-kpi:active{transform:scale(.97)}
 .jr-sh .tx{flex:1;min-width:0}
 .jr-sh .lb{font-size:14px;font-weight:650;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jr-sh .ht{margin-top:2px;font-size:11.5px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.jr-sh .ct{display:flex;flex-direction:column;align-items:flex-end;flex:none;line-height:1}
-.jr-sh .ct b{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:20px;font-weight:600;letter-spacing:-.04em}
-.jr-sh .ct span{margin-top:4px;font-size:10.5px;color:var(--text-faint);white-space:nowrap}
+.jr-sh .ct{flex:none;display:flex;align-items:center;line-height:1}
+.jr-sh .ct b{font-variant-numeric:tabular-nums lining-nums;font-feature-settings:'tnum','lnum';font-size:30px;font-weight:700;letter-spacing:-.055em;background:linear-gradient(180deg,var(--text) 35%,color-mix(in oklab,var(--text) 52%,transparent));-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:2px}
+.jr-st[data-n="0"] .jr-sh .ct b{background:none;color:var(--text-faint);opacity:.55}
 
 .jr-st::after,.jr-sh::before,.jr-sh::after{content:"";position:absolute;background:var(--border-strong);pointer-events:none}
 .jr-st::after{left:-24px;top:34px;bottom:-14px;width:2px}
@@ -290,8 +290,6 @@ function Point({ item, client, onOpen }) {
 }
 
 function Station({ lane, items, clientOf, onOpen }) {
-  const avg = laneAverage(items)
-  const avgText = lane.key === 'prueba' ? null : avg != null ? `prom. ${avg} d` : null
   return (
     <motion.section variants={rise} className="jr-st" data-n={items.length} style={{ '--lc': `var(${lane.colorVar})` }} aria-label={`${lane.label}: ${plural(items.length, 'cliente', 'clientes')}`}>
       <div className="jr-sh">
@@ -302,7 +300,6 @@ function Station({ lane, items, clientOf, onOpen }) {
         </span>
         <span className="ct" aria-hidden="true">
           <b>{items.length}</b>
-          {avgText && <span>{avgText}</span>}
         </span>
       </div>
       {items.length === 0
