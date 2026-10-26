@@ -350,7 +350,11 @@ Nacho anotaba en Google Docs lo que le saca a cada cliente en el onboarding y en
 - Tipos: Onboarding, Call, Por qué compró, Qué consume, Idea / pedido, General. Onboarding ofrece seis preguntas opcionales (por qué ahora, qué lo frenaba, qué consume, referentes de IA, cómo llegó a la IA, qué espera a futuro).
 
 ## Cómo se guarda
-`project.serviceNotes = [{ id, type, text, answers, pinned, at, updatedAt, by, editedBy, deletedAt }]` en el JSON del proyecto, sin migración, con `projectStore.patch`. Borrar es soft; lo borrado hace más de 30 días se suelta en la próxima escritura. Lógica en `src/lib/serviceNotes.js`. No viajan por `sf-puente` (lo fija `tests/notas-servicio.test.js`).
+Tabla `project_service_notes` en `yzmtzyuncekspgtsetwk` (migración `docs/migrations/2026-10-26-notas-del-servicio.sql`, APLICADA el 26/10, ensayo revertido en `.ensayo.sql`). Una fila por nota: `id` uuid (lo genera el front), `project_id` text → `projects.id`, `type`, `body`, `answers` jsonb, `pinned`, `noted_at`, `updated_at`, `author_id`, `edited_by`, `deleted_at`, `created_at`. RLS forzado, select/insert/update sólo `is_team()`, sin DELETE ni grants a anon; en `supabase_realtime`. Store `src/notes/useServiceNotes.js` (optimista, realtime, reintento cada 5 s con aviso visible; sin base queda en localStorage `rc_service_notes_v1`).
+
+## Por qué tabla y no el JSON del proyecto
+Un cliente del portal (`access='project'`) lee por RLS la fila entera de su proyecto: habría visto lo que anotamos de él. Ensayado: equipo lee/crea/fija/borra suave/deshace; ajeno, colaborador, portal y anon, 0 filas o denegado.
 
 ## PENDIENTE
-- Un cliente del portal (`access='project'`) lee por RLS la fila entera de su proyecto: estas notas, `closerNotes`, `scopeNotes`, `sharePassword` y el presupuesto. El front no puede filtrarlo: hace falta una vista o RPC para el portal en la base.
+- Lo mismo para `closerNotes`, `scopeNotes`, `sharePassword` y presupuesto, que siguen en el JSON del proyecto.
+- Probar con sesión del equipo en producción: guardar, realtime entre dos pestañas y el aviso de error.
