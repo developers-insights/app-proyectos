@@ -53,6 +53,8 @@ import SurveyAdmin from './survey/SurveyAdmin.jsx'
 import SurveyPage from './survey/SurveyPage.jsx'
 import RecorridoView, { UpsellModal, UpsellPanel } from './journey/RecorridoView.jsx'
 import { CloserNotesPanel } from './journey/CloserNotes.jsx'
+import { NotesView, ProjectNotesBlock } from './notes/ServiceNotes.jsx'
+import { useServiceNotes } from './notes/useServiceNotes.js'
 import { normalizeMvp, mvpDemoUrl, mvpRepoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
 
 /* ============================================================================
@@ -6623,7 +6625,7 @@ function PanelsMenu({ items }) {
   )
 }
 
-function ProjectDetail({ projectId, onBack }) {
+function ProjectDetail({ projectId, onBack, onOpenNotes }) {
   const { data, myId, logActivity, plans, patchPlan, createTask, patchTask, projectStore } = useApp()
   const project = data.projects.find((p) => p.id === projectId)
   const client = data.clients.find((c) => c.id === project?.clientId)
@@ -6839,6 +6841,7 @@ function ProjectDetail({ projectId, onBack }) {
 
         {project.kind !== 'interno' && <UpsellPanel project={project} onOpen={() => setUpsellOpen(true)} />}
         {project.kind !== 'interno' && <CloserNotesPanel project={project} />}
+        {project.kind !== 'interno' && <ProjectNotesBlock project={project} onOpenAll={onOpenNotes} />}
 
         {/* AVANCE DEL PLAN — acordeón de semanas, tachado + % en vivo para el
             cliente. Tachar una tarea marca "último avance" del proyecto. */}
@@ -8104,6 +8107,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'projects', label: 'Projects', icon: I2.folder },
     { key: 'tasks', label: 'Tareas', icon: I2.tasks },
     { key: 'clients', label: 'Clients', icon: I2.users },
+    { key: 'notas', label: 'Notas', icon: I2.pencil },
     { key: 'mvps', label: 'MVPs', icon: I2.rocket, badge: newMvps },
     { key: 'calls', label: 'Calls', icon: I2.phone },
     { key: 'encuesta', label: 'Encuesta', icon: I2.comment },
@@ -8545,7 +8549,7 @@ function UpdateButton() {
    · SISTEMA (izq. del bloque derecho): estado de sync + versión. Informan, no son tuyos.
    · USUARIO: notificaciones, ajustes, tema y salir. Todos icon-buttons de 32px. */
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', mvps: 'MVPs', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
+  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', mvps: 'MVPs', notas: 'Notas', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
   const dark = theme === 'dark'
   return (
     <header className="hd">
@@ -8933,6 +8937,7 @@ function AppShell({ session, onLogout }) {
   const videoStore = useRowCollection({ table: 'videos', normalize: normalizeVideo, seed: seedVideos, cacheKey: 'rc_videos_v1' })
   const agencyAccountStore = useRowCollection({ table: 'agency_accounts', normalize: normalizeAgencyAccount, seed: () => [], cacheKey: 'rc_agencyaccounts_v1' })
   const mvpStore = useRowCollection({ table: 'mvps', normalize: normalizeMvp, seed: () => [], cacheKey: 'rc_mvps_v1' })
+  const serviceNoteStore = useServiceNotes(supabase)
 
   // Vista de solo lectura con la forma histórica de `data` — para que TODOS los
   // reads `data.projects`/`data.team`/… sigan funcionando sin tocarlos. Toda
@@ -9114,7 +9119,7 @@ function AppShell({ session, onLogout }) {
   }
 
   return (
-    <AppCtx.Provider value={{ data: dataView, myId, logActivity, supabase, botComms, ...planStore, ...taskStore, ...collectionStores }}>
+    <AppCtx.Provider value={{ data: dataView, myId, logActivity, supabase, botComms, serviceNoteStore, ...planStore, ...taskStore, ...collectionStores }}>
       {gate === 'loading' ? <AccessLoading onLogout={onLogout} />
         : gate === 'revoked' ? <AccessRevoked onLogout={onLogout} />
         : gate === 'pending' ? <PendingApproval me={me} onLogout={onLogout} />
@@ -9139,7 +9144,8 @@ function AppShell({ session, onLogout }) {
               {route.view === 'usuarios' && <UsuariosView onOpenProject={openProject} />}
               {route.view === 'mvps' && <MvpsView onOpenProject={openProject} />}
               {route.view === 'encuesta' && <SurveyAdmin />}
-              {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} />}
+              {route.view === 'notas' && <NotesView initialProjectId={route.projectId || null} onOpenProject={openProject} />}
+              {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} onOpenNotes={(id) => setRoute({ view: 'notas', projectId: id })} />}
             </motion.div>
             {/* el iframe del editor NO se desmonta al navegar: solo se oculta (ver editorEverOpenedRef) */}
             {editorEverOpenedRef.current && (
@@ -9651,10 +9657,15 @@ export default function InsightsApp() {
   if (onbStep) return <OnboardingLanding step={onbStep} supabase={supabase} cloudEnabled={cloudEnabled} />
   if (shareId) return <ClientView shareId={shareId} />
   if (cloudEnabled && recoveryToken) return <RecoverPassword token={recoveryToken} onDone={() => { window.history.replaceState(null, '', window.location.pathname); setRecoveryToken(null) }} />
+  // Las cachés rc_* guardan proyectos y notas internas: en un navegador compartido no pueden sobrevivir a la sesión.
+  const salirLimpio = () => {
+    try { Object.keys(localStorage).filter((k) => k.startsWith('rc_')).forEach((k) => localStorage.removeItem(k)) } catch { /* sin storage */ }
+    return supabase.auth.signOut()
+  }
   if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
   if (cloudEnabled && !session) return <Login />
-  if (cloudEnabled && session.user?.user_metadata?.must_change_password) return <ForcePasswordChange session={session} onLogout={() => supabase.auth.signOut()} />
-  return <AppShell session={session} onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
+  if (cloudEnabled && session.user?.user_metadata?.must_change_password) return <ForcePasswordChange session={session} onLogout={salirLimpio} />
+  return <AppShell session={session} onLogout={cloudEnabled ? salirLimpio : null} />
 }
 
 
