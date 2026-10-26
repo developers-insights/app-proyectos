@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useApp, Modal, stagger, rise } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
@@ -6,7 +6,9 @@ import {
   JOURNEY_LANES, THRESHOLD_FIELDS, DEFAULT_THRESHOLDS, normalizeThresholds, journeyBoard, alertLevel,
   laneMeta, upsellState, upsellLine, offerLabel, upsellStatusMeta, UPSELL_OFFERS, UPSELL_STATUS,
   addUpsellEntry, removeUpsellEntry, setUpsellObjections,
+  upsellBadges, fase2Offered, capLane, LANE_CAP, standbyNote, setStandbyNote, STANDBY_NOTE_MAX,
 } from '../lib/journey.js'
+import { daysBetween } from '../lib/lifecycle.js'
 import { planBoardSummary } from '../plan/planModel.js'
 import { projectProgress } from '../lib/progress.js'
 import { toDateInput, fromDateInput, fmtDay } from '../lib/stores.js'
@@ -26,61 +28,116 @@ button.jr-kpi:active{transform:scale(.97)}
 .jr-kpi[data-tone="offer"] b{color:var(--accent)}
 .jr-kpi .dt{width:6px;height:6px;border-radius:50%;align-self:center}
 
-.jr-map{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;padding-left:30px}
+.jr-map{--jr-pad:10px;--jr-sh:38px;--jr-gap:56px;position:relative;display:grid;grid-template-columns:minmax(0,1fr);gap:14px;padding-left:30px}
 .jr-fork{display:contents}
-.jr-st{--lc:var(--accent);position:relative;padding:12px;border-radius:18px;background:var(--card);
+.jr-st{--lc:var(--accent);position:relative;z-index:1;padding:var(--jr-pad);border-radius:16px;background:var(--card);
   box-shadow:inset 0 0 0 1px var(--border),var(--shadow)}
-.jr-sh{position:relative;display:flex;align-items:center;gap:11px;height:44px;padding:0 2px 0 0}
-.jr-node{position:relative;z-index:2;width:12px;height:12px;border-radius:50%;flex:none;background:var(--card);
+.jr-sh{position:relative;display:flex;align-items:center;gap:10px;height:var(--jr-sh);padding:0 2px 0 0}
+.jr-node{position:relative;z-index:2;width:11px;height:11px;border-radius:50%;flex:none;background:var(--card);
   box-shadow:inset 0 0 0 3px var(--lc),0 0 0 4px color-mix(in srgb,var(--lc) 14%,transparent)}
+.jr-node::before{content:"";position:absolute;right:calc(100% + 5px);top:50%;margin-top:-4px;
+  border-left:6px solid var(--border-strong);border-top:4px solid transparent;border-bottom:4px solid transparent}
+.jr-map > .jr-st:first-child .jr-node::before{display:none}
 .jr-st[data-n="0"] .jr-node{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--lc) 55%,transparent)}
 .jr-sh .tx{flex:1;min-width:0}
-.jr-sh .lb{font-size:14px;font-weight:650;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jr-sh .lb{font-size:13px;font-weight:650;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jr-sh .ct{flex:none;display:flex;align-items:center;line-height:1}
-.jr-sh .ct b{font-variant-numeric:tabular-nums lining-nums;font-feature-settings:'tnum','lnum';font-size:30px;font-weight:700;letter-spacing:-.055em;background:linear-gradient(180deg,var(--text) 35%,color-mix(in oklab,var(--text) 52%,transparent));-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:2px}
+.jr-sh .ct b{font-variant-numeric:tabular-nums lining-nums;font-feature-settings:'tnum','lnum';font-size:24px;font-weight:700;letter-spacing:-.05em;background:linear-gradient(180deg,var(--text) 35%,color-mix(in oklab,var(--text) 52%,transparent));-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:2px}
 .jr-st[data-n="0"] .jr-sh .ct b{background:none;color:var(--text-faint);opacity:.55}
 
 .jr-st::after,.jr-sh::before,.jr-sh::after{content:"";position:absolute;background:var(--border-strong);pointer-events:none}
-.jr-st::after{left:-24px;top:34px;bottom:-14px;width:2px}
+.jr-st::after{left:-24px;top:calc(var(--jr-pad) + var(--jr-sh) / 2);bottom:-14px;width:2px}
 .jr-st:last-child::after,.jr-fork .jr-st:last-child::after{display:none}
-.jr-sh::after{left:-36px;top:21px;width:36px;height:2px}
+.jr-sh::after{left:calc(-24px - var(--jr-pad));top:calc(var(--jr-sh) / 2 - 1px);width:calc(24px + var(--jr-pad));height:2px}
 .jr-sh::before{display:none}
 .jr-forkl{position:relative;display:flex;align-items:center;gap:8px;padding:2px 0 0;font-size:11.5px;font-weight:600;color:var(--text-faint)}
 .jr-forkl::before{content:"";position:absolute;left:-24px;top:-14px;bottom:-14px;width:2px;background:var(--border-strong)}
 
-.jr-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,232px),1fr));gap:4px;margin-top:6px}
-.jr-pt{position:relative;display:flex;align-items:center;gap:9px;width:100%;min-height:48px;padding:7px 8px 9px;border-radius:12px;text-align:left;
+.jr-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:2px;margin-top:4px}
+.jr-pw{display:flex;flex-direction:column;min-width:0}
+.jr-pw[data-in]{animation:jrIn .28s var(--e) both}
+@keyframes jrIn{from{opacity:0;transform:translateY(-3px)}}
+.jr-pt{position:relative;display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:5px 7px 7px;border-radius:10px;text-align:left;
   transition:background .2s var(--e)}
 .jr-pt:hover{background:var(--card-hover)}
 .jr-pt:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .jr-pt:active .jr-mk{transform:scale(.94)}
-.jr-mk{position:relative;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;flex:none;
-  font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--lc);
+.jr-mk{position:relative;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;flex:none;
+  font-size:10px;font-weight:700;letter-spacing:.02em;color:var(--lc);
   background:color-mix(in srgb,var(--lc) 13%,var(--card));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lc) 30%,transparent);
   transition:transform .18s var(--e)}
-.jr-mk[data-lv]::after{content:"";position:absolute;right:-2px;top:-2px;width:10px;height:10px;border-radius:50%;
+.jr-mk[data-lv]::after{content:"";position:absolute;right:-2px;top:-2px;width:9px;height:9px;border-radius:50%;
   box-shadow:0 0 0 2px var(--card)}
 .jr-mk[data-lv="crit"]::after{background:var(--red)}
 .jr-mk[data-lv="warn"]::after{background:var(--yellow)}
-.jr-pt .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.jr-pt .nm{font-size:13px;font-weight:600;letter-spacing:-.012em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.jr-pt .jr-sub{font-size:11.5px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jr-pt .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.jr-pt .nm{display:flex;align-items:center;gap:5px;min-width:0;font-size:12px;font-weight:600;letter-spacing:-.012em}
+.jr-pt .nm .t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jr-chip{--cc:var(--accent);flex:none;display:inline-flex;align-items:center;height:16px;padding:0 6px;border-radius:999px;font-size:9.5px;font-weight:650;letter-spacing:.01em;
+  color:var(--cc);background:color-mix(in srgb,var(--cc) 11%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cc) 32%,transparent)}
+.jr-chip[data-o="fase2"]{--cc:var(--violet)}
+.jr-chip[data-o="plan"]{--cc:var(--green)}
+.jr-chip[data-s="acepta"]{background:color-mix(in srgb,var(--cc) 20%,transparent)}
+.jr-pt .jr-sub{font-size:10.5px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jr-pt .jr-sub[data-lv="crit"]{color:var(--red)}
 .jr-pt .jr-sub[data-lv="warn"]{color:var(--yellow)}
 .jr-pt .jr-sub[data-up]{color:var(--text-dim)}
 .jr-d{display:flex;flex-direction:column;align-items:flex-end;flex:none;line-height:1}
-.jr-d b{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:14px;font-weight:600;letter-spacing:-.03em}
+.jr-d b{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;letter-spacing:-.03em}
 .jr-d b[data-lv="crit"]{color:var(--red)}
 .jr-d b[data-lv="warn"]{color:var(--yellow)}
-.jr-d span{margin-top:3px;font-size:10px;color:var(--text-faint)}
-.jr-meter{position:absolute;left:47px;right:8px;bottom:3px;height:2px;border-radius:2px;background:var(--track);overflow:hidden}
+.jr-d span{margin-top:3px;font-size:9.5px;color:var(--text-faint)}
+.jr-meter{position:absolute;left:41px;right:7px;bottom:2px;height:2px;border-radius:2px;background:var(--track);overflow:hidden}
 .jr-meter i{position:absolute;inset:0;transform-origin:left center;background:var(--lc);opacity:.75;
   animation:jrGrow .9s var(--e) both}
 .jr-meter i[data-lv="crit"]{background:var(--red);opacity:1}
 .jr-meter i[data-lv="warn"]{background:var(--yellow);opacity:1}
 @keyframes jrGrow{from{transform:scaleX(0)}}
-.jr-empty{display:flex;align-items:center;justify-content:center;min-height:48px;margin-top:6px;border-radius:12px;font-size:12px;
+.jr-empty{display:flex;align-items:center;justify-content:center;min-height:40px;margin-top:4px;border-radius:10px;font-size:11.5px;
   color:var(--text-faint);box-shadow:inset 0 0 0 1px var(--border);background:repeating-linear-gradient(-45deg,transparent 0 7px,var(--track) 7px 8px)}
+
+.jr-why{display:flex;align-items:center;gap:4px;min-height:24px;margin:-3px 0 4px;padding:0 7px 0 41px;font-size:11px;color:var(--text-dim);line-height:1.35}
+.jr-why .t{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jr-why .t::before{content:"Motivo: ";color:var(--text-faint)}
+.jr-why-b{flex:none;display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 6px;border-radius:7px;font-size:11px;font-weight:600;color:var(--text-faint);
+  transition:color .18s var(--e),background .18s var(--e)}
+.jr-why-b:hover{color:var(--text);background:var(--card-hover)}
+.jr-why-b:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.jr-why input{flex:1;min-width:0;height:28px;padding:0 9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg-elevated);color:var(--text);font-size:12px}
+.jr-why input:focus{outline:2px solid var(--yellow);outline-offset:0}
+
+.jr-more{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;height:28px;margin-top:4px;border-radius:9px;font-size:11.5px;font-weight:600;color:var(--text-dim);
+  box-shadow:inset 0 0 0 1px var(--border);transition:color .18s var(--e),box-shadow .18s var(--e),background .18s var(--e)}
+.jr-more:hover{color:var(--text);background:var(--card-hover);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.jr-more:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.jr-more svg{transition:transform .22s var(--e)}
+.jr-more[aria-expanded="true"] svg{transform:rotate(180deg)}
+
+.jr-arc{position:absolute;left:0;top:0;z-index:0;overflow:visible;pointer-events:none;animation:jrFade .6s .25s var(--e) both}
+@keyframes jrFade{from{opacity:0}}
+.jr-arc path{fill:none;stroke:var(--violet);stroke-width:2;stroke-linecap:round;stroke-dasharray:0 7;opacity:.8}
+.jr-arc circle{fill:var(--violet)}
+.jr-arcw{position:absolute;z-index:5;transform:translate(-50%,-50%)}
+.jr-f2b{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 12px;border-radius:999px;white-space:nowrap;font-size:12px;font-weight:600;color:var(--text);
+  background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--violet-line),var(--shadow);transition:box-shadow .2s var(--e),transform .16s var(--e)}
+.jr-f2b b{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:13px;color:var(--violet)}
+.jr-f2b:hover{box-shadow:inset 0 0 0 1.5px var(--violet),var(--shadow)}
+.jr-f2b:active{transform:scale(.97)}
+.jr-f2b:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.jr-f2b svg{color:var(--text-faint);transition:transform .22s var(--e)}
+.jr-f2b[aria-expanded="true"] svg{transform:rotate(180deg)}
+.jr-arcw .jr-pop{left:calc(50% - 170px);right:auto;width:340px;transform-origin:top center}
+.jr-f2row{display:none;position:relative;margin:0 0 14px}
+.jr-f2row .jr-f2b{width:100%;justify-content:flex-start;height:36px;border-radius:12px}
+.jr-f2row .jr-f2b svg{margin-left:auto}
+.jr-f2row .jr-pop{left:0;right:auto;transform-origin:top left}
+.jr-f2l{display:flex;flex-direction:column;margin:0 -6px;max-height:min(360px,60vh);overflow:auto}
+.jr-f2i{display:flex;align-items:center;gap:9px;padding:8px 6px;border-radius:10px;text-align:left;transition:background .18s var(--e)}
+.jr-f2i:hover{background:var(--card-hover)}
+.jr-f2i:focus-visible{outline:2px solid var(--violet);outline-offset:-2px}
+.jr-f2i .tx{flex:1;min-width:0}
+.jr-f2i .nm{font-size:13px;font-weight:600;letter-spacing:-.012em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jr-f2i .mt{margin-top:2px;font-size:11px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 .jr-low{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin-top:22px}
 .jr-panel{padding:16px 14px 10px;border-radius:18px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border),var(--shadow)}
@@ -134,21 +191,24 @@ button.jr-kpi:active{transform:scale(.97)}
   box-shadow:inset 0 0 0 1px var(--border)}
 
 @container (min-width: 900px){
-  .jr-map{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.22fr);column-gap:22px;row-gap:0;align-items:start;padding-left:0}
+  .jr-map{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.22fr);column-gap:var(--jr-gap);row-gap:0;align-items:start;padding-left:0}
+  .jr-map[data-arc]{padding-top:64px}
   .jr-fork{display:flex;flex-direction:column;gap:12px;padding-left:12px}
   .jr-forkl{display:none}
   .jr-st::after{display:none}
-  .jr-sh::after{left:auto;right:-46px;width:46px}
-  .jr-map > .jr-st:nth-child(3) .jr-sh::after{right:-34px;width:34px}
-  .jr-fork .jr-st .jr-sh::after{left:-24px;right:auto;width:24px}
-  .jr-fork .jr-st .jr-sh::before{display:block;left:-24px;top:-12px;height:34px;width:2px}
-  .jr-fork .jr-st:not(:last-child)::after{display:block;left:-12px;top:34px;bottom:-12px;width:2px}
+  .jr-sh::after{left:auto;right:calc(-2 * var(--jr-pad) - var(--jr-gap));width:calc(2 * var(--jr-pad) + var(--jr-gap))}
+  .jr-map > .jr-st:nth-child(3) .jr-sh::after{right:calc(-1 * var(--jr-pad) - var(--jr-gap));width:calc(var(--jr-pad) + var(--jr-gap))}
+  .jr-fork .jr-st .jr-sh::after{left:calc(-12px - var(--jr-pad));right:auto;width:calc(12px + var(--jr-pad))}
+  .jr-fork .jr-st .jr-sh::before{display:block;left:calc(-12px - var(--jr-pad));top:-12px;height:calc(12px + var(--jr-sh) / 2);width:2px}
+  .jr-fork .jr-st:not(:last-child)::after{display:block;left:-12px;bottom:-12px;width:2px}
   .jr-forkl + .jr-st .jr-sh::before{display:none}
   .jr-map > .jr-st:first-child .jr-sh::after{display:block}
   .jr-low{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
 }
 @container (max-width: 899px){
   .jr-map > .jr-st:first-child .jr-sh::after{display:none}
+  .jr-f2row{display:block}
+  .jr-arc,.jr-arcw{display:none}
 }
 @container (max-width: 520px){
   .jr-bar .pj-filt span{display:none}
@@ -157,7 +217,7 @@ button.jr-kpi:active{transform:scale(.97)}
 @container (max-width: 420px){
   .jr-map{padding-left:22px}
   .jr-st::after{left:-16px}
-  .jr-sh::after{left:-28px;width:28px}
+  .jr-sh::after{left:calc(-16px - var(--jr-pad));width:calc(16px + var(--jr-pad))}
   .jr-forkl::before{left:-16px}
   .jr-li{flex-wrap:wrap}
   .jr-li .jr-act{margin-left:40px}
@@ -196,9 +256,9 @@ button.jr-kpi:active{transform:scale(.97)}
 .up-panel .ob{flex-basis:100%;font-size:12px;color:var(--text-dim);line-height:1.5}
 
 @media (prefers-reduced-motion: reduce){
-  .jr-meter i{animation:none}
-  .jr-skel::after{animation:none}
-  .jr-pt:active .jr-mk,.jr-act:active,button.jr-kpi:active{transform:none}
+  .jr-meter i,.jr-skel::after,.jr-pw[data-in],.jr-arc{animation:none}
+  .jr-more svg,.jr-f2b svg{transition:none}
+  .jr-pt:active .jr-mk,.jr-act:active,button.jr-kpi:active,.jr-f2b:active{transform:none}
 }
 `
 
@@ -253,26 +313,32 @@ function Point({ item, client, onOpen }) {
   const { project: p, entry } = item
   const lv = alertLevel(entry.alerts)
   const up = upsellState(p)
+  const badges = upsellBadges(p, entry.lane)
   const lastUp = [up.plan, up.fase2].filter(Boolean).sort((a, b) => (b.at || '').localeCompare(a.at || ''))[0] || null
   const cell = dayCell(entry)
   const m = meterOf(entry)
   const company = client?.company || client?.name || ''
+  const lastUpShown = lastUp && !badges.some((b) => b.offer === lastUp.offer)
   const sub = entry.alerts[0]
     ? { text: entry.alerts[0].short || entry.alerts[0].text, lv: entry.alerts[0].level }
-    : lastUp ? { text: upsellLine(lastUp), up: true } : { text: company || laneMeta(entry.lane).label }
+    : lastUpShown ? { text: upsellLine(lastUp), up: true } : { text: company || laneMeta(entry.lane).label }
   const label = [
     p.name, company && `cliente ${company}`, laneMeta(entry.lane).label,
     entry.lane === 'prueba' && entry.remaining != null
       ? (entry.remaining < 0 ? `prueba vencida hace ${plural(-entry.remaining, 'día', 'días')}` : `quedan ${plural(entry.remaining, 'día', 'días')}`)
       : entry.days != null ? `${plural(entry.days, 'día', 'días')} en este tramo` : 'sin fecha de entrada',
     ...entry.alerts.map((a) => a.text),
-    lastUp && upsellLine(lastUp),
+    ...badges.map((b) => upsellLine(b.entry)),
+    lastUpShown && upsellLine(lastUp),
   ].filter(Boolean).join('. ')
   return (
     <button className="jr-pt" onClick={() => onOpen(p.id)} aria-label={`${label}. Abrir proyecto`} title={label}>
       <ClientMark text={company || p.name} level={lv} />
       <span className="tx">
-        <span className="nm">{p.name}</span>
+        <span className="nm">
+          <span className="t">{p.name}</span>
+          {badges.map((b) => <span key={b.offer} className="jr-chip" data-o={b.offer} data-s={b.status} aria-hidden="true">{b.label}</span>)}
+        </span>
         <span className="jr-sub" data-lv={sub.lv || undefined} data-up={sub.up ? '1' : undefined}>{sub.text}</span>
       </span>
       <span className="jr-d">
@@ -288,9 +354,60 @@ function Point({ item, client, onOpen }) {
   )
 }
 
-function Station({ lane, items, clientOf, onOpen }) {
+function StandbyWhy({ project, onSave }) {
+  const note = standbyNote(project)
+  const [edit, setEdit] = useState(false)
+  const [v, setV] = useState(note)
+  const input = useRef(null)
+  const btn = useRef(null)
+  const done = useRef(false)
+  const refocus = useRef(false)
+
+  useEffect(() => {
+    if (edit) { done.current = false; input.current?.focus() }
+    else if (refocus.current) { refocus.current = false; btn.current?.focus() }
+  }, [edit])
+
+  // Enter y Escape desmontan el input y algunos navegadores disparan blur igual: sin el candado se guardaría dos veces o se guardaría lo cancelado.
+  const close = (save, back) => {
+    if (done.current) return
+    done.current = true
+    if (save && v.trim() !== note) onSave(project.id, v)
+    refocus.current = back
+    setEdit(false)
+  }
+
+  if (edit) {
+    return (
+      <div className="jr-why">
+        <input ref={input} value={v} maxLength={STANDBY_NOTE_MAX} placeholder="Ej.: espera presupuesto para seguir"
+          aria-label={`Por qué ${project.name} está en stand-by`}
+          onChange={(e) => setV(e.target.value)}
+          onBlur={() => close(true, false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); close(true, true) }
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(false, true) }
+          }} />
+      </div>
+    )
+  }
   return (
-    <motion.section variants={rise} className="jr-st" data-n={items.length} style={{ '--lc': `var(${lane.colorVar})` }} aria-label={`${lane.label}: ${plural(items.length, 'cliente', 'clientes')}`}>
+    <div className="jr-why">
+      {note && <span className="t" title={note}>{note}</span>}
+      <button ref={btn} type="button" className="jr-why-b" onClick={() => { setV(note); setEdit(true) }}
+        aria-label={note ? `Cambiar el motivo del stand-by de ${project.name}` : `Anotar por qué ${project.name} está en stand-by`}>
+        {note ? <I2.pencil width={12} height={12} /> : <><I2.plus width={12} height={12} /> Anotar motivo</>}
+      </button>
+    </div>
+  )
+}
+
+function Station({ lane, items, clientOf, onOpen, onSaveNote, innerRef }) {
+  const [expanded, setExpanded] = useState(false)
+  const { visible, hidden, collapsible } = capLane(items, expanded)
+  const rowsId = `jr-rows-${lane.key}`
+  return (
+    <motion.section ref={innerRef} variants={rise} className="jr-st" data-n={items.length} style={{ '--lc': `var(${lane.colorVar})` }} aria-label={`${lane.label}: ${plural(items.length, 'cliente', 'clientes')}`}>
       <div className="jr-sh">
         <span className="jr-node" aria-hidden="true" />
         <span className="tx">
@@ -302,9 +419,103 @@ function Station({ lane, items, clientOf, onOpen }) {
       </div>
       {items.length === 0
         ? <div className="jr-empty">Nadie en este tramo</div>
-        : <div className="jr-rows">{items.map((it) => <Point key={it.project.id} item={it} client={clientOf(it.project.clientId)} onOpen={onOpen} />)}</div>}
+        : (
+          <div className="jr-rows" id={rowsId}>
+            {visible.map((it, i) => (
+              <div key={it.project.id} className="jr-pw" data-in={expanded && i >= LANE_CAP ? '1' : undefined}>
+                <Point item={it} client={clientOf(it.project.clientId)} onOpen={onOpen} />
+                {lane.key === 'standby' && <StandbyWhy project={it.project} onSave={onSaveNote} />}
+              </div>
+            ))}
+          </div>
+        )}
+      {(hidden > 0 || collapsible) && (
+        <button type="button" className="jr-more" aria-expanded={expanded} aria-controls={rowsId}
+          aria-label={expanded ? `Ver menos en ${lane.label}` : `Ver ${plural(hidden, 'proyecto más', 'proyectos más')} en ${lane.label}`}
+          onClick={() => setExpanded((x) => !x)}>
+          {expanded ? 'Ver menos' : `Ver ${hidden} más`}
+          <I2.chevD width={13} height={13} />
+        </button>
+      )}
     </motion.section>
   )
+}
+
+function useDismiss(open, close, wrap, trigger) {
+  useEffect(() => {
+    if (!open) return
+    const down = (e) => { if (wrap.current && !wrap.current.contains(e.target)) close(false) }
+    const key = (e) => { if (e.key === 'Escape') { close(true); trigger.current?.focus() } }
+    document.addEventListener('mousedown', down)
+    document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
+  }, [open])
+}
+
+function F2Popover({ items, clientOf, onOpen }) {
+  const first = useRef(null)
+  useEffect(() => { first.current?.focus() }, [])
+  const now = new Date()
+  return (
+    <motion.div className="jr-pop" role="dialog" aria-labelledby="jr-f2-h"
+      initial={{ opacity: 0, scale: 0.97, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}>
+      <h3 id="jr-f2-h">Fase 2 ofrecida</h3>
+      <p>Todavía están en otro tramo. Cuando acepten, pasalos a Fase 2.</p>
+      <div className="jr-f2l">
+        {items.map((x, i) => {
+          const c = clientOf(x.project.clientId)
+          const lm = laneMeta(x.lane)
+          const d = x.entry.at ? daysBetween(x.entry.at, now) : null
+          const when = d == null ? 'sin fecha' : d <= 0 ? 'hoy' : d === 1 ? 'ayer' : `hace ${d} d`
+          return (
+            <button key={x.project.id} ref={i === 0 ? first : undefined} type="button" className="jr-f2i" style={{ '--lc': `var(${lm.colorVar})` }}
+              onClick={() => onOpen(x.project.id)} aria-label={`Abrir ${x.project.name}. Está en ${lm.label}. Fase 2 ofrecida ${when}`}>
+              <ClientMark text={c?.company || x.project.name} size={28} />
+              <span className="tx">
+                <div className="nm">{x.project.name}{c?.company && <span style={{ fontWeight: 500, color: 'var(--text-faint)' }}> · {c.company}</span>}</div>
+                <div className="mt">{lm.label} · ofrecida {when}{x.entry.note ? ` · ${x.entry.note}` : ''}</div>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </motion.div>
+  )
+}
+
+function F2Trigger({ items, open, onToggle, btnRef }) {
+  const n = items.length
+  return (
+    <button ref={btnRef} type="button" className="jr-f2b" aria-expanded={open} aria-haspopup="dialog" onClick={onToggle}
+      aria-label={`${plural(n, 'proyecto', 'proyectos')} con la Fase 2 ofrecida. ${open ? 'Cerrar' : 'Ver'} la lista`}>
+      <b>{n}</b> con Fase 2 ofrecida
+      <I2.chevD width={13} height={13} />
+    </button>
+  )
+}
+
+/* El arco se mide con offsetLeft/offsetTop: no los mueve el transform de la entrada animada. */
+function useArc(on, mapRef, fromRef, toRef, deps) {
+  const [g, setG] = useState(null)
+  useLayoutEffect(() => {
+    const map = mapRef.current
+    if (!on || !map) { setG(null); return }
+    const calc = () => {
+      const a = fromRef.current, b = toRef.current
+      if (!a || !b || b.offsetLeft < a.offsetLeft + a.offsetWidth) { setG(null); return }
+      const x0 = a.offsetLeft + a.offsetWidth * 0.62, y0 = a.offsetTop
+      const x2 = b.offsetLeft + b.offsetWidth * 0.3, y2 = b.offsetTop
+      const apex = 22
+      const cy = 2 * apex - (y0 + y2) / 2
+      const cx = (x0 + x2) / 2
+      setG({ w: map.clientWidth, h: map.clientHeight, d: `M${x0} ${y0} Q${cx} ${cy} ${x2} ${y2}`, x0, y0, x2, y2, mx: cx, my: apex })
+    }
+    calc()
+    const ro = new ResizeObserver(calc)
+    ro.observe(map)
+    return () => ro.disconnect()
+  }, [on, ...deps])
+  return g
 }
 
 function ThresholdsButton({ value, onChange }) {
@@ -381,7 +592,7 @@ export default function RecorridoView(props) {
 }
 
 function Recorrido({ onOpenProject, projects, loading }) {
-  const { data, plans } = useApp()
+  const { data, plans, projectStore } = useApp()
   const [thresholds, setThresholds] = useThresholds()
   const [search, setSearch] = useState('')
   const [upsellFor, setUpsellFor] = useState(null)
@@ -419,7 +630,26 @@ function Recorrido({ onOpenProject, projects, loading }) {
   const go = (ref) => ref.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
   const upsellProject = (data.projects || []).find((p) => p.id === upsellFor) || null
   const main = JOURNEY_LANES.filter((l) => !l.branch)
-  const branches = JOURNEY_LANES.filter((l) => l.branch)
+  // Fase 2 arriba de la bifurcación para que el arco desde MVP caiga en su borde superior y no cruce Plan mensual.
+  const branches = JOURNEY_LANES.filter((l) => l.branch).sort((a, b) => (b.key === 'fase2') - (a.key === 'fase2'))
+
+  const f2 = useMemo(() => fase2Offered(board), [board])
+  const [f2Open, setF2Open] = useState(false)
+  const mapRef = useRef(null)
+  const mvpRef = useRef(null)
+  const f2Ref = useRef(null)
+  const arcWrap = useRef(null)
+  const arcBtn = useRef(null)
+  const rowWrap = useRef(null)
+  const rowBtn = useRef(null)
+  const laneSizes = JOURNEY_LANES.map((l) => board.lanes[l.key].length).join(',')
+  const arc = useArc(f2.length > 0 && !loading, mapRef, mvpRef, f2Ref, [laneSizes, board.total])
+  const closeF2 = () => setF2Open(false)
+  useDismiss(f2Open, closeF2, arc ? arcWrap : rowWrap, arc ? arcBtn : rowBtn)
+  useEffect(() => { if (!f2.length) setF2Open(false) }, [f2.length])
+  const openFromF2 = (id) => { setF2Open(false); onOpenProject(id) }
+  const saveNote = (id, text) => projectStore.patch(id, (p) => ({ ...p, ...setStandbyNote(p, text) }))
+  const laneRef = (k) => (k === 'mvp' ? mvpRef : k === 'fase2' ? f2Ref : undefined)
 
   if (loading) {
     return (
@@ -467,12 +697,32 @@ function Recorrido({ onOpenProject, projects, loading }) {
         </div>
       ) : (
         <>
-          <motion.div className="jr-map" variants={stagger} initial="hidden" animate="show">
-            {main.map((l) => <Station key={l.key} lane={l} items={board.lanes[l.key]} clientOf={clientOf} onOpen={onOpenProject} />)}
+          {f2.length > 0 && (
+            <div className="jr-f2row" ref={rowWrap}>
+              <F2Trigger items={f2} open={f2Open && !arc} onToggle={() => setF2Open((v) => !v)} btnRef={rowBtn} />
+              {f2Open && !arc && <F2Popover items={f2} clientOf={clientOf} onOpen={openFromF2} />}
+            </div>
+          )}
+
+          <motion.div ref={mapRef} className="jr-map" data-arc={f2.length > 0 ? '1' : undefined} variants={stagger} initial="hidden" animate="show">
+            {main.map((l) => <Station key={l.key} innerRef={laneRef(l.key)} lane={l} items={board.lanes[l.key]} clientOf={clientOf} onOpen={onOpenProject} onSaveNote={saveNote} />)}
             <div className="jr-fork">
               <div className="jr-forkl">Después de la prueba sigue uno de estos caminos</div>
-              {branches.map((l) => <Station key={l.key} lane={l} items={board.lanes[l.key]} clientOf={clientOf} onOpen={onOpenProject} />)}
+              {branches.map((l) => <Station key={l.key} innerRef={laneRef(l.key)} lane={l} items={board.lanes[l.key]} clientOf={clientOf} onOpen={onOpenProject} onSaveNote={saveNote} />)}
             </div>
+            {arc && (
+              <>
+                <svg className="jr-arc" width={arc.w} height={arc.h} aria-hidden="true">
+                  <path d={arc.d} />
+                  <circle cx={arc.x0} cy={arc.y0} r="3" />
+                  <circle cx={arc.x2} cy={arc.y2} r="3" />
+                </svg>
+                <div className="jr-arcw" ref={arcWrap} style={{ left: arc.mx, top: arc.my }}>
+                  <F2Trigger items={f2} open={f2Open} onToggle={() => setF2Open((v) => !v)} btnRef={arcBtn} />
+                  {f2Open && <F2Popover items={f2} clientOf={clientOf} onOpen={openFromF2} />}
+                </div>
+              </>
+            )}
           </motion.div>
 
           <div className="jr-low">
@@ -525,6 +775,7 @@ function Recorrido({ onOpenProject, projects, loading }) {
                         <span className="jr-lv" style={{ background: a.level === 'crit' ? 'var(--red)' : 'var(--yellow)', alignSelf: 'flex-start', marginTop: 6 }} aria-hidden="true" />
                         <span className="tx">
                           <div className="nm">{a.project.name}</div>
+                          {a.lane === 'standby' && standbyNote(a.project) && <div className="rs" style={{ color: 'var(--text-faint)' }}>Motivo: {standbyNote(a.project)}</div>}
                           {a.items.map((x) => (
                             <div key={x.key} className="rs" style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
                               {a.items.length > 1 && <span aria-hidden="true" style={{ color: x.level === 'crit' ? 'var(--red)' : 'var(--yellow)' }}>•</span>}
