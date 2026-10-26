@@ -9657,10 +9657,15 @@ export default function InsightsApp() {
   if (onbStep) return <OnboardingLanding step={onbStep} supabase={supabase} cloudEnabled={cloudEnabled} />
   if (shareId) return <ClientView shareId={shareId} />
   if (cloudEnabled && recoveryToken) return <RecoverPassword token={recoveryToken} onDone={() => { window.history.replaceState(null, '', window.location.pathname); setRecoveryToken(null) }} />
+  // Las cachés rc_* guardan proyectos y notas internas: en un navegador compartido no pueden sobrevivir a la sesión.
+  const salirLimpio = () => {
+    try { Object.keys(localStorage).filter((k) => k.startsWith('rc_')).forEach((k) => localStorage.removeItem(k)) } catch { /* sin storage */ }
+    return supabase.auth.signOut()
+  }
   if (cloudEnabled && session === undefined) return <CenterScreen>Cargando…</CenterScreen>
   if (cloudEnabled && !session) return <Login />
-  if (cloudEnabled && session.user?.user_metadata?.must_change_password) return <ForcePasswordChange session={session} onLogout={() => supabase.auth.signOut()} />
-  return <AppShell session={session} onLogout={cloudEnabled ? () => supabase.auth.signOut() : null} />
+  if (cloudEnabled && session.user?.user_metadata?.must_change_password) return <ForcePasswordChange session={session} onLogout={salirLimpio} />
+  return <AppShell session={session} onLogout={cloudEnabled ? salirLimpio : null} />
 }
 
 
