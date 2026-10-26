@@ -297,3 +297,21 @@ Siguiente paso del blindaje: `tasks`, `activity`, `app_state`, `app_secrets`, `c
 ## PENDIENTE
 - Cuando el front de este PR esté en producción: correr `docs/migrations/2026-10-24-app-secrets-sin-sesion.sql` (nadie con sesión lee `app_secrets`). Antes rompería el carrusel del front viejo.
 - `plan_notes` expone `delete_token_hash` a anon (hash sha256 del token de borrado).
+
+# 2026-10-26 · Recorrido: Fase 2 ofrecida a la vista, mapa más compacto y motivo del stand-by (call del 26/10)
+
+Pedido de Fede, Juan y Nacho: ver a quién ya se le ofreció la Fase 2 o el plan aunque siga en otro tramo (Comunidad Latina sigue en MVP al 95% con la Fase 2 ofrecida), un mapa más "tipo Lucid" y el porqué de cada stand-by.
+
+## Qué cambió
+- **Marca en la card**: "F2 ofrecida" / "Plan ofrecido" (último estado `ofrecido` de `upsell`) y "F2 aceptada" / "Plan aceptado" (acepta o paga) cuando el proyecto todavía no está en ese tramo. "No quiere" no lleva marca: ya está en "Para ofrecer" con la objeción. Si la marca muestra esa oferta, la línea de abajo ya no repite el upsell. `upsellBadges(project, lane)`.
+- **Arco punteado MVP → Fase 2** con "N con Fase 2 ofrecida": SVG absoluto detrás de las columnas, medido con `offsetLeft/offsetTop` (la animación de entrada usa transform y no lo mueve) y `ResizeObserver`. El botón del vértice abre la lista (Esc cierra y devuelve el foco; clic en uno abre el proyecto). Con el mapa vertical (contenedor < 900 px) el arco se cambia por una fila-botón arriba del mapa. Sin nadie, no se dibuja y el mapa no reserva el espacio de arriba. `fase2Offered(board)`: Fase 2 en `ofrecido`, en cualquier tramo menos Fase 2, respeta la búsqueda.
+- **Fase 2 quedó arriba de la bifurcación** (Fase 2, Plan mensual, Stand-by) para que el arco caiga en su borde y no cruce Plan mensual.
+- **Más compacto y estirado**: cards de 40 px (antes 48), tipografía un punto menor, 56 px entre columnas (antes 22) y conectores con punta de flecha. Las medidas viven en `--jr-pad`, `--jr-sh` y `--jr-gap` de `.jr-map`: los conectores se calculan con ellas (ya no dependen de que `.jr-sh` mida 44 px).
+- **Tope por columna**: 5 (`LANE_CAP`) y "Ver N más" / "Ver menos". Con 6 se muestran los 6: el botón ocupa casi lo mismo que una card. `capLane(items, expanded)`.
+- **Motivo del stand-by**: `project.standbyNote` (texto, máx. 140) en el JSON del proyecto, sin migración, como `upsell`. Se anota y edita desde la card del stand-by (Enter guarda, Esc cancela, salir del campo guarda) y aparece también en Alertas. No se borra al salir del stand-by: si vuelve a pausarse se edita.
+
+## Verificado
+`npm test` (37 casos, 5 nuevos en `tests/recorrido-marcas.test.js`: marcas, quiénes tienen la F2 ofrecida, tope, motivo). `npm run build` verde. Navegador en modo local (`npx vite`): 1280 oscuro y claro, 375 sin scroll horizontal; Fase 2 anotada desde el modal → marca, arco y lista; teclado (Enter abre, foco al primero, Esc vuelve al botón); motivo guardado con Enter; "Ver más/menos" con el tope bajado a mano a 2 (y vuelto a 5); sin errores de consola.
+
+## PENDIENTE
+- `sf-puente` no necesita redeploy: las funciones que usa el puente no cambiaron (sólo se agregaron exports). El motivo del stand-by no viaja a Speed Funnels.

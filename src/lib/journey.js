@@ -310,6 +310,54 @@ export function journeyBoard(projects, ctx, now = new Date(), thresholds) {
   return { lanes, out, alerts, total, offers: offerCandidates(projects, ctx, now, t), thresholds: t }
 }
 
+/* ─── Marcas del mapa (call del 26/10) ────────────────────────────────────── */
+
+/*
+ * Lo que ya se le ofreció o aceptó a un proyecto que todavía está en otro tramo.
+ * "No quiere" no lleva marca: ya figura en "Para ofrecer" con su objeción, y una
+ * marca roja más por card ensucia el mapa. Si el proyecto ya está en el tramo de
+ * esa oferta, la marca sobra.
+ */
+export function upsellBadges(project, lane) {
+  const up = upsellState(project)
+  const out = []
+  for (const k of ['fase2', 'plan']) {
+    const e = up[k]
+    if (!e || lane === k) continue
+    if (e.status === 'ofrecido') out.push({ offer: k, status: 'ofrecido', label: k === 'fase2' ? 'F2 ofrecida' : 'Plan ofrecido', entry: e })
+    else if (CLOSED.has(e.status)) out.push({ offer: k, status: 'acepta', label: k === 'fase2' ? 'F2 aceptada' : 'Plan aceptado', entry: e })
+  }
+  return out
+}
+
+export function fase2Offered(board) {
+  const out = []
+  for (const l of JOURNEY_LANES) {
+    if (l.key === 'fase2') continue
+    for (const it of (board && board.lanes && board.lanes[l.key]) || []) {
+      const e = upsellState(it.project).fase2
+      if (e && e.status === 'ofrecido') out.push({ project: it.project, lane: l.key, entry: e })
+    }
+  }
+  return out.sort((a, b) => byDateDesc(a.entry, b.entry) || String(a.project.name || '').localeCompare(String(b.project.name || '')))
+}
+
+export const LANE_CAP = 5
+
+/* Con uno solo de más se muestra entero: el botón ocupa casi lo mismo que la card. */
+export function capLane(items, expanded, cap = LANE_CAP) {
+  const list = Array.isArray(items) ? items : []
+  const long = list.length > cap + 1
+  if (!long || expanded) return { visible: list, hidden: 0, collapsible: long }
+  return { visible: list.slice(0, cap), hidden: list.length - cap, collapsible: false }
+}
+
+export const STANDBY_NOTE_MAX = 140
+
+const cleanNote = (v) => str(v, 1000).replace(/\s+/g, ' ').trim().slice(0, STANDBY_NOTE_MAX)
+export const standbyNote = (project) => cleanNote(project && project.standbyNote)
+export const setStandbyNote = (project, text) => ({ standbyNote: cleanNote(text) })
+
 export function laneAverage(items) {
   const ds = items.map((i) => i.entry.days).filter((d) => d != null)
   return ds.length ? Math.round(ds.reduce((a, b) => a + b, 0) / ds.length) : null
