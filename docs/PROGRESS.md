@@ -358,3 +358,20 @@ Un cliente del portal (`access='project'`) lee por RLS la fila entera de su proy
 ## PENDIENTE
 - Lo mismo para `closerNotes`, `scopeNotes`, `sharePassword` y presupuesto, que siguen en el JSON del proyecto.
 - Probar con sesión del equipo en producción: guardar, realtime entre dos pestañas y el aviso de error.
+
+# 2026-10-26 · El cliente del portal no lee datos internos de su proyecto
+
+Un cliente del portal (`access='project'`) leía por RLS la fila entera de su proyecto, de su cliente y de su plan (`closerNotes`, `scopeNotes`, `sharePassword`, `totalAmount`/`paidAmount`, `vault`, `accounts`, `lifecycle.maintenanceAmount`, `upsell`, riesgos y bloqueos de las tareas) y todo `team_members` (mails y accesos del equipo y de otros clientes). El front no lo mostraba, pero viajaba y quedaba en `rc_projects_v1`.
+
+## Qué quedó (APLICADO en `yzmtzyuncekspgtsetwk` el 26/10)
+- **Migración `docs/migrations/2026-10-26-portal-sin-internos.sql`**. Los SELECT de `projects`, `clients` y `plans` pasan a `pm_*(true)` (equipo y colaboradores como antes; el portal, nada). `team_members`: fuera del equipo sólo el colaborador ve al resto; el portal ve su fila. El portal nunca escribió en esas tablas: no se le dejó ninguna escritura.
+- **`portal_projects()`** (definer, `search_path=''`, sin `public`/`anon`, `authenticated` con execute): por cada proyecto asignado de un `project` aprobado (por `auth.uid()` vía `pm_mi_email()`) devuelve sólo id, nombre, etapa, `lifecycle` {phase, phase2At, phase3At}, % legacy, empresa del cliente y semanas del plan con `text` y `done` de cada tarea. Al equipo y a los colaboradores les devuelve `[]`.
+- **Front**: `MemberPortal` lee por la RPC (`usePortalProjects`, caché `rc_portal_v1`, relee al volver a la pestaña porque no tiene realtime) y arma la vista con `portalView`/`portalProject` (`src/lib/portal.js`, mismos `projectStage`/`projectProgress`). Al entrar al portal borra `rc_projects_v1` y `rc_clients_v1`. Arreglado de paso: las tareas se pintaban con `t.title || t.name`, que no existen (el plan guarda `text`): salían vacías.
+- `project-share`, edge functions y el modo local no cambian (service_role / sin base).
+
+## Verificado
+Ensayo revertido `docs/migrations/2026-10-26-portal-sin-internos.ensayo.sql` con un cliente del portal y uno pendiente creados en la transacción, sobre el proyecto `p1` con notas para el closer, contraseña y monto sembrados. Antes: el portal leía 1 proyecto, 1 cliente, 1 plan y 12 miembros. Después: 0/0/0 y su fila; la RPC trae sólo `p1` con `company,id,lifecycle,name,plan,progress,stage` y tareas `done,text`, sin rastro de closerNotes, scopeNotes, sharePassword, montos, vault ni riesgos; pendiente 0 filas y `[]`; no puede editar su proyecto ni subirse a full. Equipo 40/40/31 y ve los internos; colaborador 3/3/3 y edita sus 3; anon denegado en tabla y RPC (también en vivo por REST: 401 42501). Advisors de seguridad: 246 → 247, el único nuevo es `authenticated_security_definer_function_executable` de `portal_projects` (intencional). `npm test` (56, 4 nuevos en `tests/portal.test.js`), `npm run build`. Navegador en modo local (sin key): la app del equipo carga sin errores.
+
+## PENDIENTE
+- El portal no se vio en el navegador con una sesión real: no hay clientes del portal y no se creó una cuenta en la base compartida.
+- Si el portal muestra un campo nuevo, se suma en `portal_projects()` y en `portalView` en el mismo commit.

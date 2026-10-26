@@ -45,6 +45,7 @@ import {
   TASK_ESTADOS, TASK_ESTADO_CHOICES, RIESGOS, EVIDENCIA_TIPOS, RESPONSABLES,
 } from './plan/planModel.js'
 import { projectProgress, progressBreakdown, progressColorVar } from './lib/progress.js'
+import { portalProject, PORTAL_CACHE_KEY, PORTAL_STALE_CACHE_KEYS } from './lib/portal.js'
 import { buildContextMarkdown } from './lib/contextExport.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
@@ -9389,15 +9390,37 @@ function AccessRevoked({ onLogout }) {
   )
 }
 
+// Sin realtime: el portal no tiene SELECT sobre projects/plans, así que se relee al volver a la pestaña.
+function usePortalProjects() {
+  const [rows, setRows] = useState(() => {
+    if (!cloudEnabled) return []
+    try { const raw = localStorage.getItem(PORTAL_CACHE_KEY); return raw ? JSON.parse(raw) : null } catch { return null }
+  })
+  useEffect(() => {
+    try { PORTAL_STALE_CACHE_KEYS.forEach((k) => localStorage.removeItem(k)) } catch { /* sin storage */ }
+    if (!cloudEnabled) return
+    let alive = true
+    const load = async () => {
+      const { data, error } = await supabase.rpc('portal_projects')
+      if (!alive || error || !Array.isArray(data)) return
+      setRows(data)
+      try { localStorage.setItem(PORTAL_CACHE_KEY, JSON.stringify(data)) } catch { /* quota */ }
+    }
+    load()
+    const onShow = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', onShow)
+    return () => { alive = false; document.removeEventListener('visibilitychange', onShow) }
+  }, [])
+  return rows
+}
+
 /* Portal de solo-lectura de un usuario externo aprobado: ve SOLO su proyecto asignado. */
 function MemberPortal({ me, onLogout }) {
-  const { data, plans } = useApp()
-  const project = (data.projects || []).find((p) => p.id === me?.assignedProjectId) || null
-  const client = project ? (data.clients || []).find((c) => c.id === project.clientId) : null
-  const plan = project ? (plans || []).find((pl) => pl.id === project.planId) : null
-  const pct = project ? projectProgress(project, plan) : 0
-  const sMeta = project ? stageMeta(projectStage(project)) : null
-  const weeks = plan && Array.isArray(plan.weeks) ? [...plan.weeks].sort((a, b) => (a.n || 0) - (b.n || 0)) : []
+  const rows = usePortalProjects()
+  const project = portalProject(rows, me?.assignedProjectId)
+  const pct = project ? project.pct : 0
+  const sMeta = project ? stageMeta(project.stage) : null
+  const weeks = project ? project.weeks : []
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 20px', borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
@@ -9405,7 +9428,9 @@ function MemberPortal({ me, onLogout }) {
         {onLogout && <button className="btn btn-sm btn-ghost" onClick={onLogout}>Cerrar sesión</button>}
       </div>
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '30px 22px 70px' }}>
-        {!project ? (
+        {rows === null ? (
+          <div className="surface" aria-busy="true" aria-label="Cargando tu proyecto" style={{ height: 132, opacity: 0.55 }} />
+        ) : !project ? (
           <div className="surface" style={{ padding: 40, textAlign: 'center' }}>
             <div style={{ width: 56, height: 56, borderRadius: 999, margin: '0 auto 14px', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent)' }}><I2.check width={26} height={26} /></div>
             <h2 style={{ fontFamily: FONT_SANS, fontSize: 22, marginBottom: 8 }}>¡Acceso aprobado!</h2>
@@ -9415,7 +9440,7 @@ function MemberPortal({ me, onLogout }) {
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 26 }}>
               <div style={{ flex: 1, minWidth: 220 }}>
-                <div className="label" style={{ marginBottom: 6 }}>{client?.company || 'Tu proyecto'}</div>
+                <div className="label" style={{ marginBottom: 6 }}>{project.company || 'Tu proyecto'}</div>
                 <h1 style={{ fontSize: 30, fontFamily: FONT_SANS, lineHeight: 1.1 }}>{project.name}</h1>
                 {sMeta && <span className="tag" style={{ marginTop: 10, display: 'inline-flex', color: `var(${sMeta.colorVar})`, borderColor: 'var(--border)' }}>{sMeta.label}</span>}
               </div>
@@ -9426,8 +9451,8 @@ function MemberPortal({ me, onLogout }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {weeks.map((w) => {
-                  const tasks = Array.isArray(w.tasks) ? w.tasks : []
-                  const done = tasks.filter((t) => t.done).length
+                  const tasks = w.tasks
+                  const done = w.done
                   return (
                     <div key={w.n} className="surface" style={{ padding: 16 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -9438,7 +9463,7 @@ function MemberPortal({ me, onLogout }) {
                         {tasks.map((t, i) => (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, color: t.done ? 'var(--text-faint)' : 'var(--text-dim)' }}>
                             <span style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0, display: 'grid', placeItems: 'center', border: '1.5px solid var(--border)', color: 'var(--green)', background: t.done ? 'var(--green-soft)' : 'transparent' }}>{t.done ? <I2.check width={11} height={11} /> : null}</span>
-                            <span style={{ textDecoration: t.done ? 'line-through' : 'none' }}>{t.title || t.name}</span>
+                            <span style={{ textDecoration: t.done ? 'line-through' : 'none' }}>{t.text}</span>
                           </div>
                         ))}
                       </div>
