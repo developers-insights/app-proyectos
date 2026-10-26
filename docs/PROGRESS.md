@@ -339,3 +339,18 @@ Pedido de Manuel: que el Recorrido se use como el Schema Visualizer de Supabase 
 ## PENDIENTE
 - Las posiciones son por navegador: si se quieren compartidas entre el equipo, van a `app_state`.
 - Pinch real en un iPad no se probó (sólo emulación).
+
+# 2026-10-26 · Notas del servicio por proyecto (pedido de Nacho, call del 26/10)
+
+Nacho anotaba en Google Docs lo que le saca a cada cliente en el onboarding y en las calls. Ahora vive en la app, por proyecto. Fede lo usa para contenido y Juan para ventas.
+
+## Qué hay
+- **Sidebar → Notas** (`src/notes/ServiceNotes.jsx`, `NotesView`): proyectos a la izquierda (por última nota, con cantidad y resumen; los sin notas abajo), notas del elegido a la derecha; en mobile apilado. Buscador sin tildes (texto, respuestas guiadas, proyecto, cliente) con resaltado; filtro por tipo. `/` busca, `n` escribe.
+- **Detalle del proyecto → "Notas del servicio"** (`ProjectNotesBlock`, debajo de "Para el closer"): escribir, las 3 más relevantes y "Abrir en Notas".
+- Tipos: Onboarding, Call, Por qué compró, Qué consume, Idea / pedido, General. Onboarding ofrece seis preguntas opcionales (por qué ahora, qué lo frenaba, qué consume, referentes de IA, cómo llegó a la IA, qué espera a futuro).
+
+## Cómo se guarda
+`project.serviceNotes = [{ id, type, text, answers, pinned, at, updatedAt, by, editedBy, deletedAt }]` en el JSON del proyecto, sin migración, con `projectStore.patch`. Borrar es soft; lo borrado hace más de 30 días se suelta en la próxima escritura. Lógica en `src/lib/serviceNotes.js`. No viajan por `sf-puente` (lo fija `tests/notas-servicio.test.js`).
+
+## PENDIENTE
+- Un cliente del portal (`access='project'`) lee por RLS la fila entera de su proyecto: estas notas, `closerNotes`, `scopeNotes`, `sharePassword` y el presupuesto. El front no puede filtrarlo: hace falta una vista o RPC para el portal en la base.
