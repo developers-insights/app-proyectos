@@ -54,6 +54,7 @@ import SurveyPage from './survey/SurveyPage.jsx'
 import RecorridoView, { UpsellModal, UpsellPanel } from './journey/RecorridoView.jsx'
 import { CloserNotesPanel } from './journey/CloserNotes.jsx'
 import { NotesView, ProjectNotesBlock } from './notes/ServiceNotes.jsx'
+import { useServiceNotes } from './notes/useServiceNotes.js'
 import { normalizeMvp, mvpDemoUrl, mvpRepoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
 
 /* ============================================================================
@@ -8936,6 +8937,7 @@ function AppShell({ session, onLogout }) {
   const videoStore = useRowCollection({ table: 'videos', normalize: normalizeVideo, seed: seedVideos, cacheKey: 'rc_videos_v1' })
   const agencyAccountStore = useRowCollection({ table: 'agency_accounts', normalize: normalizeAgencyAccount, seed: () => [], cacheKey: 'rc_agencyaccounts_v1' })
   const mvpStore = useRowCollection({ table: 'mvps', normalize: normalizeMvp, seed: () => [], cacheKey: 'rc_mvps_v1' })
+  const serviceNoteStore = useServiceNotes(supabase)
 
   // Vista de solo lectura con la forma histórica de `data` — para que TODOS los
   // reads `data.projects`/`data.team`/… sigan funcionando sin tocarlos. Toda
@@ -9117,7 +9119,7 @@ function AppShell({ session, onLogout }) {
   }
 
   return (
-    <AppCtx.Provider value={{ data: dataView, myId, logActivity, supabase, botComms, ...planStore, ...taskStore, ...collectionStores }}>
+    <AppCtx.Provider value={{ data: dataView, myId, logActivity, supabase, botComms, serviceNoteStore, ...planStore, ...taskStore, ...collectionStores }}>
       {gate === 'loading' ? <AccessLoading onLogout={onLogout} />
         : gate === 'revoked' ? <AccessRevoked onLogout={onLogout} />
         : gate === 'pending' ? <PendingApproval me={me} onLogout={onLogout} />

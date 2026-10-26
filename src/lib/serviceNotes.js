@@ -1,8 +1,8 @@
 /*
  * Notas del servicio (pedido de Nacho, call del 26/10): lo que le saca a cada
- * cliente en el onboarding y en las calls. Viven en `project.serviceNotes`, dentro
- * del JSON del proyecto, sin migración. Son internas: no viajan por `sf-puente`
- * (eso es `closerNotes`) y no se mezclan con ellas.
+ * cliente en el onboarding y en las calls. Viven en la tabla `project_service_notes`
+ * y no en el JSON del proyecto, porque un cliente del portal lee la fila entera de su
+ * proyecto. Son internas: no viajan por `sf-puente` (eso es `closerNotes`).
  */
 
 export const SERVICE_NOTE_TYPES = [
@@ -25,7 +25,6 @@ export const ONBOARDING_PROMPTS = [
 
 export const SERVICE_NOTE_MAX = 8000
 export const SERVICE_ANSWER_MAX = 2000
-const PURGE_AFTER_DAYS = 30
 
 const TYPE_KEYS = new Set(SERVICE_NOTE_TYPES.map((t) => t.key))
 const PROMPT_KEYS = ONBOARDING_PROMPTS.map((p) => p.key)
@@ -61,6 +60,7 @@ export function normalizeServiceNote(n) {
   const at = iso(n.at)
   return {
     id: idStr(n.id),
+    projectId: idStr(n.projectId),
     type: TYPE_KEYS.has(n.type) ? n.type : 'general',
     text: str(n.text, SERVICE_NOTE_MAX),
     answers: cleanAnswers(n.answers),
@@ -75,57 +75,70 @@ export function normalizeServiceNote(n) {
 
 const byPinThenDate = (a, b) => (Number(b.pinned) - Number(a.pinned)) || (b.at || '').localeCompare(a.at || '')
 
-function allNotes(project) {
-  const raw = project && Array.isArray(project.serviceNotes) ? project.serviceNotes : []
-  return raw.map((r, i) => {
-    const n = normalizeServiceNote(r)
-    return n && !n.id ? { ...n, id: `legacy-${i}` } : n
-  }).filter(Boolean)
+export const noteFromRow = (r) => (r ? normalizeServiceNote({
+  id: r.id,
+  projectId: r.project_id,
+  type: r.type,
+  text: r.body,
+  answers: r.answers,
+  pinned: r.pinned,
+  at: r.noted_at,
+  updatedAt: r.updated_at,
+  by: r.author_id,
+  editedBy: r.edited_by,
+  deletedAt: r.deleted_at,
+}) : null)
+
+export const noteToRow = (n) => ({
+  id: n.id,
+  project_id: n.projectId,
+  type: n.type,
+  body: n.text,
+  answers: n.answers,
+  pinned: n.pinned,
+  noted_at: n.at,
+  updated_at: n.updatedAt,
+  author_id: n.by,
+  edited_by: n.editedBy,
+  deleted_at: n.deletedAt,
+})
+
+export function notesOfProject(notes, projectId) {
+  return (notes || []).filter((n) => n && n.projectId === projectId && !n.deletedAt).sort(byPinThenDate)
 }
 
-export function serviceNotesOf(project) {
-  return allNotes(project).filter((n) => !n.deletedAt).sort(byPinThenDate)
+const uuid = () => (globalThis.crypto && globalThis.crypto.randomUUID
+  ? globalThis.crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+  }))
+
+export function createServiceNote(input, { projectId, by = null, now = new Date(), id = null } = {}) {
+  if (!projectId) return null
+  const stamp = now.toISOString()
+  const n = normalizeServiceNote({ ...input, projectId, by, at: stamp, updatedAt: stamp, deletedAt: null, editedBy: null, pinned: false })
+  return n ? { ...n, id: id || uuid() } : null
 }
 
-// Lo borrado queda un mes por si alguien se arrepiente tarde; después se suelta
-// para que el JSON del proyecto no crezca para siempre.
-function prune(notes, now) {
-  const limit = now.getTime() - PURGE_AFTER_DAYS * 86400000
-  return notes.filter((n) => !n.deletedAt || new Date(n.deletedAt).getTime() > limit)
+export function editServiceNote(note, changes, by = null, now = new Date()) {
+  const next = normalizeServiceNote({ ...note, ...changes, id: note.id, projectId: note.projectId, at: note.at, by: note.by })
+  return next ? { ...next, updatedAt: now.toISOString(), editedBy: by } : note
 }
 
-const write = (notes, now) => ({ serviceNotes: prune(notes, now) })
+export const pinServiceNote = (note, pinned, now = new Date()) => ({ ...note, pinned: !!pinned, updatedAt: now.toISOString() })
+export const deleteServiceNote = (note, now = new Date()) => ({ ...note, deletedAt: now.toISOString(), updatedAt: now.toISOString() })
+export const restoreServiceNote = (note, now = new Date()) => ({ ...note, deletedAt: null, updatedAt: now.toISOString() })
 
-export const newServiceNoteId = () => `sn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-
-export function addServiceNote(project, input, now = new Date()) {
-  const notes = allNotes(project)
-  const n = normalizeServiceNote({ ...input, at: now.toISOString(), updatedAt: now.toISOString(), deletedAt: null, editedBy: null })
-  if (!n) return write(notes, now)
-  const id = idStr(input && input.id) || newServiceNoteId()
-  return write([{ ...n, id }, ...notes.filter((x) => x.id !== id)], now)
-}
-
-export function updateServiceNote(project, id, changes, by = null, now = new Date()) {
-  const notes = allNotes(project)
-  return write(notes.map((n) => {
-    if (n.id !== id) return n
-    const next = normalizeServiceNote({ ...n, ...changes, id: n.id, at: n.at })
-    if (!next) return n
-    return { ...next, updatedAt: now.toISOString(), editedBy: by }
-  }), now)
-}
-
-export function setServiceNotePinned(project, id, pinned, now = new Date()) {
-  return write(allNotes(project).map((n) => (n.id === id ? { ...n, pinned: !!pinned } : n)), now)
-}
-
-export function deleteServiceNote(project, id, now = new Date()) {
-  return write(allNotes(project).map((n) => (n.id === id && !n.deletedAt ? { ...n, deletedAt: now.toISOString() } : n)), now)
-}
-
-export function restoreServiceNote(project, id, now = new Date()) {
-  return write(allNotes(project).map((n) => (n.id === id ? { ...n, deletedAt: null } : n)), now)
+// Lo que llega de la base (carga o realtime) no pisa una edición local más nueva.
+export function mergeIncoming(list, incoming) {
+  if (!incoming || !incoming.id) return list
+  const i = list.findIndex((n) => n.id === incoming.id)
+  if (i === -1) return [incoming, ...list]
+  if ((incoming.updatedAt || '') <= (list[i].updatedAt || '')) return list
+  const next = list.slice()
+  next[i] = incoming
+  return next
 }
 
 export const foldText = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -170,14 +183,26 @@ export const answeredCount = (n) => Object.keys(n.answers || {}).length
  * proyecto si coincide su nombre o el del cliente (y entonces se ven todas sus
  * notas) o si alguna nota coincide (y se ven sólo esas).
  */
-export function notesIndex(projects = [], clients = [], { query = '', type = 'all' } = {}) {
+export function groupByProject(notes = []) {
+  const m = new Map()
+  for (const n of notes || []) {
+    if (!n || n.deletedAt || !n.projectId) continue
+    if (!m.has(n.projectId)) m.set(n.projectId, [])
+    m.get(n.projectId).push(n)
+  }
+  for (const list of m.values()) list.sort(byPinThenDate)
+  return m
+}
+
+export function notesIndex(projects = [], clients = [], allNotes = [], { query = '', type = 'all' } = {}) {
+  const byProject = groupByProject(allNotes)
   const clientOf = new Map((clients || []).map((c) => [c.id, c]))
   const q = terms(query)
   const rows = []
   for (const project of projects || []) {
     if (!project || !project.id) continue
     const client = clientOf.get(project.clientId) || null
-    const notes = serviceNotesOf(project)
+    const notes = byProject.get(project.id) || []
     const typed = type === 'all' ? notes : notes.filter((n) => n.type === type)
     const nameHay = foldText(`${project.name || ''} ${client?.name || ''} ${client?.company || ''}`)
     const nameHit = q.length > 0 && q.every((w) => nameHay.includes(w))
@@ -192,11 +217,13 @@ export function notesIndex(projects = [], clients = [], { query = '', type = 'al
     (a.project.name || '').localeCompare(b.project.name || '', 'es'))
 }
 
-export function typeCounts(projects = []) {
+export function typeCounts(notes = [], projectIds = null) {
   const out = { all: 0 }
   for (const t of SERVICE_NOTE_TYPES) out[t.key] = 0
-  for (const p of projects || []) {
-    for (const n of serviceNotesOf(p)) { out.all += 1; out[n.type] += 1 }
+  for (const n of notes || []) {
+    if (!n || n.deletedAt || (projectIds && !projectIds.has(n.projectId))) continue
+    out.all += 1
+    out[n.type] += 1
   }
   return out
 }

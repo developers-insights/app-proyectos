@@ -5,9 +5,9 @@ import { useApp } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
 import { projectStage } from '../lib/stages.js'
 import {
-  SERVICE_NOTE_TYPES, ONBOARDING_PROMPTS, SERVICE_NOTE_MAX, SERVICE_ANSWER_MAX, noteType, serviceNotesOf,
-  addServiceNote, updateServiceNote, setServiceNotePinned, deleteServiceNote, restoreServiceNote,
-  newServiceNoteId, notesIndex, typeCounts, noteSnippet, matchSnippet, noteWhen, noteMatches, answeredCount,
+  SERVICE_NOTE_TYPES, ONBOARDING_PROMPTS, SERVICE_NOTE_MAX, SERVICE_ANSWER_MAX, noteType, notesOfProject,
+  createServiceNote, editServiceNote, pinServiceNote, deleteServiceNote, restoreServiceNote,
+  notesIndex, typeCounts, noteSnippet, matchSnippet, noteWhen, noteMatches, answeredCount,
 } from '../lib/serviceNotes.js'
 
 const CSS = `
@@ -255,21 +255,35 @@ function useUndoToast() {
 }
 
 function useNoteActions(project) {
-  const { projectStore, myId, logActivity } = useApp()
-  const pid = project?.id
-  const patch = useCallback((fn) => { if (pid) projectStore.patch(pid, fn) }, [pid, projectStore])
-  return useMemo(() => ({
-    add: (input) => {
-      const id = newServiceNoteId()
-      patch((p) => ({ ...p, ...addServiceNote(p, { ...input, id, by: myId || null }) }))
-      if (logActivity && project) logActivity({ type: 'service_note', text: `anotó algo de ${project.name}` })
-      return id
-    },
-    update: (id, changes) => patch((p) => ({ ...p, ...updateServiceNote(p, id, changes, myId || null) })),
-    pin: (id, v) => patch((p) => ({ ...p, ...setServiceNotePinned(p, id, v) })),
-    remove: (id) => patch((p) => ({ ...p, ...deleteServiceNote(p, id) })),
-    restore: (id) => patch((p) => ({ ...p, ...restoreServiceNote(p, id) })),
-  }), [patch, myId, logActivity, project])
+  const { serviceNoteStore: store, myId, logActivity } = useApp()
+  return useMemo(() => {
+    const find = (id) => store.items.find((n) => n.id === id)
+    const change = (id, fn, immediate = false) => { const n = find(id); if (n) store.save(fn(n), immediate) }
+    return {
+      add: (input) => {
+        const note = createServiceNote(input, { projectId: project?.id, by: myId || null })
+        if (!note) return null
+        store.save(note, true)
+        if (logActivity && project) logActivity({ type: 'service_note', text: `anotó algo de ${project.name}` })
+        return note.id
+      },
+      update: (id, changes) => change(id, (n) => editServiceNote(n, changes, myId || null)),
+      pin: (id, v) => change(id, (n) => pinServiceNote(n, v)),
+      remove: (id) => change(id, (n) => deleteServiceNote(n), true),
+      restore: (id) => change(id, (n) => restoreServiceNote(n), true),
+    }
+  }, [store, myId, logActivity, project])
+}
+
+function SaveError() {
+  const { serviceNoteStore: store } = useApp()
+  if (!store.error) return null
+  return (
+    <div className="sn-off" role="alert">
+      <I2.alert width={15} height={15} /> <span style={{ flex: 1 }}>{store.error}</span>
+      <button type="button" className="btn btn-sm" onClick={store.retry}>Reintentar</button>
+    </div>
+  )
 }
 
 function TypePicker({ value, onChange, label }) {
@@ -488,19 +502,20 @@ function useWho() {
 }
 
 function Thread({ project, client, query, type, onClearFilters, onOpenProject, composerRef, onBack }) {
-  const { projectStore } = useApp()
+  const { serviceNoteStore: store } = useApp()
   const actions = useNoteActions(project)
   const [toast, toastEl] = useUndoToast()
   const who = useWho()
   const online = useOnline()
   const [preset, setPreset] = useState(null)
-  const all = serviceNotesOf(project)
+  const all = notesOfProject(store.items, project.id)
+  const loadingNotes = !store.ready && all.length === 0
   const filtered = all.filter((n) => (type === 'all' || n.type === type) && noteMatches(n, query))
   const filtering = filtered.length !== all.length
   const pinned = filtered.filter((n) => n.pinned)
   const rest = filtered.filter((n) => !n.pinned)
   const del = (n) => { actions.remove(n.id); toast('Borraste la nota', () => actions.restore(n.id)) }
-  const sync = !online ? 'offline' : projectStore.saving ? 'saving' : 'saved'
+  const sync = !online ? 'offline' : store.error ? 'offline' : store.saving ? 'saving' : 'saved'
 
   return (
     <section className="sn-main" aria-labelledby="sn-thread-title">
@@ -511,13 +526,18 @@ function Thread({ project, client, query, type, onClearFilters, onOpenProject, c
           <div className="cl">{[client?.name, client?.company].filter(Boolean).join(' · ') || 'Sin cliente cargado'}</div>
         </div>
         <div className="sn-tact">
-          <span className="sn-sync" data-s={sync} aria-live="polite">{sync === 'offline' ? 'Sin conexión' : sync === 'saving' ? 'Guardando…' : 'Guardado'}</span>
+          <span className="sn-sync" data-s={sync} aria-live="polite">{!online ? 'Sin conexión' : store.error ? 'Sin guardar' : sync === 'saving' ? 'Guardando…' : 'Guardado'}</span>
           {onOpenProject && <button type="button" className="btn btn-sm" onClick={() => onOpenProject(project.id)}>Abrir proyecto <I2.arrowRight width={12} height={12} /></button>}
         </div>
       </div>
       {!online && <div className="sn-off" role="status"><I2.alert width={15} height={15} /> Estás sin conexión. Lo que escribas queda en esta compu y se guarda cuando vuelva.</div>}
+      <SaveError />
       <Composer key={project.id} project={project} actions={actions} inputRef={composerRef} presetType={preset} onPresetUsed={() => setPreset(null)} />
-      {all.length === 0 ? (
+      {loadingNotes ? (
+        <div aria-busy="true" aria-label="Cargando notas" style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+          {[0, 1].map((i) => <div key={i} className="skel" style={{ height: 92, borderRadius: 16 }} />)}
+        </div>
+      ) : all.length === 0 ? (
         <div className="sn-empty sm">
           <h3>Todavía no hay notas de {client?.name || project.name}</h3>
           <p>Si estás por hacer el onboarding, empezá con las preguntas clave: por qué ahora, qué lo frenaba, qué consume y qué espera a futuro.</p>
@@ -556,7 +576,7 @@ function useIsNarrow(px = 900) {
 }
 
 export function NotesView({ initialProjectId = null, onOpenProject }) {
-  const { data, projectStore } = useApp()
+  const { data, projectStore, serviceNoteStore: store } = useApp()
   const [query, setQuery] = useState('')
   const [type, setType] = useState('all')
   const [selected, setSelected] = useState(initialProjectId)
@@ -566,18 +586,20 @@ export function NotesView({ initialProjectId = null, onOpenProject }) {
 
   useEffect(() => { if (initialProjectId) setSelected(initialProjectId) }, [initialProjectId])
 
+  const withNotesIds = useMemo(() => new Set(store.items.filter((n) => !n.deletedAt).map((n) => n.projectId)), [store.items])
   const projects = useMemo(() => (data.projects || []).filter((p) =>
-    p.kind !== 'interno' && (projectStage(p) !== 'cancelado' || serviceNotesOf(p).length > 0)), [data.projects])
-  const rows = useMemo(() => notesIndex(projects, data.clients, { query, type }), [projects, data.clients, query, type])
-  const counts = useMemo(() => typeCounts(projects), [projects])
+    p.kind !== 'interno' && (projectStage(p) !== 'cancelado' || withNotesIds.has(p.id))), [data.projects, withNotesIds])
+  const projectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects])
+  const rows = useMemo(() => notesIndex(projects, data.clients, store.items, { query, type }), [projects, data.clients, store.items, query, type])
+  const counts = useMemo(() => typeCounts(store.items, projectIds), [store.items, projectIds])
   const withNotes = rows.filter((r) => r.count > 0)
   const without = rows.filter((r) => r.count === 0)
-  const withCount = projects.filter((p) => serviceNotesOf(p).length > 0).length
+  const withCount = projects.filter((p) => withNotesIds.has(p.id)).length
 
   const current = projects.find((p) => p.id === selected) || null
   const effective = current || (!narrow && rows[0] ? rows[0].project : null)
   const client = effective ? (data.clients || []).find((c) => c.id === effective.clientId) : null
-  const loading = !projectStore.ready && projects.length === 0
+  const loading = (!projectStore.ready && projects.length === 0) || (!store.ready && store.items.length === 0)
 
   useEffect(() => {
     const onKey = (e) => {
@@ -703,7 +725,8 @@ export function ProjectNotesBlock({ project, onOpenAll }) {
   const actions = useNoteActions(project)
   const [toast, toastEl] = useUndoToast()
   const who = useWho()
-  const all = serviceNotesOf(project)
+  const { serviceNoteStore: store } = useApp()
+  const all = notesOfProject(store.items, project.id)
   const top = all.slice(0, 3)
   const del = (n) => { actions.remove(n.id); toast('Borraste la nota', () => actions.restore(n.id)) }
   return (
@@ -716,6 +739,7 @@ export function ProjectNotesBlock({ project, onOpenAll }) {
           {all.length > 3 ? `Ver las ${all.length} en Notas` : 'Abrir en Notas'} <I2.arrowRight width={12} height={12} />
         </button>}
       </div>
+      <SaveError />
       <Composer key={project.id} project={project} actions={actions} />
       {top.length > 0 && <NoteList notes={top} project={project} actions={actions} query="" onDeleted={del} who={who} />}
       {toastEl}
