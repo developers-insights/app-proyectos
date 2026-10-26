@@ -315,3 +315,27 @@ Pedido de Fede, Juan y Nacho: ver a quién ya se le ofreció la Fase 2 o el plan
 
 ## PENDIENTE
 - `sf-puente` no necesita redeploy: las funciones que usa el puente no cambiaron (sólo se agregaron exports). El motivo del stand-by no viaja a Speed Funnels.
+
+# 2026-10-26 · Recorrido como lienzo: arrastrar, zoom y detalle sin salir del mapa
+
+Pedido de Manuel: que el Recorrido se use como el Schema Visualizer de Supabase (o Miro/Lucid) y que un clic en un proyecto muestre su información ahí mismo, sin saltar a la pestaña del proyecto.
+
+## Qué cambió
+- **Lienzo con React Flow** (`@xyflow/react` 12.12, MIT, compatible con React 18; es lo que usa Supabase). Cada tramo es un nodo tipo tabla: encabezado con color, nombre y cantidad; filas = proyectos (las mismas de antes: nombre, cliente o alerta, días, marcas F2/Plan, barra de umbral). Conexiones Onboarding → MVP → 30 días → {Fase 2, Plan mensual, Stand-by} con punta de flecha, y la punteada violeta animada MVP → Fase 2 con "N con Fase 2 ofrecida" clickeable.
+- **Orden automático** (`canvasLayout` en `journey.js`): izquierda a derecha, Fase 2 a la altura del flujo y Plan mensual debajo; Stand-by cuelga debajo de 30 días. Así el lienzo es más ancho que alto y entra con zoom legible en una notebook (con los tres desvíos apilados quedaba al 52% a 1280×820). `laneNodeHeight` estima el alto para no encimar antes de medir.
+- **Mover tramos**: se arrastran desde el encabezado (las filas siguen siendo clickeables). Posición con snap de 8 px, guardada en `localStorage` (`ip.recorrido.lienzo.v1.<usuario>`); `mergePositions` descarta valores rotos y tramos nuevos caen al automático. "Ordenar" vuelve al automático y borra lo guardado. Con teclado: Tab al tramo, Enter lo selecciona y las flechas lo mueven (a11y propia de React Flow, textos en español).
+- **Zoom y paneo**: rueda/pinch, arrastrar el fondo, − / % / + (el % vuelve al 100), "Ajustar" (fitView animado), minimapa chico abajo a la derecha (se oculta bajo 1100 px), fondo de puntos. Doble clic no hace zoom.
+- **Tope por tramo**: siguen 5 + "Ver N más"; al expandir, la lista scrollea adentro del nodo (rueda = scroll de la lista, no zoom) y el nodo no crece.
+- **Búsqueda**: el lienzo no oculta nada: atenúa lo que no coincide (filas, tramos sin coincidencias y sus conexiones), sube lo que coincide al principio de su tramo, muestra "3 / 8" en el encabezado y encuadra los tramos con coincidencias. "Para ofrecer", "Alertas" y los contadores siguen filtrando como antes.
+- **Panel lateral** (`ProjectPanel.jsx`), no modal: clic en cualquier proyecto (lienzo, lista móvil, Para ofrecer, Alertas, cancelados) lo abre a la derecha (abajo como hoja en celular). Muestra tramo y días con el umbral, avance del plan, alertas, motivo del stand-by editable (Enter o salir del campo guarda, Esc deshace), estado de Plan mensual y Fase 2 con fecha y quién, última nota y objeción, "Para el closer" abiertas (sólo lectura) y fechas clave. "Anotar oferta" abre el modal de Upsell de siempre; "Abrir proyecto" es la única salida a la pestaña. El botón "N con Fase 2 ofrecida" abre la lista en el mismo panel y desde ahí se entra a cada uno (con "volver"). Esc cierra (si el modal de Upsell está abierto, Esc cierra sólo el modal); el foco va al título al abrir y vuelve a la fila al cerrar. La fila abierta queda resaltada.
+- **Angosto** (contenedor < 720 px): cae a la lista vertical de antes (sin scroll horizontal), con la misma apertura del panel.
+- **Peso**: React Flow va en un chunk aparte que se baja sólo al abrir el Recorrido en pantalla ancha (`RecorridoCanvas` ~202 kB / 65,5 kB gzip + 11,4 kB de CSS). El bundle principal creció ~15 kB (3 kB gzip) por el panel.
+- `parts.jsx` junta `Point`, `ClientMark` y helpers que usan el lienzo, la lista y el panel. El arco medido a mano (`useArc`) y el popover de Fase 2 se fueron: los reemplazan la conexión de React Flow y el panel.
+- Se deja visible la marca "React Flow" (chica, abajo al centro): sacarla pide la suscripción Pro.
+
+## Verificado
+`npm test` (41 casos, 4 nuevos en `tests/recorrido-lienzo.test.js`: orden automático sin encimar con 55 proyectos, alto con tope, posiciones guardadas, orden al buscar). `npm run build` verde. Navegador en modo local con ~40 proyectos de prueba (sembrados a mano, no commiteados): 1280 oscuro y claro, 375 oscuro y claro; arrastrar y recargar (queda), Ordenar, zoom con rueda y botones, Ajustar, Ver más con scroll interno, búsqueda (atenúa y encuadra), panel con mouse y teclado (Tab, Enter, Esc, foco que vuelve), lista de Fase 2 → proyecto → volver, modal de Upsell encima del panel, Abrir proyecto; Tab hacia filas fuera de pantalla recentra el lienzo; sin errores de consola.
+
+## PENDIENTE
+- Las posiciones son por navegador: si se quieren compartidas entre el equipo, van a `app_state`.
+- Pinch real en un iPad no se probó (sólo emulación).

@@ -362,3 +362,59 @@ export function laneAverage(items) {
   const ds = items.map((i) => i.entry.days).filter((d) => d != null)
   return ds.length ? Math.round(ds.reduce((a, b) => a + b, 0) / ds.length) : null
 }
+
+/* ─── Lienzo (Recorrido como esquema arrastrable) ─────────────────────────── */
+
+export const CANVAS = { nodeW: 280, colGap: 76, rowGap: 48, head: 58, row: 46, why: 22, more: 40, empty: 50, pad: 10 }
+
+/* Alto estimado de un tramo colapsado: sólo sirve para que el orden automático no
+   encime nodos antes de que React Flow los mida. */
+export function laneNodeHeight(items, laneKey, cap = LANE_CAP) {
+  const list = Array.isArray(items) ? items : []
+  const C = CANVAS
+  if (!list.length) return C.head + C.empty + C.pad * 2
+  const { visible, hidden } = capLane(list, false, cap)
+  const whys = laneKey === 'standby' ? visible.filter((it) => standbyNote(it.project)).length : 0
+  return C.head + visible.length * C.row + whys * C.why + (hidden > 0 ? C.more : 0) + C.pad * 2
+}
+
+/*
+ * Izquierda a derecha como el recorrido real: Onboarding → MVP → 30 días → Fase 2
+ * arriba y Plan mensual debajo. Stand-by cuelga debajo de 30 días (se sale del
+ * camino) en vez de apilarse con los otros dos: así el lienzo queda más ancho que
+ * alto y entra con un zoom legible en una notebook. Fase 2 a la altura del flujo
+ * principal deja que la conexión punteada desde MVP pase por arriba de 30 días.
+ */
+export function canvasLayout(board) {
+  const C = CANVAS
+  const lanes = (board && board.lanes) || {}
+  const h = (k) => laneNodeHeight(lanes[k], k)
+  const col = (i) => i * (C.nodeW + C.colGap)
+  return {
+    onboarding: { x: col(0), y: 0 },
+    mvp: { x: col(1), y: 0 },
+    prueba: { x: col(2), y: 0 },
+    fase2: { x: col(3), y: 0 },
+    plan: { x: col(3), y: h('fase2') + C.rowGap },
+    standby: { x: col(2), y: h('prueba') + C.rowGap },
+  }
+}
+
+/* Posiciones guardadas sobre el orden automático: un tramo nuevo o un valor roto cae al automático. */
+export function mergePositions(auto, saved) {
+  const out = {}
+  const s = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+  for (const [k, p] of Object.entries(auto || {})) {
+    const v = s[k]
+    const ok = v && Number.isFinite(Number(v.x)) && Number.isFinite(Number(v.y)) && Math.abs(v.x) < 1e5 && Math.abs(v.y) < 1e5
+    out[k] = ok ? { x: Math.round(Number(v.x)), y: Math.round(Number(v.y)) } : { ...p }
+  }
+  return out
+}
+
+/* Al buscar, lo que coincide sube dentro del tramo: así no queda escondido detrás de "Ver más". */
+export function orderForSearch(items, matches) {
+  const list = Array.isArray(items) ? items : []
+  if (!matches) return list
+  return [...list.filter((it) => matches.has(it.project.id)), ...list.filter((it) => !matches.has(it.project.id))]
+}
