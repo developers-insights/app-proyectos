@@ -1,17 +1,18 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useApp, Modal, stagger, rise } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
 import {
-  JOURNEY_LANES, THRESHOLD_FIELDS, DEFAULT_THRESHOLDS, normalizeThresholds, journeyBoard, alertLevel,
+  JOURNEY_LANES, THRESHOLD_FIELDS, DEFAULT_THRESHOLDS, normalizeThresholds, journeyBoard,
   laneMeta, upsellState, upsellLine, offerLabel, upsellStatusMeta, UPSELL_OFFERS, UPSELL_STATUS,
   addUpsellEntry, removeUpsellEntry, setUpsellObjections,
-  upsellBadges, fase2Offered, capLane, LANE_CAP, standbyNote, setStandbyNote, STANDBY_NOTE_MAX,
+  fase2Offered, capLane, LANE_CAP, standbyNote, setStandbyNote, STANDBY_NOTE_MAX,
 } from '../lib/journey.js'
-import { daysBetween } from '../lib/lifecycle.js'
 import { planBoardSummary } from '../plan/planModel.js'
 import { projectProgress } from '../lib/progress.js'
 import { toDateInput, fromDateInput, fmtDay } from '../lib/stores.js'
+import { ClientMark, Point, plural } from './parts.jsx'
+import ProjectPanel from './ProjectPanel.jsx'
 
 const JR_CSS = `
 .jr-wrap{container-type:inline-size}
@@ -28,7 +29,7 @@ button.jr-kpi:active{transform:scale(.97)}
 .jr-kpi[data-tone="offer"] b{color:var(--accent)}
 .jr-kpi .dt{width:6px;height:6px;border-radius:50%;align-self:center}
 
-.jr-map{--jr-pad:10px;--jr-sh:38px;--jr-gap:56px;position:relative;display:grid;grid-template-columns:minmax(0,1fr);gap:14px;padding-left:30px}
+.jr-map{--jr-pad:10px;--jr-sh:38px;position:relative;display:grid;grid-template-columns:minmax(0,1fr);gap:14px;padding-left:30px}
 .jr-fork{display:contents}
 .jr-st{--lc:var(--accent);position:relative;z-index:1;padding:var(--jr-pad);border-radius:16px;background:var(--card);
   box-shadow:inset 0 0 0 1px var(--border),var(--shadow)}
@@ -113,11 +114,6 @@ button.jr-kpi:active{transform:scale(.97)}
 .jr-more svg{transition:transform .22s var(--e)}
 .jr-more[aria-expanded="true"] svg{transform:rotate(180deg)}
 
-.jr-arc{position:absolute;left:0;top:0;z-index:0;overflow:visible;pointer-events:none;animation:jrFade .6s .25s var(--e) both}
-@keyframes jrFade{from{opacity:0}}
-.jr-arc path{fill:none;stroke:var(--violet);stroke-width:2;stroke-linecap:round;stroke-dasharray:0 7;opacity:.8}
-.jr-arc circle{fill:var(--violet)}
-.jr-arcw{position:absolute;z-index:5;transform:translate(-50%,-50%)}
 .jr-f2b{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 12px;border-radius:999px;white-space:nowrap;font-size:12px;font-weight:600;color:var(--text);
   background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--violet-line),var(--shadow);transition:box-shadow .2s var(--e),transform .16s var(--e)}
 .jr-f2b b{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:13px;color:var(--violet)}
@@ -126,18 +122,6 @@ button.jr-kpi:active{transform:scale(.97)}
 .jr-f2b:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
 .jr-f2b svg{color:var(--text-faint);transition:transform .22s var(--e)}
 .jr-f2b[aria-expanded="true"] svg{transform:rotate(180deg)}
-.jr-arcw .jr-pop{left:calc(50% - 170px);right:auto;width:340px;transform-origin:top center}
-.jr-f2row{display:none;position:relative;margin:0 0 14px}
-.jr-f2row .jr-f2b{width:100%;justify-content:flex-start;height:36px;border-radius:12px}
-.jr-f2row .jr-f2b svg{margin-left:auto}
-.jr-f2row .jr-pop{left:0;right:auto;transform-origin:top left}
-.jr-f2l{display:flex;flex-direction:column;margin:0 -6px;max-height:min(360px,60vh);overflow:auto}
-.jr-f2i{display:flex;align-items:center;gap:9px;padding:8px 6px;border-radius:10px;text-align:left;transition:background .18s var(--e)}
-.jr-f2i:hover{background:var(--card-hover)}
-.jr-f2i:focus-visible{outline:2px solid var(--violet);outline-offset:-2px}
-.jr-f2i .tx{flex:1;min-width:0}
-.jr-f2i .nm{font-size:13px;font-weight:600;letter-spacing:-.012em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.jr-f2i .mt{margin-top:2px;font-size:11px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 .jr-low{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin-top:22px}
 .jr-panel{padding:16px 14px 10px;border-radius:18px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border),var(--shadow)}
@@ -191,25 +175,14 @@ button.jr-kpi:active{transform:scale(.97)}
   box-shadow:inset 0 0 0 1px var(--border)}
 
 @container (min-width: 900px){
-  .jr-map{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.22fr);column-gap:var(--jr-gap);row-gap:0;align-items:start;padding-left:0}
-  .jr-map[data-arc]{padding-top:64px}
-  .jr-fork{display:flex;flex-direction:column;gap:12px;padding-left:12px}
-  .jr-forkl{display:none}
-  .jr-st::after{display:none}
-  .jr-sh::after{left:auto;right:calc(-2 * var(--jr-pad) - var(--jr-gap));width:calc(2 * var(--jr-pad) + var(--jr-gap))}
-  .jr-map > .jr-st:nth-child(3) .jr-sh::after{right:calc(-1 * var(--jr-pad) - var(--jr-gap));width:calc(var(--jr-pad) + var(--jr-gap))}
-  .jr-fork .jr-st .jr-sh::after{left:calc(-12px - var(--jr-pad));right:auto;width:calc(12px + var(--jr-pad))}
-  .jr-fork .jr-st .jr-sh::before{display:block;left:calc(-12px - var(--jr-pad));top:-12px;height:calc(12px + var(--jr-sh) / 2);width:2px}
-  .jr-fork .jr-st:not(:last-child)::after{display:block;left:-12px;bottom:-12px;width:2px}
-  .jr-forkl + .jr-st .jr-sh::before{display:none}
-  .jr-map > .jr-st:first-child .jr-sh::after{display:block}
   .jr-low{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
 }
-@container (max-width: 899px){
-  .jr-map > .jr-st:first-child .jr-sh::after{display:none}
-  .jr-f2row{display:block}
-  .jr-arc,.jr-arcw{display:none}
-}
+.jr-map > .jr-st:first-child .jr-sh::after{display:none}
+.jr-f2row{position:relative;margin:0 0 14px}
+.jr-f2row .jr-f2b{width:100%;justify-content:flex-start;height:40px;border-radius:12px}
+.jr-f2row .jr-f2b svg{margin-left:auto}
+.jr-pt[data-active="1"]{background:color-mix(in srgb,var(--lc) 12%,transparent)}
+.jr-pt{cursor:pointer}
 @container (max-width: 520px){
   .jr-bar .pj-filt span{display:none}
   .jr-bar .pj-search{flex:1 1 0;min-width:0}
@@ -256,7 +229,7 @@ button.jr-kpi:active{transform:scale(.97)}
 .up-panel .ob{flex-basis:100%;font-size:12px;color:var(--text-dim);line-height:1.5}
 
 @media (prefers-reduced-motion: reduce){
-  .jr-meter i,.jr-skel::after,.jr-pw[data-in],.jr-arc{animation:none}
+  .jr-meter i,.jr-skel::after,.jr-pw[data-in]{animation:none}
   .jr-more svg,.jr-f2b svg{transition:none}
   .jr-pt:active .jr-mk,.jr-act:active,button.jr-kpi:active,.jr-f2b:active{transform:none}
 }
@@ -276,82 +249,6 @@ function useThresholds() {
     try { localStorage.setItem(TH_KEY, JSON.stringify(v)) } catch { /* sin storage queda en memoria */ }
   }
   return [t, save]
-}
-
-const initials = (s) => {
-  const w = String(s || '').replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean)
-  if (!w.length) return '·'
-  return (w.length === 1 ? w[0].slice(0, 2) : w[0][0] + w[1][0]).toUpperCase()
-}
-
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
-
-function dayCell(entry) {
-  if (entry.lane === 'prueba' && entry.remaining != null) {
-    if (entry.remaining < 0) return { n: `+${-entry.remaining}`, cap: 'vencida', lv: 'crit' }
-    return { n: entry.remaining, cap: entry.remaining === 1 ? 'queda' : 'quedan', lv: entry.remaining <= 3 ? 'warn' : null }
-  }
-  if (entry.days == null) return { n: '—', cap: 'sin fecha', lv: null }
-  const devAlert = entry.alerts.find((a) => a.key === 'dev' || a.key === 'standby')
-  return { n: entry.days, cap: entry.days === 1 ? 'día' : 'días', lv: devAlert ? devAlert.level : null }
-}
-
-function meterOf(entry) {
-  if (entry.days == null || !entry.limit) return null
-  return Math.max(0.04, Math.min(1, entry.days / entry.limit))
-}
-
-function ClientMark({ text, level, size = 30 }) {
-  return (
-    <span className="jr-mk" data-lv={level || undefined} style={size !== 30 ? { width: size, height: size } : undefined} aria-hidden="true">
-      {initials(text)}
-    </span>
-  )
-}
-
-function Point({ item, client, onOpen }) {
-  const { project: p, entry } = item
-  const lv = alertLevel(entry.alerts)
-  const up = upsellState(p)
-  const badges = upsellBadges(p, entry.lane)
-  const lastUp = [up.plan, up.fase2].filter(Boolean).sort((a, b) => (b.at || '').localeCompare(a.at || ''))[0] || null
-  const cell = dayCell(entry)
-  const m = meterOf(entry)
-  const company = client?.company || client?.name || ''
-  const lastUpShown = lastUp && !badges.some((b) => b.offer === lastUp.offer)
-  const sub = entry.alerts[0]
-    ? { text: entry.alerts[0].short || entry.alerts[0].text, lv: entry.alerts[0].level }
-    : lastUpShown ? { text: upsellLine(lastUp), up: true } : { text: company || laneMeta(entry.lane).label }
-  const label = [
-    p.name, company && `cliente ${company}`, laneMeta(entry.lane).label,
-    entry.lane === 'prueba' && entry.remaining != null
-      ? (entry.remaining < 0 ? `prueba vencida hace ${plural(-entry.remaining, 'día', 'días')}` : `quedan ${plural(entry.remaining, 'día', 'días')}`)
-      : entry.days != null ? `${plural(entry.days, 'día', 'días')} en este tramo` : 'sin fecha de entrada',
-    ...entry.alerts.map((a) => a.text),
-    ...badges.map((b) => upsellLine(b.entry)),
-    lastUpShown && upsellLine(lastUp),
-  ].filter(Boolean).join('. ')
-  return (
-    <button className="jr-pt" onClick={() => onOpen(p.id)} aria-label={`${label}. Abrir proyecto`} title={label}>
-      <ClientMark text={company || p.name} level={lv} />
-      <span className="tx">
-        <span className="nm">
-          <span className="t">{p.name}</span>
-          {badges.map((b) => <span key={b.offer} className="jr-chip" data-o={b.offer} data-s={b.status} aria-hidden="true">{b.label}</span>)}
-        </span>
-        <span className="jr-sub" data-lv={sub.lv || undefined} data-up={sub.up ? '1' : undefined}>{sub.text}</span>
-      </span>
-      <span className="jr-d">
-        <b data-lv={cell.lv || undefined}>{cell.n}</b>
-        <span>{cell.cap}</span>
-      </span>
-      {m != null && (
-        <span className="jr-meter" aria-hidden="true">
-          <i data-lv={cell.lv || undefined} style={{ transform: `scaleX(${m})` }} />
-        </span>
-      )}
-    </button>
-  )
 }
 
 function StandbyWhy({ project, onSave }) {
@@ -402,12 +299,12 @@ function StandbyWhy({ project, onSave }) {
   )
 }
 
-function Station({ lane, items, clientOf, onOpen, onSaveNote, innerRef }) {
+function Station({ lane, items, clientOf, onOpen, onSaveNote, activeId }) {
   const [expanded, setExpanded] = useState(false)
   const { visible, hidden, collapsible } = capLane(items, expanded)
   const rowsId = `jr-rows-${lane.key}`
   return (
-    <motion.section ref={innerRef} variants={rise} className="jr-st" data-n={items.length} style={{ '--lc': `var(${lane.colorVar})` }} aria-label={`${lane.label}: ${plural(items.length, 'cliente', 'clientes')}`}>
+    <motion.section variants={rise} className="jr-st" data-n={items.length} style={{ '--lc': `var(${lane.colorVar})` }} aria-label={`${lane.label}: ${plural(items.length, 'cliente', 'clientes')}`}>
       <div className="jr-sh">
         <span className="jr-node" aria-hidden="true" />
         <span className="tx">
@@ -423,7 +320,7 @@ function Station({ lane, items, clientOf, onOpen, onSaveNote, innerRef }) {
           <div className="jr-rows" id={rowsId}>
             {visible.map((it, i) => (
               <div key={it.project.id} className="jr-pw" data-in={expanded && i >= LANE_CAP ? '1' : undefined}>
-                <Point item={it} client={clientOf(it.project.clientId)} onOpen={onOpen} />
+                <Point item={it} client={clientOf(it.project.clientId)} onOpen={onOpen} active={activeId === it.project.id} />
                 {lane.key === 'standby' && <StandbyWhy project={it.project} onSave={onSaveNote} />}
               </div>
             ))}
@@ -439,83 +336,6 @@ function Station({ lane, items, clientOf, onOpen, onSaveNote, innerRef }) {
       )}
     </motion.section>
   )
-}
-
-function useDismiss(open, close, wrap, trigger) {
-  useEffect(() => {
-    if (!open) return
-    const down = (e) => { if (wrap.current && !wrap.current.contains(e.target)) close(false) }
-    const key = (e) => { if (e.key === 'Escape') { close(true); trigger.current?.focus() } }
-    document.addEventListener('mousedown', down)
-    document.addEventListener('keydown', key)
-    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
-  }, [open])
-}
-
-function F2Popover({ items, clientOf, onOpen }) {
-  const first = useRef(null)
-  useEffect(() => { first.current?.focus() }, [])
-  const now = new Date()
-  return (
-    <motion.div className="jr-pop" role="dialog" aria-labelledby="jr-f2-h"
-      initial={{ opacity: 0, scale: 0.97, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}>
-      <h3 id="jr-f2-h">Fase 2 ofrecida</h3>
-      <p>Todavía están en otro tramo. Cuando acepten, pasalos a Fase 2.</p>
-      <div className="jr-f2l">
-        {items.map((x, i) => {
-          const c = clientOf(x.project.clientId)
-          const lm = laneMeta(x.lane)
-          const d = x.entry.at ? daysBetween(x.entry.at, now) : null
-          const when = d == null ? 'sin fecha' : d <= 0 ? 'hoy' : d === 1 ? 'ayer' : `hace ${d} d`
-          return (
-            <button key={x.project.id} ref={i === 0 ? first : undefined} type="button" className="jr-f2i" style={{ '--lc': `var(${lm.colorVar})` }}
-              onClick={() => onOpen(x.project.id)} aria-label={`Abrir ${x.project.name}. Está en ${lm.label}. Fase 2 ofrecida ${when}`}>
-              <ClientMark text={c?.company || x.project.name} size={28} />
-              <span className="tx">
-                <div className="nm">{x.project.name}{c?.company && <span style={{ fontWeight: 500, color: 'var(--text-faint)' }}> · {c.company}</span>}</div>
-                <div className="mt">{lm.label} · ofrecida {when}{x.entry.note ? ` · ${x.entry.note}` : ''}</div>
-              </span>
-            </button>
-          )
-        })}
-      </div>
-    </motion.div>
-  )
-}
-
-function F2Trigger({ items, open, onToggle, btnRef }) {
-  const n = items.length
-  return (
-    <button ref={btnRef} type="button" className="jr-f2b" aria-expanded={open} aria-haspopup="dialog" onClick={onToggle}
-      aria-label={`${plural(n, 'proyecto', 'proyectos')} con la Fase 2 ofrecida. ${open ? 'Cerrar' : 'Ver'} la lista`}>
-      <b>{n}</b> con Fase 2 ofrecida
-      <I2.chevD width={13} height={13} />
-    </button>
-  )
-}
-
-/* El arco se mide con offsetLeft/offsetTop: no los mueve el transform de la entrada animada. */
-function useArc(on, mapRef, fromRef, toRef, deps) {
-  const [g, setG] = useState(null)
-  useLayoutEffect(() => {
-    const map = mapRef.current
-    if (!on || !map) { setG(null); return }
-    const calc = () => {
-      const a = fromRef.current, b = toRef.current
-      if (!a || !b || b.offsetLeft < a.offsetLeft + a.offsetWidth) { setG(null); return }
-      const x0 = a.offsetLeft + a.offsetWidth * 0.62, y0 = a.offsetTop
-      const x2 = b.offsetLeft + b.offsetWidth * 0.3, y2 = b.offsetTop
-      const apex = 22
-      const cy = 2 * apex - (y0 + y2) / 2
-      const cx = (x0 + x2) / 2
-      setG({ w: map.clientWidth, h: map.clientHeight, d: `M${x0} ${y0} Q${cx} ${cy} ${x2} ${y2}`, x0, y0, x2, y2, mx: cx, my: apex })
-    }
-    calc()
-    const ro = new ResizeObserver(calc)
-    ro.observe(map)
-    return () => ro.disconnect()
-  }, [on, ...deps])
-  return g
 }
 
 function ThresholdsButton({ value, onChange }) {
@@ -591,32 +411,73 @@ export default function RecorridoView(props) {
   )
 }
 
+const RecorridoCanvas = lazy(() => import('./RecorridoCanvas.jsx'))
+
+/* Debajo de esto el lienzo deja de ser cómodo (tramos de 300 px y pinch con un dedo): cae a la lista vertical. */
+const CANVAS_MIN = 720
+
+function useWide(ref) {
+  const [w, setW] = useState(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const m = () => setW(el.clientWidth)
+    m()
+    const ro = new ResizeObserver(m)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return w == null ? null : w >= CANVAS_MIN
+}
+
+function F2Trigger({ items, onOpen }) {
+  const n = items.length
+  return (
+    <button type="button" className="jr-f2b" aria-haspopup="dialog" onClick={(e) => onOpen(e.currentTarget)}
+      aria-label={`${plural(n, 'proyecto', 'proyectos')} con la Fase 2 ofrecida. Ver la lista`}>
+      <b>{n}</b> con Fase 2 ofrecida
+      <I2.arrowRight width={13} height={13} />
+    </button>
+  )
+}
+
 function Recorrido({ onOpenProject, projects, loading }) {
-  const { data, plans, projectStore } = useApp()
+  const { data, plans, projectStore, myId } = useApp()
   const [thresholds, setThresholds] = useThresholds()
   const [search, setSearch] = useState('')
   const [upsellFor, setUpsellFor] = useState(null)
   const offersRef = useRef(null)
   const alertsRef = useRef(null)
+  const root = useRef(null)
+  const wide = useWide(root)
   const now = useMemo(() => new Date(), [])
 
   const planById = useMemo(() => new Map((plans || []).map((pl) => [pl.id, pl])), [plans])
-  const clientOf = (id) => (data.clients || []).find((c) => c.id === id)
+  const clientMap = useMemo(() => new Map((data.clients || []).map((c) => [c.id, c])), [data.clients])
+  const clientOf = useCallback((id) => clientMap.get(id), [clientMap])
   const q = search.trim().toLowerCase()
   const list = useMemo(() => (projects || []).filter((p) => {
     if (!q) return true
-    const c = (data.clients || []).find((x) => x.id === p.clientId)
+    const c = clientMap.get(p.clientId)
     return [p.name, c?.company, c?.name].filter(Boolean).join(' ').toLowerCase().includes(q)
-  }), [projects, q, data.clients])
+  }), [projects, q, clientMap])
 
-  const board = useMemo(() => {
+  const ctx = useMemo(() => {
     const planOf = (p) => (p.planId ? planById.get(p.planId) || null : null)
-    const ctx = {
+    return {
       planTotal: (p) => (p.planId && !planById.has(p.planId) ? undefined : planBoardSummary(planOf(p)).total),
       pct: (p) => projectProgress(p, planOf(p)),
     }
-    return journeyBoard(list, ctx, now, thresholds)
-  }, [list, planById, now, thresholds])
+  }, [planById])
+  const boardAll = useMemo(() => journeyBoard(projects || [], ctx, now, thresholds), [projects, ctx, now, thresholds])
+  const board = useMemo(() => (q ? journeyBoard(list, ctx, now, thresholds) : boardAll), [q, list, ctx, now, thresholds, boardAll])
+  const matches = useMemo(() => (q ? new Set(list.map((p) => p.id)) : null), [q, list])
+  const byId = useMemo(() => {
+    const m = new Map()
+    for (const l of JOURNEY_LANES) for (const it of boardAll.lanes[l.key]) m.set(it.project.id, it)
+    for (const it of boardAll.out) m.set(it.project.id, it)
+    return m
+  }, [boardAll])
 
   const alerted = useMemo(() => {
     const m = new Map()
@@ -630,39 +491,35 @@ function Recorrido({ onOpenProject, projects, loading }) {
   const go = (ref) => ref.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
   const upsellProject = (data.projects || []).find((p) => p.id === upsellFor) || null
   const main = JOURNEY_LANES.filter((l) => !l.branch)
-  // Fase 2 arriba de la bifurcación para que el arco desde MVP caiga en su borde superior y no cruce Plan mensual.
   const branches = JOURNEY_LANES.filter((l) => l.branch).sort((a, b) => (b.key === 'fase2') - (a.key === 'fase2'))
-
   const f2 = useMemo(() => fase2Offered(board), [board])
-  const [f2Open, setF2Open] = useState(false)
-  const mapRef = useRef(null)
-  const mvpRef = useRef(null)
-  const f2Ref = useRef(null)
-  const arcWrap = useRef(null)
-  const arcBtn = useRef(null)
-  const rowWrap = useRef(null)
-  const rowBtn = useRef(null)
-  const laneSizes = JOURNEY_LANES.map((l) => board.lanes[l.key].length).join(',')
-  const arc = useArc(f2.length > 0 && !loading, mapRef, mvpRef, f2Ref, [laneSizes, board.total])
-  const closeF2 = () => setF2Open(false)
-  useDismiss(f2Open, closeF2, arc ? arcWrap : rowWrap, arc ? arcBtn : rowBtn)
-  useEffect(() => { if (!f2.length) setF2Open(false) }, [f2.length])
-  const openFromF2 = (id) => { setF2Open(false); onOpenProject(id) }
-  const saveNote = (id, text) => projectStore.patch(id, (p) => ({ ...p, ...setStandbyNote(p, text) }))
-  const laneRef = (k) => (k === 'mvp' ? mvpRef : k === 'fase2' ? f2Ref : undefined)
+
+  const [panel, setPanel] = useState(null)
+  const opener = useRef(null)
+  const openPanel = useCallback((id, el) => { if (el) opener.current = el; setPanel({ kind: 'project', id }) }, [])
+  const openF2 = useCallback((el) => { if (el) opener.current = el; setPanel({ kind: 'f2' }) }, [])
+  const pickFromF2 = useCallback((id) => setPanel({ kind: 'project', id, from: 'f2' }), [])
+  const closePanel = useCallback(() => {
+    setPanel(null)
+    const el = opener.current
+    if (el && el.isConnected) el.focus({ preventScroll: true })
+  }, [])
+  const itemOf = useCallback((id) => byId.get(id) || null, [byId])
+  const goProject = (id) => { setPanel(null); onOpenProject(id) }
+  const saveNote = useCallback((id, text) => projectStore.patch(id, (p) => ({ ...p, ...setStandbyNote(p, text) })), [projectStore])
+  const activeId = panel?.kind === 'project' ? panel.id : null
 
   if (loading) {
     return (
       <div aria-busy="true" aria-label="Cargando el recorrido">
-        <div className="jr-map" aria-hidden="true" style={{ paddingLeft: 0 }}>
-          {[0, 1, 2, 3].map((i) => <div key={i} className="jr-skel" />)}
-        </div>
+        <div className="jr-skel" style={{ height: 'clamp(560px,calc(100dvh - 232px),900px)' }} aria-hidden="true" />
       </div>
     )
   }
 
+  const empty = boardAll.total === 0 && boardAll.out.length === 0
   return (
-    <>
+    <div ref={root}>
       <div className="jr-bar">
         <div className="jr-sum" aria-label="Resumen del recorrido">
           <span className="jr-kpi"><b>{board.total}</b> en el recorrido</span>
@@ -686,44 +543,42 @@ function Recorrido({ onOpenProject, projects, loading }) {
         </label>
       </div>
 
-      {board.total === 0 && board.out.length === 0 ? (
+      {empty ? (
         <div className="pj-empty">
           <span className="ic"><I2.circleDash width={22} height={22} /></span>
-          <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: '-.02em' }}>{q ? 'Nadie coincide con la búsqueda' : 'Todavía no hay clientes en el recorrido'}</div>
+          <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: '-.02em' }}>Todavía no hay clientes en el recorrido</div>
           <div style={{ fontSize: 13, color: 'var(--text-faint)', maxWidth: 380, lineHeight: 1.5 }}>
-            {q ? 'Probá con otro nombre.' : 'Cada cliente aparece acá cuando se crea su proyecto desde el onboarding. Los internos de Insights no entran.'}
+            Cada cliente aparece acá cuando se crea su proyecto desde el onboarding. Los internos de Insights no entran.
           </div>
-          {q && <button className="btn btn-sm" style={{ marginTop: 14 }} onClick={() => setSearch('')}>Limpiar búsqueda</button>}
         </div>
       ) : (
         <>
-          {f2.length > 0 && (
-            <div className="jr-f2row" ref={rowWrap}>
-              <F2Trigger items={f2} open={f2Open && !arc} onToggle={() => setF2Open((v) => !v)} btnRef={rowBtn} />
-              {f2Open && !arc && <F2Popover items={f2} clientOf={clientOf} onOpen={openFromF2} />}
-            </div>
-          )}
-
-          <motion.div ref={mapRef} className="jr-map" data-arc={f2.length > 0 ? '1' : undefined} variants={stagger} initial="hidden" animate="show">
-            {main.map((l) => <Station key={l.key} innerRef={laneRef(l.key)} lane={l} items={board.lanes[l.key]} clientOf={clientOf} onOpen={onOpenProject} onSaveNote={saveNote} />)}
-            <div className="jr-fork">
-              <div className="jr-forkl">Después de la prueba sigue uno de estos caminos</div>
-              {branches.map((l) => <Station key={l.key} innerRef={laneRef(l.key)} lane={l} items={board.lanes[l.key]} clientOf={clientOf} onOpen={onOpenProject} onSaveNote={saveNote} />)}
-            </div>
-            {arc && (
+          {wide ? (
+            <Suspense fallback={<div className="jr-skel" style={{ height: 'clamp(560px,calc(100dvh - 232px),900px)' }} aria-label="Cargando el lienzo" />}>
+              <RecorridoCanvas board={boardAll} matches={matches} activeId={activeId} clientOf={clientOf} onOpen={openPanel}
+                onOpenF2={openF2} f2Count={f2.length} storageKey={`ip.recorrido.lienzo.v1.${myId || 'local'}`} searchKey={q} />
+            </Suspense>
+          ) : wide === false && (
+            board.total === 0 ? (
+              <div className="pj-empty">
+                <span className="ic"><I2.circleDash width={22} height={22} /></span>
+                <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: '-.02em' }}>Nadie coincide con la búsqueda</div>
+                <div style={{ fontSize: 13, color: 'var(--text-faint)', maxWidth: 380, lineHeight: 1.5 }}>Probá con otro nombre.</div>
+                <button className="btn btn-sm" style={{ marginTop: 14 }} onClick={() => setSearch('')}>Limpiar búsqueda</button>
+              </div>
+            ) : (
               <>
-                <svg className="jr-arc" width={arc.w} height={arc.h} aria-hidden="true">
-                  <path d={arc.d} />
-                  <circle cx={arc.x0} cy={arc.y0} r="3" />
-                  <circle cx={arc.x2} cy={arc.y2} r="3" />
-                </svg>
-                <div className="jr-arcw" ref={arcWrap} style={{ left: arc.mx, top: arc.my }}>
-                  <F2Trigger items={f2} open={f2Open} onToggle={() => setF2Open((v) => !v)} btnRef={arcBtn} />
-                  {f2Open && <F2Popover items={f2} clientOf={clientOf} onOpen={openFromF2} />}
-                </div>
+                {f2.length > 0 && <div className="jr-f2row"><F2Trigger items={f2} onOpen={openF2} /></div>}
+                <motion.div className="jr-map" variants={stagger} initial="hidden" animate="show">
+                  {main.map((l) => <Station key={l.key} lane={l} items={board.lanes[l.key]} clientOf={clientOf} onOpen={openPanel} onSaveNote={saveNote} activeId={activeId} />)}
+                  <div className="jr-fork">
+                    <div className="jr-forkl">Después de la prueba sigue uno de estos caminos</div>
+                    {branches.map((l) => <Station key={l.key} lane={l} items={board.lanes[l.key]} clientOf={clientOf} onOpen={openPanel} onSaveNote={saveNote} activeId={activeId} />)}
+                  </div>
+                </motion.div>
               </>
-            )}
-          </motion.div>
+            )
+          )}
 
           <div className="jr-low">
             <section className="jr-panel" ref={offersRef} aria-labelledby="jr-offer-h" style={{ scrollMarginTop: 16 }}>
@@ -733,15 +588,14 @@ function Recorrido({ onOpenProject, projects, loading }) {
                 <span className="sub">Plan mensual o Fase 2</span>
               </div>
               {board.offers.length === 0
-                ? <div className="jr-none">Nadie está cerca del fin del MVP ni de los 30 días. Cuando falten {plural(thresholds.offerLeadDays, 'día', 'días')} de prueba, aparece acá.</div>
+                ? <div className="jr-none">{q ? 'Nadie de la búsqueda está para ofrecer.' : `Nadie está cerca del fin del MVP ni de los 30 días. Cuando falten ${plural(thresholds.offerLeadDays, 'día', 'días')} de prueba, aparece acá.`}</div>
                 : board.offers.map((o) => {
-                  const p = (data.projects || []).find((x) => x.id === o.projectId)
                   const c = clientOf(o.clientId)
                   const last = [o.upsell.plan, o.upsell.fase2].filter(Boolean)
                   const lm = laneMeta(o.lane)
                   return (
                     <div key={o.projectId} className="jr-li" data-off={o.declined ? '1' : '0'} style={{ '--lc': `var(${lm.colorVar})` }}>
-                      <button className="go" onClick={() => onOpenProject(o.projectId)} aria-label={`Abrir ${o.name}`}>
+                      <button className="go" onClick={(e) => openPanel(o.projectId, e.currentTarget)} aria-label={`Ver el detalle de ${o.name}`}>
                         <ClientMark text={c?.company || o.name} size={32} />
                         <span className="tx">
                           <div className="nm">{o.name}{c?.company && <span style={{ fontWeight: 500, color: 'var(--text-faint)' }}> · {c.company}</span>}</div>
@@ -751,7 +605,7 @@ function Recorrido({ onOpenProject, projects, loading }) {
                         </span>
                       </button>
                       <span className="jr-ln hide-mobile"><i />{lm.label}</span>
-                      <button className="jr-act" onClick={() => setUpsellFor(p?.id || null)} aria-label={`Anotar oferta a ${o.name}`}>
+                      <button className="jr-act" onClick={() => setUpsellFor(o.projectId)} aria-label={`Anotar oferta a ${o.name}`}>
                         <I2.pencil width={13} height={13} /> Anotar
                       </button>
                     </div>
@@ -766,12 +620,12 @@ function Recorrido({ onOpenProject, projects, loading }) {
                 <span className="sub">Rojo primero</span>
               </div>
               {alerted.length === 0
-                ? <div className="jr-none">Nada pide atención. Desarrollo, tiendas, prueba y stand-by están dentro de los umbrales.</div>
+                ? <div className="jr-none">{q ? 'Nadie de la búsqueda tiene alertas.' : 'Nada pide atención. Desarrollo, tiendas, prueba y stand-by están dentro de los umbrales.'}</div>
                 : alerted.map((a) => {
                   const lm = laneMeta(a.lane)
                   return (
                     <div key={a.project.id} className="jr-li">
-                      <button className="go" onClick={() => onOpenProject(a.project.id)} aria-label={`Abrir ${a.project.name}: ${a.items.map((x) => x.text).join('. ')}`}>
+                      <button className="go" onClick={(e) => openPanel(a.project.id, e.currentTarget)} aria-label={`Ver el detalle de ${a.project.name}: ${a.items.map((x) => x.text).join('. ')}`}>
                         <span className="jr-lv" style={{ background: a.level === 'crit' ? 'var(--red)' : 'var(--yellow)', alignSelf: 'flex-start', marginTop: 6 }} aria-hidden="true" />
                         <span className="tx">
                           <div className="nm">{a.project.name}</div>
@@ -797,7 +651,7 @@ function Recorrido({ onOpenProject, projects, loading }) {
               {board.out.map((o, i) => (
                 <React.Fragment key={o.project.id}>
                   {i > 0 && ', '}
-                  <button onClick={() => onOpenProject(o.project.id)}>{o.project.name}</button>
+                  <button onClick={(e) => openPanel(o.project.id, e.currentTarget)}>{o.project.name}</button>
                 </React.Fragment>
               ))}
               .
@@ -806,8 +660,11 @@ function Recorrido({ onOpenProject, projects, loading }) {
         </>
       )}
 
+      <ProjectPanel target={panel} itemOf={itemOf} clientOf={clientOf} f2={f2} onClose={closePanel}
+        onPick={pickFromF2} onBackToF2={() => setPanel({ kind: 'f2' })} onOpenProject={goProject}
+        onAnotar={(id) => setUpsellFor(id)} onSaveNote={saveNote} suspendEsc={!!upsellFor} />
       <UpsellModal open={!!upsellProject} project={upsellProject} onClose={() => setUpsellFor(null)} />
-    </>
+    </div>
   )
 }
 
