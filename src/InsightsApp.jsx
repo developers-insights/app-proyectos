@@ -479,6 +479,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 .pdh-stage > *{position:relative;z-index:1}
 .pdh-stage .pdh-dot{width:7px;height:7px;border-radius:999px;background:var(--sc);flex:none}
 .pdh-stage .pdh-chev{color:var(--sc)}
+[data-stage="onboarding"]{--sc:var(--text-dim);--ss:var(--card-hover);--sl:var(--border-strong)}
 [data-stage="desarrollo"]{--sc:var(--accent);--ss:var(--accent-soft);--sl:var(--accent-line)}
 [data-stage="fase2"]{--sc:var(--violet);--ss:var(--violet-soft);--sl:var(--violet-line)}
 [data-stage="free"]{--sc:var(--blue);--ss:var(--blue-soft);--sl:var(--blue-line)}
@@ -3451,7 +3452,9 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign,
   const stores = storesSummary(p)
   // En estados terminales (finalizado/pausado/cancelado) no hay contador de fase
   // ni seguimiento de avance: el desarrollo dejó de correr.
-  const counter = sMeta.terminal ? { n: null, unit: sMeta.label, label: '' } : phaseCounter(info)
+  const counter = sMeta.terminal ? { n: null, unit: sMeta.label, label: '' }
+    : sMeta.waiting ? { n: null, unit: 'desarrollo sin arrancar', label: '' }
+    : phaseCounter(info)
   const show = { scope: true, testing: true, whatsapp: true, ...(p.cardActions || {}) }
   const testingUrl = p.testingUrl || p.productionUrl || ''
   const waUrl = p.whatsappUrl || ''
@@ -3481,7 +3484,7 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign,
       </div>
 
       <div className="pj-line">
-        <span title={sMeta.terminal ? sMeta.hint : info.countdownLabel} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
+        <span title={sMeta.terminal || sMeta.waiting ? sMeta.hint : info.countdownLabel} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
           {counter.n != null && <b style={{ color: `var(${info.colorVar})` }}>{counter.n}</b>}
           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: sMeta.terminal ? stageColor(sMeta.key) : undefined, fontWeight: sMeta.terminal ? 600 : undefined }}>
             {counter.unit}{counter.label ? ` · ${counter.label}` : ''}
