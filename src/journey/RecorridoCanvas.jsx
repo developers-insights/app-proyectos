@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, MiniMap, Panel, Handle, Position,
   BaseEdge, EdgeLabelRenderer, getBezierPath, useReactFlow, useStore, applyNodeChanges,
@@ -58,6 +59,13 @@ const CSS = `
 .jr-lbody .jr-pt{min-height:${CANVAS.row - 2}px}
 .jr-lbody .jr-pt[data-active="1"]{background:color-mix(in srgb,var(--lc) 12%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lc) 35%,transparent)}
 .jr-lbody .jr-pt[data-dim="1"]{opacity:.32}
+.jr-ln-node[data-drop="1"]{background:color-mix(in srgb,var(--lc) 14%,var(--card));
+  box-shadow:inset 0 0 0 2px var(--lc),0 0 0 5px color-mix(in srgb,var(--lc) 16%,transparent),var(--shadow-lift)}
+.jr-lbody .jr-pt[data-dragging="1"]{opacity:.3}
+html.jr-dragging,html.jr-dragging *{cursor:grabbing !important;user-select:none}
+.jr-ghost{position:fixed;left:0;top:0;z-index:90;pointer-events:none;transform-origin:0 0;border-radius:12px;
+  background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border-strong),var(--shadow-lift)}
+.jr-ghost .jr-pt{background:transparent}
 .jr-why2{display:block;margin:-4px 0 2px;padding:0 8px 0 41px;font-size:11px;line-height:${CANVAS.why - 4}px;color:var(--text-dim);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jr-why2::before{content:"Motivo: ";color:var(--text-faint)}
@@ -115,7 +123,7 @@ const ARIA = {
 const Grip = () => <span className="grip" aria-hidden="true"><i /><i /><i /><i /><i /><i /></span>
 
 const LaneNode = memo(function LaneNode({ data }) {
-  const { lane, items, matches, activeId, clientOf, onOpen, targetTop, sourceTop } = data
+  const { lane, items, matches, activeId, clientOf, onOpen, targetTop, sourceTop, drag } = data
   const [expanded, setExpanded] = useState(false)
   const ordered = useMemo(() => orderForSearch(items, matches), [items, matches])
   const { visible, hidden, collapsible } = capLane(ordered, expanded)
@@ -123,7 +131,7 @@ const LaneNode = memo(function LaneNode({ data }) {
   const rowsId = `jr-cv-rows-${lane.key}`
   const branch = !!lane.branch
   return (
-    <section className="jr-ln-node" style={{ '--lc': `var(${lane.colorVar})` }} data-dim={matches && !nMatch ? '1' : undefined}
+    <section className="jr-ln-node" data-lane={lane.key} style={{ '--lc': `var(${lane.colorVar})` }} data-dim={matches && !nMatch ? '1' : undefined}
       aria-label={`${lane.label}: ${plural(items.length, 'proyecto', 'proyectos')}`}>
       {lane.key !== 'onboarding' && lane.key !== 'standby' && <Handle type="target" position={Position.Left} id="l" isConnectable={false} style={{ top: HEAD_MID }} />}
       {lane.key === 'standby' && <Handle type="target" position={Position.Top} id="in" isConnectable={false} />}
@@ -147,7 +155,7 @@ const LaneNode = memo(function LaneNode({ data }) {
               return (
                 <React.Fragment key={it.project.id}>
                   <Point item={it} client={clientOf(it.project.clientId)} onOpen={onOpen}
-                    active={activeId === it.project.id} dim={matches ? !matches.has(it.project.id) : false} />
+                    active={activeId === it.project.id} dim={matches ? !matches.has(it.project.id) : false} drag={drag && drag(it, lane.key)} />
                   {note && <span className="jr-why2" title={note}>{note}</span>}
                 </React.Fragment>
               )
@@ -238,8 +246,84 @@ function Tools({ onLayout, custom }) {
   )
 }
 
-function Canvas({ board, matches, activeId, clientOf, onOpen, onOpenF2, f2Count, storageKey, searchKey }) {
+/*
+ * Arrastre de una card a otro tramo con pointer events propios: el drag nativo de HTML
+ * no anda bien sobre botones en Firefox y su imagen fantasma sale con el zoom del lienzo.
+ * La posición y el tramo resaltado se tocan en el DOM, sin setState por movimiento:
+ * cada render del Canvas rearma los nodos de React Flow.
+ */
+function useCardDrag(canMove, onMove) {
+  const [ghost, setGhost] = useState(null)
+  const ghostEl = useRef(null)
+  const st = useRef(null)
+  const fns = useRef({ canMove, onMove })
+  fns.current = { canMove, onMove }
+
+  const clearOver = () => document.querySelectorAll('.jr-ln-node[data-drop]').forEach((n) => n.removeAttribute('data-drop'))
+
+  const start = useCallback((e, item, lane) => {
+    if (e.button !== 0 || !e.isPrimary || !fns.current.onMove) return
+    const el = e.currentTarget
+    const s = { id: item.project.id, from: lane, x0: e.clientX, y0: e.clientY, on: false, over: null }
+    st.current = s
+    const place = (x, y) => `translate(${x - s.dx}px,${y - s.dy}px) scale(${s.k})`
+    const move = (ev) => {
+      if (ev.pointerId !== e.pointerId) return
+      if (!s.on) {
+        if (Math.hypot(ev.clientX - s.x0, ev.clientY - s.y0) < 6) return
+        s.on = true
+        const r = el.getBoundingClientRect()
+        s.k = el.offsetWidth ? r.width / el.offsetWidth : 1
+        s.dx = s.x0 - r.left
+        s.dy = s.y0 - r.top
+        el.setAttribute('data-dragging', '1')
+        document.documentElement.classList.add('jr-dragging')
+        setGhost({ item, lane, w: el.offsetWidth, t: place(ev.clientX, ev.clientY) })
+      }
+      if (ghostEl.current) ghostEl.current.style.transform = place(ev.clientX, ev.clientY)
+      const hit = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.jr-ln-node[data-lane]')
+      const key = hit?.dataset.lane
+      const ok = key && key !== s.from && fns.current.canMove(s.id, key) ? key : null
+      if (ok !== s.over) {
+        clearOver()
+        if (ok) hit.setAttribute('data-drop', '1')
+        s.over = ok
+      }
+    }
+    const end = (commit) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('keydown', esc, true)
+      if (!s.on) { st.current = null; return }
+      el.removeAttribute('data-dragging')
+      clearOver()
+      document.documentElement.classList.remove('jr-dragging')
+      setGhost(null)
+      // El click que el navegador dispara después del pointerup no tiene que abrir el panel.
+      setTimeout(() => { if (st.current === s) st.current = null }, 0)
+      if (commit && s.over) fns.current.onMove(s.id, s.over)
+    }
+    const up = (ev) => { if (ev.pointerId === e.pointerId) end(true) }
+    const cancel = (ev) => { if (ev.pointerId === e.pointerId) end(false) }
+    const esc = (ev) => { if (ev.key === 'Escape' && s.on) { ev.preventDefault(); ev.stopPropagation(); end(false) } }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('keydown', esc, true)
+  }, [])
+
+  const onClickCapture = useCallback((e) => {
+    if (st.current?.on) { e.preventDefault(); e.stopPropagation() }
+  }, [])
+
+  const bind = useCallback((item, lane) => ({ onPointerDown: (e) => start(e, item, lane), onClickCapture }), [start, onClickCapture])
+  return { bind: onMove ? bind : null, ghost, ghostEl }
+}
+
+function Canvas({ board, matches, activeId, clientOf, onOpen, onOpenF2, f2Count, canMove, onMove, storageKey, searchKey }) {
   const rf = useReactFlow()
+  const { bind: drag, ghost, ghostEl } = useCardDrag(canMove, onMove)
   const auto = useMemo(() => canvasLayout(board), [board])
   const [saved, setSaved] = useState(() => readSaved(storageKey))
   const positions = useMemo(() => mergePositions(auto, saved), [auto, saved])
@@ -247,9 +331,9 @@ function Canvas({ board, matches, activeId, clientOf, onOpen, onOpenF2, f2Count,
   const [hint, setHint] = useState(true)
 
   const dataFor = useCallback((lane) => ({
-    lane, items: board.lanes[lane.key], matches, activeId, clientOf, onOpen,
+    lane, items: board.lanes[lane.key], matches, activeId, clientOf, onOpen, drag,
     sourceTop: lane.key === 'mvp' && f2Count > 0, targetTop: lane.key === 'fase2' && f2Count > 0,
-  }), [board, matches, activeId, clientOf, onOpen, f2Count])
+  }), [board, matches, activeId, clientOf, onOpen, f2Count, drag])
 
   const [nodes, setNodes] = useState(() => JOURNEY_LANES.map((l) => ({
     id: l.key, type: 'lane', position: positions[l.key], dragHandle: '.jr-drag', data: dataFor(l),
@@ -341,8 +425,14 @@ function Canvas({ board, matches, activeId, clientOf, onOpen, onOpenF2, f2Count,
         <Tools onLayout={relayout} custom={!!saved && Object.keys(saved).length > 0} />
         {matches && matches.size === 0
           ? <Panel position="top-left" className="jr-nores" role="status">Nadie coincide con la búsqueda</Panel>
-          : hint && <Panel position="top-left" className="jr-hint">Arrastrá el fondo para moverte y cada tramo desde su encabezado</Panel>}
+          : hint && <Panel position="top-left" className="jr-hint">Arrastrá el fondo para moverte, cada tramo desde su encabezado y cada cliente a otro tramo</Panel>}
       </ReactFlow>
+      {ghost && createPortal(
+        <div className="jr-ghost" ref={ghostEl} aria-hidden="true" style={{ width: ghost.w, transform: ghost.t, '--lc': `var(${JOURNEY_LANES.find((l) => l.key === ghost.lane).colorVar})` }}>
+          <Point item={ghost.item} client={clientOf(ghost.item.project.clientId)} onOpen={() => {}} />
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

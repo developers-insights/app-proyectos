@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   journeyLane, journeyEntry, journeyBoard, offerCandidates, normalizeThresholds,
-  normalizeUpsell, upsellState, addUpsellEntry, removeUpsellEntry, setUpsellObjections, upsellLine,
+  normalizeUpsell, upsellState, addUpsellEntry, removeUpsellEntry, setUpsellObjections, upsellLine, laneDropStage,
 } from '../src/lib/journey.js'
 import { applyStage, projectStage, stageIsRegression } from '../src/lib/stages.js'
 import { normalizeLifecycle, phaseInfo, billingNotice } from '../src/lib/lifecycle.js'
@@ -167,4 +167,18 @@ test('el tablero agrupa, ordena por días y deja afuera internos y cancelados', 
   assert.equal(b.out.length, 1)
   assert.equal(b.total, 2)
   assert.equal(b.alerts[0].projectId, 'b')
+})
+
+test('soltar una card en otro tramo da la etapa nueva, o null si no cambia nada', () => {
+  const mvp = { stage: 'desarrollo', progress: 40 }
+  assert.equal(laneDropStage(mvp, 'fase2', ctx(10)), 'fase2')
+  assert.equal(laneDropStage(mvp, 'prueba', ctx(10)), 'free')
+  assert.equal(laneDropStage(mvp, 'plan', ctx(10)), 'plan')
+  assert.equal(laneDropStage(mvp, 'standby', ctx(10)), 'pausado')
+  assert.equal(laneDropStage(mvp, 'mvp', ctx(10)), null)
+  assert.equal(laneDropStage(mvp, 'onboarding', ctx(10)), null)
+  assert.equal(laneDropStage({ stage: 'finalizado' }, 'standby'), null)
+  assert.equal(laneDropStage({ stage: 'pausado' }, 'mvp', ctx(10)), 'desarrollo')
+  assert.equal(laneDropStage({ stage: 'cancelado' }, 'prueba'), 'free')
+  assert.equal(laneDropStage(mvp, 'nada', ctx(10)), null)
 })

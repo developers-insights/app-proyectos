@@ -4,7 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useApp } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
 import {
-  laneMeta, upsellState, upsellStatusMeta, offerLabel, standbyNote, STANDBY_NOTE_MAX, alertLevel,
+  JOURNEY_LANES, laneMeta, upsellState, upsellStatusMeta, offerLabel, standbyNote, STANDBY_NOTE_MAX, alertLevel,
 } from '../lib/journey.js'
 import { normalizeLifecycle, daysBetween } from '../lib/lifecycle.js'
 import { openCloserNotes } from '../lib/closerNotes.js'
@@ -46,6 +46,16 @@ const CSS = `
 .jp-bar .tr{height:6px;border-radius:6px;background:var(--track);overflow:hidden}
 .jp-bar .tr i{display:block;height:100%;border-radius:6px;background:var(--lc);transform-origin:left center;animation:jpGrow .7s var(--e) both}
 @keyframes jpGrow{from{transform:scaleX(0)}}
+.jp-mv{display:flex;flex-wrap:wrap;gap:6px}
+.jp-mv button{--lc:var(--accent);display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:600;
+  color:var(--text-dim);background:var(--card);box-shadow:inset 0 0 0 1px var(--border);
+  transition:color .18s var(--e),box-shadow .18s var(--e),background .18s var(--e),transform .16s var(--e)}
+.jp-mv button i{width:6px;height:6px;border-radius:50%;background:var(--lc)}
+.jp-mv button:hover:not(:disabled){color:var(--text);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lc) 55%,transparent)}
+.jp-mv button:active:not(:disabled){transform:scale(.96)}
+.jp-mv button:focus-visible{outline:2px solid var(--lc);outline-offset:2px}
+.jp-mv button[aria-current="true"]{color:var(--text);background:color-mix(in srgb,var(--lc) 12%,var(--card));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lc) 40%,transparent);cursor:default}
+.jp-mv button:disabled:not([aria-current="true"]){opacity:.4;cursor:default}
 .jp-al{display:flex;flex-direction:column;gap:6px}
 .jp-al div{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border-radius:11px;font-size:13px;line-height:1.45;background:var(--card);box-shadow:inset 0 0 0 1px var(--border)}
 .jp-al i{width:7px;height:7px;border-radius:50%;margin-top:6px;flex:none}
@@ -94,7 +104,7 @@ const CSS = `
   .jp{top:auto;left:8px;right:8px;bottom:8px;width:auto;height:min(86dvh,720px)}
   .jp-open{height:44px}
 }
-@media (prefers-reduced-motion: reduce){.jp-bar .tr i{animation:none}.jp-act:active,.jp-open:active{transform:none}}
+@media (prefers-reduced-motion: reduce){.jp-bar .tr i{animation:none}.jp-act:active,.jp-open:active,.jp-mv button:active{transform:none}}
 `
 
 const LC = {
@@ -186,7 +196,25 @@ function UpsellBox({ project, onAnotar }) {
   )
 }
 
-function ProjectBody({ item, clientOf, onAnotar, onSaveNote, now }) {
+function MoveLane({ item, canMove, onMove }) {
+  const { project: p, entry } = item
+  return (
+    <div className="jp-mv" role="group" aria-label={`Mover ${p.name} a otro tramo`}>
+      {JOURNEY_LANES.filter((l) => l.key !== 'onboarding').map((l) => {
+        const here = entry.lane === l.key
+        const ok = !here && canMove(p.id, l.key)
+        return (
+          <button key={l.key} type="button" style={{ '--lc': `var(${l.colorVar})` }} disabled={!ok} aria-current={here ? 'true' : undefined}
+            onClick={() => onMove(p.id, l.key)} title={here ? 'Está en este tramo' : ok ? `Pasar a ${l.label}` : undefined}>
+            <i aria-hidden="true" />{l.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ProjectBody({ item, clientOf, onAnotar, onSaveNote, canMove, onMove, now }) {
   const { data } = useApp()
   const { project: p, entry } = item
   const lm = entry.lane ? laneMeta(entry.lane) : null
@@ -216,6 +244,13 @@ function ProjectBody({ item, clientOf, onAnotar, onSaveNote, now }) {
         </section>
       )}
       {!lm && <section className="jp-sec"><div className="jp-none">Cancelado: está fuera del recorrido.</div></section>}
+
+      {onMove && (
+        <section className="jp-sec">
+          <div className="jp-k">Mover a <span>o arrastrá la card a otro tramo</span></div>
+          <MoveLane item={item} canMove={canMove} onMove={onMove} />
+        </section>
+      )}
 
       {entry.alerts.length > 0 && (
         <section className="jp-sec">
@@ -290,7 +325,7 @@ function F2Body({ items, clientOf, onPick, now }) {
  * Panel lateral no modal: el lienzo sigue usable detrás, y otro clic en un proyecto
  * cambia el contenido sin cerrar. Esc cierra salvo que haya un modal encima.
  */
-export default function ProjectPanel({ target, itemOf, clientOf, f2, onClose, onPick, onBackToF2, onOpenProject, onAnotar, onSaveNote, suspendEsc }) {
+export default function ProjectPanel({ target, itemOf, clientOf, f2, onClose, onPick, onBackToF2, onOpenProject, onAnotar, onSaveNote, canMove, onMove, suspendEsc }) {
   const reduce = useReducedMotion()
   const head = useRef(null)
   const now = useRef(new Date()).current
@@ -345,7 +380,7 @@ export default function ProjectPanel({ target, itemOf, clientOf, f2, onClose, on
               <div className="jp-b">
                 {target.kind === 'f2'
                   ? <F2Body items={f2} clientOf={clientOf} onPick={onPick} now={now} />
-                  : <ProjectBody item={item} clientOf={clientOf} onAnotar={onAnotar} onSaveNote={onSaveNote} now={now} />}
+                  : <ProjectBody item={item} clientOf={clientOf} onAnotar={onAnotar} onSaveNote={onSaveNote} canMove={canMove} onMove={onMove} now={now} />}
               </div>
               {target.kind === 'project' && (
                 <div className="jp-f">

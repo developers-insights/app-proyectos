@@ -3836,7 +3836,7 @@ function Projects({ onOpenProject }) {
       </div>
 
       {view === 'recorrido' ? (
-        <RecorridoView projects={universe} loading={loading} onOpenProject={onOpenProject} onBack={() => setView('grilla')} />
+        <RecorridoView projects={universe} loading={loading} onOpenProject={onOpenProject} onSetStage={setStage} onBack={() => setView('grilla')} />
       ) : (<>
 
       {/* Una sola fila de control: estado, filtros, lo que está aplicado, búsqueda

@@ -39,7 +39,7 @@ export function ClientMark({ text, level, size = 30 }) {
   )
 }
 
-export function Point({ item, client, onOpen, active, dim, className = '' }) {
+export function Point({ item, client, onOpen, active, dim, drag, className = '' }) {
   const { project: p, entry } = item
   const lv = alertLevel(entry.alerts)
   const up = upsellState(p)
@@ -60,7 +60,8 @@ export function Point({ item, client, onOpen, active, dim, className = '' }) {
   ].filter(Boolean).join('. ')
   return (
     <button type="button" className={`jr-pt ${className}`} data-active={active ? '1' : undefined} data-dim={dim ? '1' : undefined}
-      onClick={(e) => onOpen(p.id, e.currentTarget)} aria-label={`${label}. Ver detalle`} aria-current={active ? 'true' : undefined} title={label}>
+      onClick={(e) => onOpen(p.id, e.currentTarget)} aria-label={`${label}. Ver detalle`} aria-current={active ? 'true' : undefined} title={label}
+      data-pid={p.id} {...drag}>
       <ClientMark text={company || p.name} level={lv} />
       <span className="tx">
         <span className="nm">
