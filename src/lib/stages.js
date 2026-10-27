@@ -5,6 +5,7 @@
  * desde 2026-08 (antes había un `status` activo/pendiente/pausado/entregado que
  * convivía con el ciclo de vida y decía la mitad de la historia cada uno).
  *
+ *   Onboarding  → vendido pero el desarrollo todavía no arrancó: el contador no corre
  *   Desarrollo  → se está construyendo (el MVP que vendió el closer)
  *   Fase 2      → venta nueva de ticket alto sobre el mismo cliente: otro desarrollo
  *   Free Maint. → mantenimiento sin cargo (la prueba gratis)
@@ -24,6 +25,10 @@ import { normalizeLifecycle, advancePhase } from './lifecycle.js'
  * `group` parte el menú: lo que está en obra vs lo que ya se mantiene.
  */
 export const PROJECT_STAGES = [
+  // Onboarding: el contador de días del desarrollo NO corre (lo pidió Manuel el
+  // 27/10: contaba días de proyectos que todavía no habían arrancado). Entrar acá
+  // lo pone en cero y pasar a Desarrollo lo arranca desde ese momento.
+  { key: 'onboarding', label: 'Onboarding',  group: 'obra',          phase: 1, colorVar: '--text-dim', hint: 'Todavía no arrancó el desarrollo', waiting: true },
   { key: 'desarrollo', label: 'Desarrollo',  group: 'obra',          phase: 1, colorVar: '--accent', hint: 'Se está construyendo' },
   { key: 'fase2',      label: 'Fase 2',      group: 'obra',          phase: 1, colorVar: '--violet', hint: 'Venta nueva sobre el mismo cliente' },
   { key: 'free',       label: 'Free Maint.', group: 'mantenimiento', phase: 2, colorVar: '--blue',   hint: 'Mantenimiento sin cargo' },
@@ -45,7 +50,7 @@ export const STAGE_GROUPS = [
 export const isDevelopmentDone = (key) => ['free', 'plan', 'finalizado'].includes(key)
 
 /** Metadatos de una etapa por clave. Cualquier cosa rara cae en Desarrollo. */
-export const stageMeta = (key) => PROJECT_STAGES.find((s) => s.key === normalizeStageKey(key)) || PROJECT_STAGES[0]
+export const stageMeta = (key) => PROJECT_STAGES.find((s) => s.key === normalizeStageKey(key)) || PROJECT_STAGES.find((s) => s.key === 'desarrollo')
 
 /* Starter/Kaizen/Scale quedaron guardados en proyectos viejos: hoy son un único plan. */
 const LEGACY_PLAN_KEYS = ['starter', 'kaizen', 'scale']
@@ -93,7 +98,9 @@ export function applyStage(project, key, now = new Date()) {
     const prev = normalizeLifecycle(project).devAt
     return { stage: meta.key, stageAt, lifecycle: { ...lifecycle, devAt: current === 'fase2' && prev ? prev : stamp } }
   }
-  if (meta.key === 'desarrollo') return { stage: meta.key, stageAt, lifecycle: { ...lifecycle, devAt: null } }
+  if (meta.key === 'onboarding') return { stage: meta.key, stageAt, lifecycle: { ...lifecycle, startedAt: current === 'onboarding' ? lifecycle.startedAt : stamp, devAt: null } }
+  // Salir de Onboarding es el arranque real del desarrollo: el contador nace acá.
+  if (meta.key === 'desarrollo') return { stage: meta.key, stageAt, lifecycle: { ...lifecycle, ...(current === 'onboarding' ? { startedAt: stamp } : {}), devAt: null } }
   return { stage: meta.key, stageAt, lifecycle }
 }
 

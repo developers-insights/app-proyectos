@@ -11,10 +11,9 @@ const NOW = new Date(2026, 9, 24, 15, 0)
 const daysAgo = (n) => new Date(2026, 9, 24 - n, 10, 0).toISOString()
 const ctx = (total = 10, pct = 50) => ({ planTotal: () => total, pct: () => pct })
 
-test('el tramo sale de la etapa y del plan', () => {
-  assert.equal(journeyLane({ stage: 'desarrollo' }, ctx(0)), 'onboarding')
-  assert.equal(journeyLane({ stage: 'desarrollo', progress: 40 }, ctx(0)), 'mvp')
-  assert.equal(journeyLane({ stage: 'desarrollo' }, ctx(12)), 'mvp')
+test('el tramo sale de la etapa', () => {
+  assert.equal(journeyLane({ stage: 'onboarding' }), 'onboarding')
+  assert.equal(journeyLane({ stage: 'desarrollo' }, ctx(0)), 'mvp')
   assert.equal(journeyLane({ stage: 'desarrollo' }, {}), 'mvp')
   assert.equal(journeyLane({ stage: 'free' }), 'prueba')
   assert.equal(journeyLane({ stage: 'kaizen' }), 'plan')
@@ -176,9 +175,41 @@ test('soltar una card en otro tramo da la etapa nueva, o null si no cambia nada'
   assert.equal(laneDropStage(mvp, 'plan', ctx(10)), 'plan')
   assert.equal(laneDropStage(mvp, 'standby', ctx(10)), 'pausado')
   assert.equal(laneDropStage(mvp, 'mvp', ctx(10)), null)
-  assert.equal(laneDropStage(mvp, 'onboarding', ctx(10)), null)
+  assert.equal(laneDropStage(mvp, 'onboarding', ctx(10)), 'onboarding')
+  assert.equal(laneDropStage({ stage: 'onboarding' }, 'onboarding'), null)
+  assert.equal(laneDropStage({ stage: 'onboarding' }, 'mvp'), 'desarrollo')
   assert.equal(laneDropStage({ stage: 'finalizado' }, 'standby'), null)
   assert.equal(laneDropStage({ stage: 'pausado' }, 'mvp', ctx(10)), 'desarrollo')
   assert.equal(laneDropStage({ stage: 'cancelado' }, 'prueba'), 'free')
   assert.equal(laneDropStage(mvp, 'nada', ctx(10)), null)
+})
+
+test('pasar a Onboarding pone el contador en cero y Desarrollo lo arranca recién ahí', () => {
+  const corriendo = { id: 'o', stage: 'desarrollo', lifecycle: { phase: 1, startedAt: daysAgo(28) } }
+  assert.equal(phaseInfo(corriendo, NOW).days, 28)
+
+  const enOnb = { ...corriendo, ...applyStage(corriendo, 'onboarding', NOW) }
+  assert.equal(projectStage(enOnb), 'onboarding')
+  assert.equal(stageIsRegression(corriendo, 'onboarding'), false)
+  const e = journeyEntry(enOnb, ctx(), NOW)
+  assert.equal(e.lane, 'onboarding')
+  assert.equal(e.days, 0)
+  assert.deepEqual(e.alerts, [])
+
+  const tresDiasDespues = new Date(2026, 9, 27, 9, 0)
+  const quieto = { ...enOnb, ...applyStage(enOnb, 'onboarding', tresDiasDespues) }
+  assert.equal(normalizeLifecycle(quieto).startedAt, normalizeLifecycle(enOnb).startedAt)
+
+  const arranca = { ...enOnb, ...applyStage(enOnb, 'desarrollo', tresDiasDespues) }
+  assert.equal(normalizeLifecycle(arranca).startedAt, tresDiasDespues.toISOString())
+  assert.equal(phaseInfo(arranca, tresDiasDespues).days, 0)
+  assert.equal(phaseInfo(arranca, new Date(2026, 9, 30, 9, 0)).days, 3)
+
+  const sigue = { ...arranca, ...applyStage(arranca, 'desarrollo', new Date(2026, 9, 30, 9, 0)) }
+  assert.equal(normalizeLifecycle(sigue).startedAt, tresDiasDespues.toISOString())
+})
+
+test('volver a Onboarding desde mantenimiento pide confirmación', () => {
+  const pagando = { stage: 'plan', lifecycle: { phase: 3, startedAt: daysAgo(200), phase2At: daysAgo(90), phase3At: daysAgo(60) } }
+  assert.equal(stageIsRegression(pagando, 'onboarding'), true)
 })

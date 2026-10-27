@@ -52,44 +52,29 @@ export function normalizeThresholds(raw) {
 
 const isClientProject = (p) => !!p && (p.kind || 'cliente') !== 'interno'
 
-const legacyProgress = (p) => {
-  const n = Number(p && p.progress)
-  return Number.isFinite(n) ? n : 0
-}
-
 function readCtx(ctx, project) {
   const c = ctx || {}
-  const total = typeof c.planTotal === 'function' ? c.planTotal(project) : undefined
   const pct = typeof c.pct === 'function' ? c.pct(project) : undefined
-  return {
-    planTotal: Number.isFinite(Number(total)) ? Number(total) : undefined,
-    pct: Number.isFinite(Number(pct)) ? Number(pct) : undefined,
-  }
+  return { pct: Number.isFinite(Number(pct)) ? Number(pct) : undefined }
 }
 
-/*
- * Onboarding = Desarrollo sin ninguna tarea de plan y sin avance heredado. Si el
- * total del plan no se conoce (planes cargando), se asume MVP: mover a alguien
- * de tramo por un dato que todavía no llegó sería peor que no distinguirlo.
- */
-export function journeyLane(project, ctx) {
+/* Onboarding es una etapa propia desde el 27/10 (antes se infería de "Desarrollo sin plan"). */
+export function journeyLane(project) {
   const stage = projectStage(project)
   if (stage === 'cancelado') return null
+  if (stage === 'onboarding') return 'onboarding'
   if (stage === 'pausado' || stage === 'finalizado') return 'standby'
   if (stage === 'fase2') return 'fase2'
   if (stage === 'free') return 'prueba'
   if (stageMeta(stage).phase === 3) return 'plan'
-  const { planTotal } = readCtx(ctx, project)
-  if (planTotal === 0 && legacyProgress(project) <= 0) return 'onboarding'
   return 'mvp'
 }
 
 /*
- * Etapa que se le pone a un proyecto al soltarlo en un tramo. Onboarding y MVP son
- * los dos Desarrollo (los separa el plan, no la etapa). Stand-by entra como Pausado:
- * Finalizado se elige desde el proyecto. null = no cambia nada.
+ * Etapa que se le pone a un proyecto al soltarlo en un tramo. Stand-by entra como
+ * Pausado: Finalizado se elige desde el proyecto. null = no cambia nada.
  */
-const LANE_STAGE = { onboarding: 'desarrollo', mvp: 'desarrollo', prueba: 'free', fase2: 'fase2', plan: 'plan', standby: 'pausado' }
+const LANE_STAGE = { onboarding: 'onboarding', mvp: 'desarrollo', prueba: 'free', fase2: 'fase2', plan: 'plan', standby: 'pausado' }
 
 export function laneDropStage(project, lane, ctx) {
   const to = LANE_STAGE[lane]
@@ -119,7 +104,9 @@ export function journeyEntry(project, ctx, now = new Date(), thresholds) {
   }
   let entry = base
 
-  if (lane === 'onboarding' || lane === 'mvp' || lane === 'fase2') {
+  if (lane === 'onboarding') {
+    entry = { ...base, since: since(project.stageAt || lc.startedAt), days: elapsed(project.stageAt || lc.startedAt) }
+  } else if (lane === 'mvp' || lane === 'fase2') {
     const anchor = lane === 'fase2' ? (lc.devAt || project.stageAt || lc.startedAt) : (lc.devAt || lc.startedAt)
     entry = { ...base, since: since(anchor), days: elapsed(anchor), limit: t.devMaxDays }
   } else if (lane === 'prueba') {
@@ -137,7 +124,7 @@ export function journeyEntry(project, ctx, now = new Date(), thresholds) {
 function journeyAlerts(project, entry, now, t) {
   const out = []
   const { lane, days, remaining, pct } = entry
-  const inDev = lane === 'mvp' || lane === 'onboarding' || lane === 'fase2'
+  const inDev = lane === 'mvp' || lane === 'fase2'
   const what = lane === 'fase2' ? 'Fase 2' : 'desarrollo'
 
   if (inDev && days != null) {

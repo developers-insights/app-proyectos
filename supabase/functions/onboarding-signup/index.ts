@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
     }
     const projId = 'p-' + rid()
     const project = {
-      id: projId, clientId, name: projectName, stage: 'desarrollo', priority: 'normal',
+      id: projId, clientId, name: projectName, stage: 'onboarding', stageAt: now, lifecycle: { phase: 1, startedAt: now }, priority: 'normal',
       assignments: { pm: nacho ? { userId: nacho.id, roleLabel: 'Project Manager' } : null, dev: dev ? { userId: dev.id, roleLabel: 'Developer' } : null },
       tags: [{ id: rid(), text: 'Nuevo proyecto', color: '#22C55E' }],
       sprints: [], avances: [], comms: [], scopeFiles: [], salesLinks: [], scopeNotes: [], risks: [], pendingAgency: [], pendingClient: [], chats: [], activity: [], clientTasks: [],
