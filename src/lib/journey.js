@@ -84,6 +84,23 @@ export function journeyLane(project, ctx) {
   return 'mvp'
 }
 
+/*
+ * Etapa que se le pone a un proyecto al soltarlo en un tramo. Onboarding y MVP son
+ * los dos Desarrollo (los separa el plan, no la etapa). Stand-by entra como Pausado:
+ * Finalizado se elige desde el proyecto. null = no cambia nada.
+ */
+const LANE_STAGE = { onboarding: 'desarrollo', mvp: 'desarrollo', prueba: 'free', fase2: 'fase2', plan: 'plan', standby: 'pausado' }
+
+export function laneDropStage(project, lane, ctx) {
+  const to = LANE_STAGE[lane]
+  if (!to || !project) return null
+  const from = journeyLane(project, ctx)
+  if (from === lane) return null
+  if (from === 'standby' && lane === 'standby') return null
+  if (projectStage(project) === to) return null
+  return to
+}
+
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
 export function journeyEntry(project, ctx, now = new Date(), thresholds) {

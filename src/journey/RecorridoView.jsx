@@ -6,7 +6,7 @@ import {
   JOURNEY_LANES, THRESHOLD_FIELDS, DEFAULT_THRESHOLDS, normalizeThresholds, journeyBoard,
   laneMeta, upsellState, upsellLine, offerLabel, upsellStatusMeta, UPSELL_OFFERS, UPSELL_STATUS,
   addUpsellEntry, removeUpsellEntry, setUpsellObjections,
-  fase2Offered, capLane, LANE_CAP, standbyNote, setStandbyNote, STANDBY_NOTE_MAX,
+  fase2Offered, capLane, LANE_CAP, standbyNote, setStandbyNote, STANDBY_NOTE_MAX, laneDropStage,
 } from '../lib/journey.js'
 import { planBoardSummary } from '../plan/planModel.js'
 import { projectProgress } from '../lib/progress.js'
@@ -441,7 +441,7 @@ function F2Trigger({ items, onOpen }) {
   )
 }
 
-function Recorrido({ onOpenProject, projects, loading }) {
+function Recorrido({ onOpenProject, onSetStage, projects, loading }) {
   const { data, plans, projectStore, myId } = useApp()
   const [thresholds, setThresholds] = useThresholds()
   const [search, setSearch] = useState('')
@@ -508,6 +508,12 @@ function Recorrido({ onOpenProject, projects, loading }) {
   const goProject = (id) => { setPanel(null); onOpenProject(id) }
   const saveNote = useCallback((id, text) => projectStore.patch(id, (p) => ({ ...p, ...setStandbyNote(p, text) })), [projectStore])
   const activeId = panel?.kind === 'project' ? panel.id : null
+  const projectById = useMemo(() => new Map((projects || []).map((p) => [p.id, p])), [projects])
+  const canMove = useCallback((id, lane) => !!onSetStage && !!laneDropStage(projectById.get(id), lane, ctx), [onSetStage, projectById, ctx])
+  const moveTo = useCallback((id, lane) => {
+    const to = onSetStage && laneDropStage(projectById.get(id), lane, ctx)
+    if (to) onSetStage(id, to)
+  }, [onSetStage, projectById, ctx])
 
   if (loading) {
     return (
@@ -556,7 +562,7 @@ function Recorrido({ onOpenProject, projects, loading }) {
           {wide ? (
             <Suspense fallback={<div className="jr-skel" style={{ height: 'clamp(560px,calc(100dvh - 232px),900px)' }} aria-label="Cargando el lienzo" />}>
               <RecorridoCanvas board={boardAll} matches={matches} activeId={activeId} clientOf={clientOf} onOpen={openPanel}
-                onOpenF2={openF2} f2Count={f2.length} storageKey={`ip.recorrido.lienzo.v1.${myId || 'local'}`} searchKey={q} />
+                onOpenF2={openF2} f2Count={f2.length} canMove={canMove} onMove={moveTo} storageKey={`ip.recorrido.lienzo.v1.${myId || 'local'}`} searchKey={q} />
             </Suspense>
           ) : wide === false && (
             board.total === 0 ? (
@@ -662,7 +668,7 @@ function Recorrido({ onOpenProject, projects, loading }) {
 
       <ProjectPanel target={panel} itemOf={itemOf} clientOf={clientOf} f2={f2} onClose={closePanel}
         onPick={pickFromF2} onBackToF2={() => setPanel({ kind: 'f2' })} onOpenProject={goProject}
-        onAnotar={(id) => setUpsellFor(id)} onSaveNote={saveNote} suspendEsc={!!upsellFor} />
+        onAnotar={(id) => setUpsellFor(id)} onSaveNote={saveNote} canMove={canMove} onMove={moveTo} suspendEsc={!!upsellFor} />
       <UpsellModal open={!!upsellProject} project={upsellProject} onClose={() => setUpsellFor(null)} />
     </div>
   )
