@@ -787,7 +787,12 @@ function Grupos({ isMobile, groups, projects, clients, now, loading, groupTitle,
 
   const assignProject = (g, projectId) => {
     const p = projects.find((x) => x.id === projectId)
-    patchGroup(g.group_jid, { project_id: projectId || null, client_id: (p && p.clientId) || null })
+    patchGroup(g.group_jid, { project_id: projectId || null, client_id: (p && p.clientId) || null, link_source: 'manual', linked_at: new Date().toISOString() })
+  }
+  const linkHint = (g) => {
+    if (!g.project_id && g.link_source === 'manual') return 'Marcado sin proyecto: el bot no lo vincula'
+    const why = { invitacion: 'el link de invitación', telefono: 'el teléfono del cliente', nombre: 'el nombre del grupo', 'telefono+nombre': 'el teléfono y el nombre' }[g.link_source]
+    return g.project_id && why ? `Lo vinculó el bot por ${why}` : ''
   }
   const lastActivity = (g) => {
     if (g.active && g.bot_member === false) return 'el bot no está en el grupo'
@@ -796,11 +801,14 @@ function Grupos({ isMobile, groups, projects, clients, now, loading, groupTitle,
   }
 
   const ProjectSelect = ({ g }) => (
-    <select className="input" value={g.project_id || ''} onChange={(e) => assignProject(g, e.target.value)}
-      style={{ padding: '7px 10px', fontSize: 13, width: isMobile ? '100%' : 210 }}>
-      <option value="">— Sin proyecto —</option>
-      {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-    </select>
+    <div style={{ width: isMobile ? '100%' : 210 }}>
+      <select className="input" value={g.project_id || ''} onChange={(e) => assignProject(g, e.target.value)}
+        style={{ padding: '7px 10px', fontSize: 13, width: '100%' }}>
+        <option value="">— Sin proyecto —</option>
+        {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      {linkHint(g) && <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.35 }}>{linkHint(g)}</div>}
+    </div>
   )
   const Toggle = ({ g }) => (
     <button onClick={() => patchGroup(g.group_jid, { active: !g.active })} className="bw-press" title={g.active ? 'Dejar de vigilar este grupo' : 'Empezar a vigilar este grupo'}

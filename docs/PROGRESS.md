@@ -375,3 +375,20 @@ Ensayo revertido `docs/migrations/2026-10-26-portal-sin-internos.ensayo.sql` con
 ## PENDIENTE
 - El portal no se vio en el navegador con una sesión real: no hay clientes del portal y no se creó una cuenta en la base compartida.
 - Si el portal muestra un campo nuevo, se suma en `portal_projects()` y en `portalView` en el mismo commit.
+
+# 2026-10-29 · El bot vincula solo cada grupo de WhatsApp con su proyecto
+
+Evoria salió "sin seguimiento" aunque Nacho había hablado con la clienta: su grupo no tenía proyecto (16 grupos activos así), el aviso no veía la etapa (pausado) ni el contacto anotado en la app.
+
+## Qué quedó
+- **bot_fede #8**: el aviso toma el contacto más nuevo entre el grupo y la app (comunicaciones, llamadas, ofertas del Recorrido) y omite pausado/finalizado/cancelado.
+- **bot_fede #9** (`src/jobs/vincular-grupos.ts`, `src/lib/vinculo.ts`): cada 30 min y antes del chequeo diario vincula los grupos sin proyecto por teléfono del cliente entre los remitentes y por nombre del grupo (sólo con forma de cliente: CA-/MA-/CM-/Proyecto). Ante ambigüedad no vincula. El aviso diario suma "Grupos sin proyecto".
+- **Migración `docs/migrations/2026-10-29-vinculo-grupos.sql`** (APLICADA el 29/10): `wa_groups.link_source` (`manual` | `invitacion` | `telefono` | `nombre` | `telefono+nombre`) y `linked_at`. Los 10 vínculos previos quedaron `manual`.
+- **Panel Bot › Grupos**: elegir proyecto (o "Sin proyecto") a mano guarda `link_source='manual'` y el bot no lo toca más; debajo del select dice por qué lo vinculó el bot.
+
+## Verificado
+Simulacro contra prod (`src/scripts/vincular-dry-run.ts` en bot_fede): 9 vínculos correctos, quedan sin proyecto Elizabeth y ERP Sales-Ops. Tests del bot (vinculo.test.ts con los datos reales), tsc y build; `npm test` y `npm run build` acá.
+
+## PENDIENTE
+- El hint del panel no se vio en el navegador con sesión real.
+- El panel Bot no replica la regla de etapa pausada ni el contacto anotado: sus días de silencio pueden diferir del aviso.
