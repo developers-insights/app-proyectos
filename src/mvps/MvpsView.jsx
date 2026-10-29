@@ -82,6 +82,16 @@ function useMvpActions() {
     unlink: (m) => mvpStore.patch(m.id, (x) => ({ ...x, projectId: '', linkedBy: '', linkedAt: '', autoLinkOff: true, updatedAt: now() })),
     setStatus: (m, status) => mvpStore.patch(m.id, (x) => ({ ...x, status, updatedAt: now() })),
     save: (m, fields) => mvpStore.patch(m.id, (x) => ({ ...x, ...fields, updatedAt: now() })),
+    // Demo que el sync no ve (otra cuenta, otro hosting): fila manual, mvp_apply_sync no la toca.
+    addManual: (project, url) => {
+      const t = now()
+      mvpStore.create({
+        id: `mvp-manual-${Math.random().toString(36).slice(2, 10)}`, source: 'manual', title: project.name,
+        fullName: '', repoUrl: '', demoUrlManual: url, repoCreatedAt: t, createdAt: t, status: 'activo',
+        projectId: project.id, linkedBy: 'manual', linkedAt: t,
+      })
+      if (logActivity) logActivity({ type: 'mvp-link', text: `cargó la demo de ${project.name}` })
+    },
   }
 }
 
@@ -167,7 +177,9 @@ function MvpRow({ m, project, onOpenProject, onLink, onUnlink, onEdit, onStatus 
         </div>
         {(m.description || m.notes) && <div className="mv-ds">{m.notes || m.description}</div>}
         <div className="mv-mt">
-          <a href={mvpRepoUrl(m) || undefined} target="_blank" rel="noreferrer" title="Abrir el repo en GitHub"><I2.github width={12} height={12} />{m.fullName}</a>
+          {m.fullName
+            ? <a href={mvpRepoUrl(m) || undefined} target="_blank" rel="noreferrer" title="Abrir el repo en GitHub"><I2.github width={12} height={12} />{m.fullName}</a>
+            : <span>cargada a mano</span>}
           <span>creado {ago(m.repoCreatedAt)}</span>
         </div>
       </div>
@@ -324,7 +336,15 @@ export function ProjectMvpModal({ open, project, onClose }) {
   const { data } = useApp()
   const actions = useMvpActions()
   const [q, setQ] = useState('')
+  const [url, setUrl] = useState('')
+  const [bad, setBad] = useState(false)
   if (!open || !project) return null
+  const addManual = () => {
+    const u = safeUrl(url)
+    if (!u) { setBad(true); return }
+    actions.addManual(project, u)
+    setUrl('')
+  }
   const mvps = data.mvps || []
   const linked = projectMvps(project, mvps)
   const sugg = suggestMvpsForProject(project, mvps, data.clients)
@@ -354,7 +374,7 @@ export function ProjectMvpModal({ open, project, onClose }) {
                   <button className="pj-ib" onClick={() => actions.unlink(m)} title="Desvincular" aria-label="Desvincular"><I2.x width={14} height={14} /></button>
                 </div>
                 <div className="mv-mt" style={{ marginTop: 8 }}>
-                  <a href={mvpRepoUrl(m) || undefined} target="_blank" rel="noreferrer"><I2.github width={12} height={12} />{m.fullName}</a>
+                  {m.fullName && <a href={mvpRepoUrl(m) || undefined} target="_blank" rel="noreferrer"><I2.github width={12} height={12} />{m.fullName}</a>}
                   {demo ? <a href={demo} target="_blank" rel="noreferrer"><I2.ext width={12} height={12} />{demo.replace(/^https?:\/\//, '')}</a> : <span>sin link de demo</span>}
                 </div>
               </div>
@@ -378,6 +398,18 @@ export function ProjectMvpModal({ open, project, onClose }) {
         <div style={{ maxHeight: 260, overflowY: 'auto', marginTop: 6 }}>
           {pool.map((m) => <Pick key={m.id} m={m} />)}
           {pool.length === 0 && <div style={{ padding: 12, fontSize: 13, color: 'var(--text-faint)' }}>No hay demos sin vincular con ese nombre.</div>}
+        </div>
+      )}
+      {linked.length === 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div className="label" style={{ marginBottom: 6 }}>¿No aparece? Pegá el link de la demo</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input className="input mono" value={url} onChange={(e) => { setUrl(e.target.value); setBad(false) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') addManual() }}
+              placeholder="https://…" aria-label="Link de la demo" style={{ fontSize: 13, flex: 1 }} />
+            <button className="btn btn-accent" onClick={addManual} disabled={!url.trim()}><I2.check width={15} height={15} /> Guardar</button>
+          </div>
+          {bad && <div style={{ fontSize: 12.5, color: 'var(--red)', marginTop: 6 }}>Pegá el link completo, empezando con https://</div>}
         </div>
       )}
     </Modal>

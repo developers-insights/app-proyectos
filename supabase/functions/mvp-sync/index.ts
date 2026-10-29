@@ -156,7 +156,16 @@ Deno.serve(async (req) => {
     const renderByRepo = new Map<string, any>()
     for (const s of services) { const k = repoKey(s.repo); if (k && !renderByRepo.has(k)) renderByRepo.set(k, s) }
 
-    const repos = [...orgList, ...legacyList.filter((r: any) => r.owner?.login?.toLowerCase() === LEGACY_OWNER && isDemoName(r.name))]
+    // En la cuenta vieja conviven demos y herramientas internas: entra el repo con "demo"/"mvp"
+    // en el nombre o, si no lo tiene (msail-league, 2026-10-29), el que está publicado en
+    // nuestro Render y coincide de lleno con un proyecto cargado.
+    const legacyOk = (name: string) => {
+      if (isDemoName(name)) return true
+      if (!renderByRepo.has(`${LEGACY_OWNER}/${name}`.toLowerCase())) return false
+      const probe = { repo: name, title: prettyTitle(name), description: '', fullName: `${LEGACY_OWNER}/${name}` }
+      return projects.some((p: any) => matchScore(probe, p, companyOf.get(p.clientId) || '') >= 0.99)
+    }
+    const repos = [...orgList, ...legacyList.filter((r: any) => r.owner?.login?.toLowerCase() === LEGACY_OWNER && legacyOk(r.name))]
     const seen = new Set(repos.map((r: any) => String(r.full_name).toLowerCase()))
     const auto: any[] = []
     for (const r of repos) {
@@ -179,7 +188,7 @@ Deno.serve(async (req) => {
       const k = repoKey(s.repo)
       if (!k.startsWith(LEGACY_OWNER + '/') || seen.has(k)) continue
       const name = k.split('/')[1]
-      if (!isDemoName(name)) continue
+      if (!legacyOk(name)) continue
       auto.push({
         id: `mvp-${k.replace(/[^a-z0-9]+/g, '-')}`,
         source: 'render', owner: LEGACY_OWNER, repo: name, fullName: `${LEGACY_OWNER}/${name}`,
