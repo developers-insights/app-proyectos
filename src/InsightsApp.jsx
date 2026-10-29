@@ -2852,6 +2852,21 @@ function StoresBarPill({ count, on, onToggle }) {
   )
 }
 
+/* Los proyectos del formulario de onboarding entran en Onboarding y la Cartera
+   abre en Desarrollo: sin este atajo quedaban escondidos en el menú de etapas
+   (Komos, 28/10, Nacho no lo encontró). */
+function OnboardingBarPill({ count, on, onToggle }) {
+  return (
+    <button type="button" className="st-bar" aria-pressed={on} onClick={onToggle}
+      aria-label={`Por arrancar, ${count} proyecto${count === 1 ? '' : 's'} en Onboarding`}
+      title={on ? 'Volver a la etapa anterior' : 'Mostrar los proyectos en Onboarding'}>
+      <span className="ics" aria-hidden="true"><I2.sparkle width={16} height={16} /></span>
+      <span aria-hidden="true">Por arrancar</span>
+      <span className="n" aria-hidden="true">{count}</span>
+    </button>
+  )
+}
+
 /* banderita de prioridad de proyecto (roja/amarilla/celeste) con dropdown */
 function PriorityMenu({ value, onChange, size = 16 }) {
   const [open, setOpen] = useState(false)
@@ -3801,7 +3816,8 @@ function Projects({ onOpenProject }) {
     if (!q) return true
     const pmU = p.assignments?.pm ? userOf(p.assignments.pm.userId) : null
     const devU = p.assignments?.dev ? userOf(p.assignments.dev.userId) : null
-    const hay = [p.name, clientOf(p.clientId)?.company, pmU?.name, devU?.name].filter(Boolean).join(' ').toLowerCase()
+    const cl = clientOf(p.clientId)
+    const hay = [p.name, cl?.company, cl?.name, cl?.email, pmU?.name, devU?.name].filter(Boolean).join(' ').toLowerCase()
     return hay.includes(q)
   }
   const keep = (p) => matchesFilters(p) && matchesSearch(p)
@@ -3824,6 +3840,11 @@ function Projects({ onOpenProject }) {
   const stageCounts = {}
   for (const p of matched) { const s = projectStage(p); stageCounts[s] = (stageCounts[s] || 0) + 1 }
   const totalCount = matched.length
+  const toggleOnboarding = () => {
+    if (tab === 'onboarding') { setTab(prevTabRef.current === 'onboarding' ? 'desarrollo' : prevTabRef.current); return }
+    prevTabRef.current = tab
+    setTab('onboarding')
+  }
   let list = tab === 'all' ? matched : matched.filter((p) => projectStage(p) === tab)
   if (prioFilter === 'sort') list = [...list].sort((a, b) => projPrioMeta(b.priority).rank - projPrioMeta(a.priority).rank)
   const tabLabel = tab === 'all' ? 'todavía' : `en ${stageMeta(tab).label}`
@@ -3846,6 +3867,10 @@ function Projects({ onOpenProject }) {
           y la acción principal. Antes eran tres franjas apiladas. */}
       <div className="pj-bar" style={{ marginBottom: 20 }}>
         <StageFilterMenu value={tab} onChange={setTab} counts={stageCounts} total={totalCount} />
+
+        {(stageCounts.onboarding > 0 || tab === 'onboarding') && (
+          <OnboardingBarPill count={stageCounts.onboarding || 0} on={tab === 'onboarding'} onToggle={toggleOnboarding} />
+        )}
 
         {(deployingCount > 0 || storesFilter === 'tramite') && (
           <StoresBarPill count={deployingCount} on={storesFilter === 'tramite'} onToggle={toggleDeploying} />
