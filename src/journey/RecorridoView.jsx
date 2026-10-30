@@ -507,6 +507,7 @@ function Recorrido({ onOpenProject, onSetStage, projects, loading }) {
   const itemOf = useCallback((id) => byId.get(id) || null, [byId])
   const goProject = (id) => { setPanel(null); onOpenProject(id) }
   const saveNote = useCallback((id, text) => projectStore.patch(id, (p) => ({ ...p, ...setStandbyNote(p, text) })), [projectStore])
+  const saveAgreement = useCallback((id, fn) => projectStore.patch(id, (p) => ({ ...p, ...fn(p) })), [projectStore])
   const activeId = panel?.kind === 'project' ? panel.id : null
   const projectById = useMemo(() => new Map((projects || []).map((p) => [p.id, p])), [projects])
   const canMove = useCallback((id, lane) => !!onSetStage && !!laneDropStage(projectById.get(id), lane, ctx), [onSetStage, projectById, ctx])
@@ -668,7 +669,7 @@ function Recorrido({ onOpenProject, onSetStage, projects, loading }) {
 
       <ProjectPanel target={panel} itemOf={itemOf} clientOf={clientOf} f2={f2} onClose={closePanel}
         onPick={pickFromF2} onBackToF2={() => setPanel({ kind: 'f2' })} onOpenProject={goProject}
-        onAnotar={(id) => setUpsellFor(id)} onSaveNote={saveNote} canMove={canMove} onMove={moveTo} suspendEsc={!!upsellFor} />
+        onAnotar={(id) => setUpsellFor(id)} onSaveNote={saveNote} onSaveAgreement={saveAgreement} canMove={canMove} onMove={moveTo} suspendEsc={!!upsellFor} />
       <UpsellModal open={!!upsellProject} project={upsellProject} onClose={() => setUpsellFor(null)} />
     </div>
   )

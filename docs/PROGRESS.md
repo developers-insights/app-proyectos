@@ -1,5 +1,10 @@
 # PROGRESS — app-proyectos
 
+## 2026-10-30 · Recorrido: ramas Partners y Plan anual (call del 30/10, pedido de Fede)
+- Etapas nuevas `anual` y `partner` (grupo "Acuerdos") y tramos del Recorrido con el mismo nombre. No tocan el lifecycle ni el cobro mensual (el aviso de cobro se oculta en esas etapas). Sin migración: `stage` es texto y los datos van en el JSON del proyecto (`annual.startAt`, `partner.{pct,note}`).
+- Lógica en `src/lib/agreements.js`. Plan anual: cuenta los días que quedan del año desde `annual.startAt` (editable en el panel del Recorrido; por defecto, el día en que entra a la rama) y alerta con `annualWarnDays` (60) y `annualCritDays` (15) en Umbrales.
+- Tocados: stages.js, journey.js (carriles, `laneDropStage`, layout del lienzo), parts.jsx, ProjectPanel.jsx, RecorridoView/Canvas, contextExport.js (secciones nuevas 6 y 7), card de la grilla.
+
 ## 2026-07-20 · Fin del clobbing: migración del blob `app_state` a tablas por-fila
 
 ### Problema (causa raíz, verificada)

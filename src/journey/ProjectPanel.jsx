@@ -8,7 +8,8 @@ import {
 } from '../lib/journey.js'
 import { normalizeLifecycle, daysBetween } from '../lib/lifecycle.js'
 import { openCloserNotes } from '../lib/closerNotes.js'
-import { fmtDay } from '../lib/stores.js'
+import { fmtDay, toDateInput, fromDateInput } from '../lib/stores.js'
+import { annualInfo, setAnnualStart, normalizePartner, setPartner, PARTNER_NOTE_MAX } from '../lib/agreements.js'
 import { ClientMark, dayCell, daysText, plural } from './parts.jsx'
 
 const CSS = `
@@ -80,6 +81,16 @@ const CSS = `
   font-size:13px;line-height:1.45;resize:vertical}
 .jp-why textarea:focus{outline:2px solid var(--yellow);outline-offset:0}
 .jp-why .hint{display:flex;justify-content:space-between;margin-top:5px;font-size:11px;color:var(--text-faint)}
+.jp-fld{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text-dim)}
+.jp-fld + .jp-fld{margin-top:11px}
+.jp-fld input,.jp-fld textarea{width:100%;padding:0 11px;border-radius:11px;border:1px solid var(--border-strong);background:var(--card);color:var(--text);font-size:13px}
+.jp-fld input{height:38px;font-variant-numeric:tabular-nums}
+.jp-fld textarea{min-height:62px;padding:9px 11px;line-height:1.45;resize:vertical}
+.jp-fld input:focus,.jp-fld textarea:focus{outline:2px solid var(--lc);outline-offset:0}
+.jp-fld .hint{display:flex;justify-content:space-between;font-size:11px;color:var(--text-faint)}
+.jp-pct{position:relative;max-width:132px}
+.jp-pct input{padding-right:30px;text-align:right;font-family:'JetBrains Mono',monospace}
+.jp-pct i{position:absolute;right:11px;top:10px;font-style:normal;font-size:13px;color:var(--text-faint);pointer-events:none}
 .jp-cn{display:flex;flex-direction:column;gap:7px;margin:0;padding:0;list-style:none}
 .jp-cn li{position:relative;padding:9px 11px 9px 14px;border-radius:11px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;
   background:var(--card);box-shadow:inset 0 0 0 1px var(--border);overflow:hidden}
@@ -117,12 +128,15 @@ const LC = {
 function KeyDates({ project, entry, now }) {
   const lc = normalizeLifecycle(project)
   const rows = []
-  for (const [k, label] of Object.entries(LC)) if (lc[k]) rows.push([label, lc[k]])
+  const agreement = entry.lane === 'anual' || entry.lane === 'partner'
+  if (!agreement) for (const [k, label] of Object.entries(LC)) if (lc[k]) rows.push([label, lc[k]])
+  if (entry.lane === 'anual') { const a = annualInfo(project, now); if (a.startAt) rows.push(['Plan anual desde', a.startAt]); if (a.endAt) rows.push(['Se cumple el año', a.endAt]) }
   if (entry.lane === 'prueba' && lc.phase2At && lc.trialDays) {
     const end = new Date(new Date(lc.phase2At).getTime() + lc.trialDays * 864e5).toISOString()
     rows.push([entry.remaining != null && entry.remaining < 0 ? 'La prueba venció' : 'Termina la prueba', end])
   }
   if (entry.lane === 'standby' && project.stageAt) rows.push(['En stand-by desde', project.stageAt])
+  if (entry.lane === 'partner' && project.stageAt) rows.push(['Partner desde', project.stageAt])
   if (!rows.length) return <div className="jp-none">Todavía no tiene fechas cargadas.</div>
   return (
     <dl className="jp-dl">
@@ -161,6 +175,68 @@ function StandbyEditor({ project, onSave }) {
         }} />
       <span className="hint"><span aria-live="polite">{saved ? 'Guardado' : 'Enter o salir del campo guarda'}</span><span>{v.length}/{STANDBY_NOTE_MAX}</span></span>
     </label>
+  )
+}
+
+function AnnualEditor({ project, now, onSave }) {
+  const a = annualInfo(project, now)
+  const [v, setV] = useState(a.startAt ? toDateInput(a.startAt) : '')
+  useEffect(() => { setV(a.startAt ? toDateInput(a.startAt) : '') }, [project.id, a.startAt])
+  const commit = (val) => {
+    const iso = fromDateInput(val)
+    if (iso && toDateInput(iso) !== toDateInput(a.startAt)) onSave(project.id, (p) => setAnnualStart(p, iso))
+  }
+  const share = a.total ? Math.max(0, Math.min(1, a.days / a.total)) : 0
+  return (
+    <>
+      <label className="jp-fld">
+        Arrancó el
+        <input type="date" value={v} max="2100-12-31" min="2000-01-01" aria-label={`Fecha de arranque del plan anual de ${project.name}`}
+          onChange={(e) => { setV(e.target.value); if (e.target.value.length === 10) commit(e.target.value) }} />
+      </label>
+      {a.endAt && (
+        <div className="jp-bar">
+          <div className="row"><span>Vence el {fmtDay(a.endAt)}</span><b>{Math.round(share * 100)}% del año</b></div>
+          <div className="tr" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(share * 100)} aria-label="Año transcurrido">
+            <i style={{ width: `${Math.max(2, share * 100)}%` }} />
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function PartnerEditor({ project, onSave }) {
+  const cur = normalizePartner(project)
+  const [pct, setPct] = useState(cur.pct == null ? '' : String(cur.pct))
+  const [note, setNote] = useState(cur.note)
+  useEffect(() => { setPct(cur.pct == null ? '' : String(cur.pct)); setNote(cur.note) }, [project.id, cur.pct, cur.note])
+  const save = (next) => onSave(project.id, (p) => setPartner(p, next))
+  const commitPct = () => {
+    const n = pct.trim() === '' ? null : Number(pct.replace(',', '.'))
+    if (n !== cur.pct && (n == null || (Number.isFinite(n) && n >= 0 && n <= 100))) save({ pct: n })
+    else setPct(cur.pct == null ? '' : String(cur.pct))
+  }
+  const commitNote = () => { if (note.trim() !== cur.note) save({ note }) }
+  return (
+    <>
+      <label className="jp-fld">
+        Porcentaje que cobra Insights
+        <span className="jp-pct">
+          <input value={pct} inputMode="decimal" placeholder="Ej.: 15" aria-label={`Porcentaje del acuerdo con ${project.name}`}
+            onChange={(e) => setPct(e.target.value)} onBlur={commitPct}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }} />
+          <i aria-hidden="true">%</i>
+        </span>
+      </label>
+      <label className="jp-fld">
+        Acuerdo
+        <textarea value={note} maxLength={PARTNER_NOTE_MAX} placeholder="Ej.: nosotros hacemos marketing y la app; cobramos el 15 % de lo que facture"
+          aria-label={`Detalle del acuerdo con ${project.name}`}
+          onChange={(e) => setNote(e.target.value)} onBlur={commitNote} />
+        <span className="hint"><span>Se guarda al salir del campo</span><span>{note.length}/{PARTNER_NOTE_MAX}</span></span>
+      </label>
+    </>
   )
 }
 
@@ -214,7 +290,7 @@ function MoveLane({ item, canMove, onMove }) {
   )
 }
 
-function ProjectBody({ item, clientOf, onAnotar, onSaveNote, canMove, onMove, now }) {
+function ProjectBody({ item, clientOf, onAnotar, onSaveNote, onSaveAgreement, canMove, onMove, now }) {
   const { data } = useApp()
   const { project: p, entry } = item
   const lm = entry.lane ? laneMeta(entry.lane) : null
@@ -230,7 +306,7 @@ function ProjectBody({ item, clientOf, onAnotar, onSaveNote, canMove, onMove, no
             <span className="big" data-lv={cell.lv || undefined}>{cell.n}</span>
             <span className="cap">
               <span className="jp-pill"><i aria-hidden="true" />{lm.label}</span>
-              <div style={{ marginTop: 5 }}>{daysText(entry)}{entry.limit && entry.lane !== 'prueba' && entry.days != null ? ` · el umbral es ${entry.limit}` : ''}</div>
+              <div style={{ marginTop: 5 }}>{daysText(entry)}{entry.limit && entry.lane !== 'prueba' && entry.lane !== 'anual' && entry.days != null ? ` · el umbral es ${entry.limit}` : ''}</div>
             </span>
           </div>
           {showPct && (
@@ -269,6 +345,20 @@ function ProjectBody({ item, clientOf, onAnotar, onSaveNote, canMove, onMove, no
         <section className="jp-sec">
           <div className="jp-k">Motivo del stand-by</div>
           <StandbyEditor project={p} onSave={onSaveNote} />
+        </section>
+      )}
+
+      {entry.lane === 'anual' && onSaveAgreement && (
+        <section className="jp-sec" style={{ '--lc': 'var(--green)' }}>
+          <div className="jp-k">Plan anual de marketing</div>
+          <AnnualEditor project={p} now={now} onSave={onSaveAgreement} />
+        </section>
+      )}
+
+      {entry.lane === 'partner' && onSaveAgreement && (
+        <section className="jp-sec" style={{ '--lc': 'var(--accent)' }}>
+          <div className="jp-k">Acuerdo de partner</div>
+          <PartnerEditor project={p} onSave={onSaveAgreement} />
         </section>
       )}
 
@@ -325,7 +415,7 @@ function F2Body({ items, clientOf, onPick, now }) {
  * Panel lateral no modal: el lienzo sigue usable detrás, y otro clic en un proyecto
  * cambia el contenido sin cerrar. Esc cierra salvo que haya un modal encima.
  */
-export default function ProjectPanel({ target, itemOf, clientOf, f2, onClose, onPick, onBackToF2, onOpenProject, onAnotar, onSaveNote, canMove, onMove, suspendEsc }) {
+export default function ProjectPanel({ target, itemOf, clientOf, f2, onClose, onPick, onBackToF2, onOpenProject, onAnotar, onSaveNote, onSaveAgreement, canMove, onMove, suspendEsc }) {
   const reduce = useReducedMotion()
   const head = useRef(null)
   const now = useRef(new Date()).current
@@ -380,7 +470,7 @@ export default function ProjectPanel({ target, itemOf, clientOf, f2, onClose, on
               <div className="jp-b">
                 {target.kind === 'f2'
                   ? <F2Body items={f2} clientOf={clientOf} onPick={onPick} now={now} />
-                  : <ProjectBody item={item} clientOf={clientOf} onAnotar={onAnotar} onSaveNote={onSaveNote} canMove={canMove} onMove={onMove} now={now} />}
+                  : <ProjectBody item={item} clientOf={clientOf} onAnotar={onAnotar} onSaveNote={onSaveNote} onSaveAgreement={onSaveAgreement} canMove={canMove} onMove={onMove} now={now} />}
               </div>
               {target.kind === 'project' && (
                 <div className="jp-f">
