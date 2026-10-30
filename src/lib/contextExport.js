@@ -10,6 +10,7 @@
 import { normalizeLifecycle, phaseInfo, daysBetween } from './lifecycle.js'
 import { projectStage, stageMeta, PROJECT_STAGES, isPaidStage } from './stages.js'
 import { projectProgress } from './progress.js'
+import { annualInfo, normalizePartner } from './agreements.js'
 import { storesSummary, storeCell } from './stores.js'
 
 const num = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0)
@@ -54,6 +55,8 @@ export function computeContext({ projects = [], clients = [], team = [], activit
   })
 
   // planes pagos → MRR (si el monto mensual está cargado)
+  const annual = (byStage.anual || []).map((p) => ({ p, ...annualInfo(p, now) })).sort((a, b) => (a.remaining ?? 9999) - (b.remaining ?? 9999))
+  const partners = byStage.partner || []
   const paidList = byStage.plan || []
   const mrr = paidList.reduce((s, p) => s + num(normalizeLifecycle(p).maintenanceAmount), 0)
 
@@ -79,7 +82,7 @@ export function computeContext({ projects = [], clients = [], team = [], activit
   return {
     now, byStage, clientOf, memberOf, pctOf,
     totals: { projects: projects.length, clients: clients.length, team: team.length },
-    avgDev, avgAll, avgDelivery, free, mrr, paidCount: paidList.length,
+    avgDev, avgAll, avgDelivery, free, annual, partners, mrr, paidCount: paidList.length,
     totalContract, totalPaid, pending: totalContract - totalPaid,
     stores: { rows: storeRows, deploying: storesDeploying, published: storesPublished, count: storeCount },
     since, sinceDays,
@@ -124,6 +127,7 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   L.push(`- **En desarrollo:** ${nStage('desarrollo')} proyecto(s) · ${c.distinctInStage('desarrollo')} cliente(s).`)
   L.push(`- **En mantenimiento gratuito (Free Maint.):** ${nStage('free')} proyecto(s).`)
   L.push(`- **En Plan mensual:** ${nStage('plan')} proyecto(s).`)
+  L.push(`- **Plan anual de marketing:** ${nStage('anual')} proyecto(s) · **Partners:** ${nStage('partner')} proyecto(s).`)
   L.push(`- **Cerrados:** Finalizado ${nStage('finalizado')} · Pausado ${nStage('pausado')} · Cancelado ${nStage('cancelado')}.`)
   L.push('')
 
@@ -178,8 +182,38 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   }
   L.push('')
 
+  // 6 · Plan anual
+  L.push('## 6 · Plan anual de marketing')
+  L.push('')
+  if (!c.annual.length) {
+    L.push('_Todavía no hay clientes en el Plan anual._')
+  } else {
+    L.push('| Proyecto | Cliente | Arrancó | Vence | Días que le quedan |')
+    L.push('| --- | --- | --- | --- | --- |')
+    c.annual.forEach((a) => {
+      const rem = a.remaining == null ? '—' : a.remaining < 0 ? `vencido hace ${-a.remaining}` : `${a.remaining}`
+      L.push(`| ${a.p.name} | ${c.clientOf(a.p.clientId)?.company || '—'} | ${fmtDate(a.startAt)} | ${fmtDate(a.endAt)} | ${rem} |`)
+    })
+  }
+  L.push('')
+
+  // 7 · Partners
+  L.push('## 7 · Partners')
+  L.push('')
+  if (!c.partners.length) {
+    L.push('_Todavía no hay partners._')
+  } else {
+    L.push('| Proyecto | Cliente | Porcentaje | Acuerdo |')
+    L.push('| --- | --- | --- | --- |')
+    c.partners.forEach((p) => {
+      const d = normalizePartner(p)
+      L.push(`| ${p.name} | ${c.clientOf(p.clientId)?.company || '—'} | ${d.pct == null ? '— (definir)' : d.pct + '%'} | ${d.note || '—'} |`)
+    })
+  }
+  L.push('')
+
   // 6 · Cerrados
-  L.push('## 6 · Proyectos cerrados')
+  L.push('## 8 · Proyectos cerrados')
   L.push('')
   const closed = [...(c.byStage.finalizado || []), ...(c.byStage.pausado || []), ...(c.byStage.cancelado || [])]
   if (!closed.length) {
@@ -192,7 +226,7 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   L.push('')
 
   // 7 · Detalle de todos los proyectos
-  L.push('## 7 · Detalle de proyectos')
+  L.push('## 9 · Detalle de proyectos')
   L.push('')
   L.push('| Proyecto | Cliente | Etapa | Tiendas | Avance | PM | Dev | Contrato | Cobrado |')
   L.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- |')
@@ -206,7 +240,7 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   L.push('')
 
   // 8 · Clientes
-  L.push('## 8 · Clientes')
+  L.push('## 10 · Clientes')
   L.push('')
   L.push('| Cliente | Empresa | Proyectos |')
   L.push('| --- | --- | --- |')
@@ -217,7 +251,7 @@ export function buildContextMarkdown({ projects = [], clients = [], team = [], a
   L.push('')
 
   // 9 · Equipo
-  L.push('## 9 · Equipo')
+  L.push('## 11 · Equipo')
   L.push('')
   L.push('| Persona | Rol | Como PM | Como Dev |')
   L.push('| --- | --- | --- | --- |')

@@ -11,14 +11,17 @@
 import { normalizeLifecycle, phaseInfo, daysBetween, toDate } from './lifecycle.js'
 import { projectStage, stageMeta } from './stages.js'
 import { storesSummary } from './stores.js'
+import { annualInfo } from './agreements.js'
 
 export const JOURNEY_LANES = [
   { key: 'onboarding', label: 'Onboarding', colorVar: '--text-dim' },
   { key: 'mvp', label: 'MVP', colorVar: '--accent' },
   { key: 'prueba', label: '30 días gratis', colorVar: '--blue' },
   { key: 'plan', label: 'Plan mensual', colorVar: '--green', branch: true },
+  { key: 'anual', label: 'Plan anual', colorVar: '--green', branch: true },
   { key: 'fase2', label: 'Fase 2', colorVar: '--violet', branch: true },
   { key: 'standby', label: 'Stand-by', colorVar: '--yellow', branch: true },
+  { key: 'partner', label: 'Partners', colorVar: '--accent', branch: true },
 ]
 
 export const laneMeta = (key) => JOURNEY_LANES.find((l) => l.key === key) || JOURNEY_LANES[1]
@@ -28,6 +31,8 @@ export const DEFAULT_THRESHOLDS = {
   devMaxDays: 120,
   storesMaxDays: 15,
   standbyMaxDays: 30,
+  annualWarnDays: 60,
+  annualCritDays: 15,
   offerLeadDays: 7,
   offerPct: 85,
 }
@@ -37,6 +42,8 @@ export const THRESHOLD_FIELDS = [
   { key: 'devMaxDays', label: 'Desarrollo demorado', unit: 'días', hint: 'Alerta roja: más de 4 meses en desarrollo' },
   { key: 'storesMaxDays', label: 'Trámite en tiendas', unit: 'días', hint: 'Google Play o App Store en trámite' },
   { key: 'standbyMaxDays', label: 'Stand-by', unit: 'días', hint: 'Pausado o terminado sin plan' },
+  { key: 'annualWarnDays', label: 'Plan anual por vencer', unit: 'días', hint: 'Aviso amarillo: faltan estos días o menos para que se cumpla el año' },
+  { key: 'annualCritDays', label: 'Plan anual urgente', unit: 'días', hint: 'Alerta roja: hay que hablar de la renovación ya' },
   { key: 'offerLeadDays', label: 'Ofrecer antes del fin de la prueba', unit: 'días', hint: 'Cuándo entra a "Para ofrecer"' },
 ]
 
@@ -65,6 +72,8 @@ export function journeyLane(project) {
   if (stage === 'onboarding') return 'onboarding'
   if (stage === 'pausado' || stage === 'finalizado') return 'standby'
   if (stage === 'fase2') return 'fase2'
+  if (stage === 'anual') return 'anual'
+  if (stage === 'partner') return 'partner'
   if (stage === 'free') return 'prueba'
   if (stageMeta(stage).phase === 3) return 'plan'
   return 'mvp'
@@ -74,7 +83,7 @@ export function journeyLane(project) {
  * Etapa que se le pone a un proyecto al soltarlo en un tramo. Stand-by entra como
  * Pausado: Finalizado se elige desde el proyecto. null = no cambia nada.
  */
-const LANE_STAGE = { onboarding: 'onboarding', mvp: 'desarrollo', prueba: 'free', fase2: 'fase2', plan: 'plan', standby: 'pausado' }
+const LANE_STAGE = { onboarding: 'onboarding', mvp: 'desarrollo', prueba: 'free', fase2: 'fase2', plan: 'plan', anual: 'anual', partner: 'partner', standby: 'pausado' }
 
 export function laneDropStage(project, lane, ctx) {
   const to = LANE_STAGE[lane]
@@ -116,6 +125,11 @@ export function journeyEntry(project, ctx, now = new Date(), thresholds) {
     entry = { ...base, since: since(lc.phase3At), days: elapsed(lc.phase3At) }
   } else if (lane === 'standby') {
     entry = { ...base, since: since(project.stageAt), days: elapsed(project.stageAt), limit: t.standbyMaxDays }
+  } else if (lane === 'anual') {
+    const a = annualInfo(project, now)
+    entry = { ...base, since: a.startAt, days: a.days, remaining: a.remaining, limit: a.total }
+  } else if (lane === 'partner') {
+    entry = { ...base, since: since(project.stageAt), days: elapsed(project.stageAt) }
   }
 
   return { ...entry, alerts: journeyAlerts(project, entry, now, t) }
@@ -139,6 +153,15 @@ function journeyAlerts(project, entry, now, t) {
   }
   if (lane === 'prueba' && remaining != null && remaining < 0) {
     out.push({ key: 'trial', level: 'crit', text: `La prueba venció hace ${plural(-remaining, 'día', 'días')} y no tiene plan`, short: 'Prueba vencida' })
+  }
+  if (lane === 'anual' && remaining != null) {
+    if (remaining < 0) {
+      out.push({ key: 'annual', level: 'crit', text: `El plan anual venció hace ${plural(-remaining, 'día', 'días')}: falta renovarlo`, short: 'Plan anual vencido' })
+    } else if (remaining <= t.annualCritDays) {
+      out.push({ key: 'annual', level: 'crit', text: remaining === 0 ? 'El plan anual vence hoy' : `Al plan anual le ${remaining === 1 ? 'queda' : 'quedan'} ${plural(remaining, 'día', 'días')}`, short: `Vence en ${plural(remaining, 'día', 'días')}` })
+    } else if (remaining <= t.annualWarnDays) {
+      out.push({ key: 'annual', level: 'warn', text: `Al plan anual le quedan ${remaining} días: conviene hablar de la renovación`, short: `Vence en ${remaining} días` })
+    }
   }
   if (lane === 'standby' && days != null && days > t.standbyMaxDays) {
     out.push({ key: 'standby', level: 'warn', text: `${plural(days, 'día', 'días')} en stand-by`, short: `Más de ${t.standbyMaxDays} días parado` })
@@ -384,7 +407,7 @@ export function laneNodeHeight(items, laneKey, cap = LANE_CAP) {
 
 /*
  * Izquierda a derecha como el recorrido real: Onboarding → MVP → 30 días → Fase 2
- * arriba y Plan mensual debajo. Stand-by cuelga debajo de 30 días (se sale del
+ * arriba y Plan mensual, Plan anual y Partners apilados debajo. Stand-by cuelga debajo de 30 días (se sale del
  * camino) en vez de apilarse con los otros dos: así el lienzo queda más ancho que
  * alto y entra con un zoom legible en una notebook. Fase 2 a la altura del flujo
  * principal deja que la conexión punteada desde MVP pase por arriba de 30 días.
@@ -400,6 +423,8 @@ export function canvasLayout(board) {
     prueba: { x: col(2), y: 0 },
     fase2: { x: col(3), y: 0 },
     plan: { x: col(3), y: h('fase2') + C.rowGap },
+    anual: { x: col(3), y: h('fase2') + h('plan') + C.rowGap * 2 },
+    partner: { x: col(3), y: h('fase2') + h('plan') + h('anual') + C.rowGap * 3 },
     standby: { x: col(2), y: h('prueba') + C.rowGap },
   }
 }

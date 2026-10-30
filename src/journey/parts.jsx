@@ -1,4 +1,5 @@
 import React from 'react'
+import { partnerLine } from '../lib/agreements.js'
 import { alertLevel, laneMeta, upsellState, upsellLine, upsellBadges } from '../lib/journey.js'
 
 export const initials = (s) => {
@@ -14,6 +15,11 @@ export function dayCell(entry) {
     if (entry.remaining < 0) return { n: `+${-entry.remaining}`, cap: 'vencida', lv: 'crit' }
     return { n: entry.remaining, cap: entry.remaining === 1 ? 'queda' : 'quedan', lv: entry.remaining <= 3 ? 'warn' : null }
   }
+  if (entry.lane === 'anual' && entry.remaining != null) {
+    const lv = entry.alerts.find((a) => a.key === 'annual')?.level || null
+    if (entry.remaining < 0) return { n: `+${-entry.remaining}`, cap: 'vencido', lv }
+    return { n: entry.remaining, cap: entry.remaining === 1 ? 'queda' : 'quedan', lv }
+  }
   if (entry.days == null) return { n: '—', cap: 'sin fecha', lv: null }
   const devAlert = entry.alerts.find((a) => a.key === 'dev' || a.key === 'standby')
   return { n: entry.days, cap: entry.days === 1 ? 'día' : 'días', lv: devAlert ? devAlert.level : null }
@@ -27,6 +33,9 @@ export function meterOf(entry) {
 export function daysText(entry) {
   if (entry.lane === 'prueba' && entry.remaining != null) {
     return entry.remaining < 0 ? `prueba vencida hace ${plural(-entry.remaining, 'día', 'días')}` : `quedan ${plural(entry.remaining, 'día', 'días')} de prueba`
+  }
+  if (entry.lane === 'anual' && entry.remaining != null) {
+    return entry.remaining < 0 ? `plan anual vencido hace ${plural(-entry.remaining, 'día', 'días')}` : `quedan ${plural(entry.remaining, 'día', 'días')} del año`
   }
   return entry.days != null ? `${plural(entry.days, 'día', 'días')} en este tramo` : 'sin fecha de entrada'
 }
@@ -51,6 +60,7 @@ export function Point({ item, client, onOpen, active, dim, drag, className = '' 
   const lastUpShown = lastUp && !badges.some((b) => b.offer === lastUp.offer)
   const sub = entry.alerts[0]
     ? { text: entry.alerts[0].short || entry.alerts[0].text, lv: entry.alerts[0].level }
+    : entry.lane === 'partner' ? { text: partnerLine(p) }
     : lastUpShown ? { text: upsellLine(lastUp), up: true } : { text: company || laneMeta(entry.lane).label }
   const label = [
     p.name, company && `cliente ${company}`, laneMeta(entry.lane).label, daysText(entry),

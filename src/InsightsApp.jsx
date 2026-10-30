@@ -29,6 +29,7 @@ import {
 import {
   PROJECT_STAGES, STAGE_GROUPS, stageMeta, projectStage, applyStage, stageIsRegression, isPaidStage,
 } from './lib/stages.js'
+import { annualInfo, partnerLine } from './lib/agreements.js'
 import {
   STORE_LIST, STORE_STATES, STORE_FILTERS, isStoresFilter, storesFilterLabel, storesSummary, storesTitle,
   storeShortLine, storeActivityText, storesLine, applyStoreStatus, applyStoreDate, matchesStoresFilter, toDateInput, fromDateInput,
@@ -484,6 +485,8 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 [data-stage="fase2"]{--sc:var(--violet);--ss:var(--violet-soft);--sl:var(--violet-line)}
 [data-stage="free"]{--sc:var(--blue);--ss:var(--blue-soft);--sl:var(--blue-line)}
 [data-stage="plan"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
+[data-stage="anual"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
+[data-stage="partner"]{--sc:var(--accent);--ss:var(--accent-soft);--sl:var(--accent-line)}
 
 .pdh-cluster .pd-btn:focus-visible,.pdh-cluster .pd-cta:focus-visible,.pdh-stage:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px}
@@ -2395,7 +2398,7 @@ function trackInfo(project, kind, botCommAt) {
   // Proyecto en un plan de mantenimiento pago: ya no está en obra, así que no
   // se le hace seguimiento de avance ni marca en rojo. (Antes esto lo decía el
   // estado "entregado", que dejó de existir con las etapas.)
-  if (isPaidStage(projectStage(project))) {
+  if (isPaidStage(projectStage(project)) || stageMeta(projectStage(project)).agreement) {
     return { first: !latest, days: latest ? businessDaysSince(latest) : null, overdue: false, delivered: true }
   }
   if (latest) {
@@ -3460,6 +3463,13 @@ function phaseCounter(info) {
   return { n: info.countdown, unit: info.countdown === 1 ? 'día · cobro' : 'días · cobro', label: '' }
 }
 
+function annualCounter(p) {
+  const { remaining } = annualInfo(p)
+  if (remaining == null) return { n: null, unit: 'definir fecha de arranque', label: '' }
+  if (remaining < 0) return { n: null, unit: `plan anual vencido hace ${-remaining} d`, label: '' }
+  return { n: remaining, unit: remaining === 1 ? 'día de plan anual' : 'días de plan anual', label: '' }
+}
+
 function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign, onScope, onLinks }) {
   const info = phaseInfo(p)
   const adv = lastAdvanceInfo(p)
@@ -3469,6 +3479,8 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign,
   // ni seguimiento de avance: el desarrollo dejó de correr.
   const counter = sMeta.terminal ? { n: null, unit: sMeta.label, label: '' }
     : sMeta.waiting ? { n: null, unit: 'desarrollo sin arrancar', label: '' }
+    : sMeta.key === 'anual' ? annualCounter(p)
+    : sMeta.key === 'partner' ? { n: null, unit: partnerLine(p), label: '' }
     : phaseCounter(info)
   const show = { scope: true, testing: true, whatsapp: true, ...(p.cardActions || {}) }
   const testingUrl = p.testingUrl || p.productionUrl || ''
@@ -3499,15 +3511,15 @@ function ProjectCard({ project: p, client, team, pct, onOpen, onStage, onAssign,
       </div>
 
       <div className="pj-line">
-        <span title={sMeta.terminal || sMeta.waiting ? sMeta.hint : info.countdownLabel} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
-          {counter.n != null && <b style={{ color: `var(${info.colorVar})` }}>{counter.n}</b>}
-          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: sMeta.terminal ? stageColor(sMeta.key) : undefined, fontWeight: sMeta.terminal ? 600 : undefined }}>
+        <span title={sMeta.terminal || sMeta.waiting || sMeta.agreement ? sMeta.hint : info.countdownLabel} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
+          {counter.n != null && <b style={{ color: `var(${sMeta.agreement ? sMeta.colorVar : info.colorVar})` }}>{counter.n}</b>}
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: sMeta.terminal || sMeta.agreement ? stageColor(sMeta.key) : undefined, fontWeight: sMeta.terminal || sMeta.agreement ? 600 : undefined }}>
             {counter.unit}{counter.label ? ` · ${counter.label}` : ''}
           </span>
         </span>
         {sMeta.offerMaintenance ? (
           <span className="tag" style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--accent)', background: 'var(--accent-soft, rgba(229,115,0,.12))', borderColor: 'var(--accent-line, rgba(229,115,0,.35))', fontSize: 10.5 }}>✦ Ofrecer mantenimiento</span>
-        ) : sMeta.terminal ? <span /> : (
+        ) : sMeta.terminal || sMeta.agreement ? <span /> : (
           <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4, flex: 'none' }}>
             {!adv.none && 'avance'}
             <b style={{ fontSize: 11.5, color: adv.stale ? 'var(--yellow)' : 'var(--text-dim)' }}>{adv.text}</b>
@@ -6514,6 +6526,7 @@ function BillingAlert({ project, client, patch, replyTo, onEdit }) {
   useEffect(() => { setMailOpen(false) }, [project.id])
   const lc = normalizeLifecycle(project)
   const notice = billingNotice(project)
+  const agreement = !!stageMeta(projectStage(project)).agreement
   // Aviso vigente = ya se mandó el de este ciclo (billingNotice lo descarta solo).
   const sentThisCycle = !!lc.lastNoticeSentAt && !notice.shouldNotify && notice.daysUntil != null && notice.daysUntil <= 7
   const markSent = () => patch((p) => ({ ...p, lifecycle: markNoticeSent(p) }))
@@ -6522,7 +6535,7 @@ function BillingAlert({ project, client, patch, replyTo, onEdit }) {
   // su cuenta: no hay próximo cobro que calcular y el mail saldría en USD 0.
   // Eso se dice acá, que es donde el dato se usa.
   const missing = lc.phase === 3 && (lc.maintenanceAmount == null || lc.billingDay == null)
-  if (lc.phase !== 3 || (!missing && !notice.shouldNotify && !sentThisCycle)) return null
+  if (agreement || lc.phase !== 3 || (!missing && !notice.shouldNotify && !sentThisCycle)) return null
   const clientLabel = (client && (client.name || client.company)) || 'el cliente'
 
   return (
@@ -9119,7 +9132,7 @@ function AppShell({ session, onLogout }) {
   const [pmAlertSeen, setPmAlertSeen] = useState(false)
   // Solo los que están EN OBRA (desarrollo y prueba gratis): a un proyecto que
   // ya pasó a un plan pago no se le reclama avance semanal.
-  const pmProjects = projectStore.items.filter((p) => myId && p.assignments?.pm?.userId === myId && !isPaidStage(projectStage(p)) && !stageMeta(projectStage(p)).terminal)
+  const pmProjects = projectStore.items.filter((p) => myId && p.assignments?.pm?.userId === myId && !isPaidStage(projectStage(p)) && !stageMeta(projectStage(p)).terminal && !stageMeta(projectStage(p)).agreement)
 
   // El editor de video vive en un iframe cuyo estado (clips, cortes, subtítulos,
   // transcripción Whisper) existe solo en la memoria de ese documento: desmontarlo

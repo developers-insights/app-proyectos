@@ -18,6 +18,7 @@
  */
 
 import { normalizeLifecycle, advancePhase } from './lifecycle.js'
+import { annualStart } from './agreements.js'
 
 /**
  * `phase` es la fase del lifecycle que le corresponde; `colorVar` el NOMBRE de la
@@ -33,6 +34,10 @@ export const PROJECT_STAGES = [
   { key: 'fase2',      label: 'Fase 2',      group: 'obra',          phase: 1, colorVar: '--violet', hint: 'Venta nueva sobre el mismo cliente' },
   { key: 'free',       label: 'Free Maint.', group: 'mantenimiento', phase: 2, colorVar: '--blue',   hint: 'Mantenimiento sin cargo' },
   { key: 'plan',       label: 'Plan mensual', group: 'mantenimiento', phase: 3, colorVar: '--green',  hint: 'US$97 por mes' },
+  // Ramas de acuerdo (call del 30/10): no cobran el plan mensual, así que no tocan el
+  // ciclo de vida ni el cobro. A diferencia de los terminales, el proyecto sigue vivo.
+  { key: 'anual',      label: 'Plan anual',  group: 'acuerdo', phase: 9, colorVar: '--green',  hint: 'Marketing y mantenimiento por un año', agreement: true },
+  { key: 'partner',    label: 'Partner',     group: 'acuerdo', phase: 9, colorVar: '--accent', hint: 'Marketing y proyecto a cambio de un porcentaje', agreement: true },
   // Estados TERMINALES (no tocan el ciclo de vida ni el cobro): el desarrollo ya no
   // corre. `terminal:true` los saca de los recordatorios y del contador de fase.
   { key: 'finalizado', label: 'Finalizado',  group: 'cerrado', phase: 9, colorVar: '--green',      hint: 'Desarrollo terminado, sin mantenimiento vendido', terminal: true, offerMaintenance: true },
@@ -43,11 +48,12 @@ export const PROJECT_STAGES = [
 export const STAGE_GROUPS = [
   { key: 'obra',          label: 'En obra' },
   { key: 'mantenimiento', label: 'Mantenimiento' },
+  { key: 'acuerdo',       label: 'Acuerdos' },
   { key: 'cerrado',       label: 'Cerrados' },
 ]
 
 /** ¿La etapa implica que el desarrollo ya terminó? (mantenimiento o finalizado → 100%). */
-export const isDevelopmentDone = (key) => ['free', 'plan', 'finalizado'].includes(key)
+export const isDevelopmentDone = (key) => ['free', 'plan', 'finalizado', 'anual', 'partner'].includes(key)
 
 /** Metadatos de una etapa por clave. Cualquier cosa rara cae en Desarrollo. */
 export const stageMeta = (key) => PROJECT_STAGES.find((s) => s.key === normalizeStageKey(key)) || PROJECT_STAGES.find((s) => s.key === 'desarrollo')
@@ -93,6 +99,9 @@ export function applyStage(project, key, now = new Date()) {
   // Estados terminales (finalizado/pausado/cancelado): solo marcan la etapa; NO
   // tocan el ciclo de vida ni sellan fechas de cobro. El desarrollo dejó de correr.
   if (meta.terminal) return { stage: meta.key, stageAt }
+  if (meta.agreement) {
+    return { stage: meta.key, stageAt, ...(meta.key === 'anual' ? { annual: { ...(project && project.annual), startAt: annualStart({ annual: project && project.annual, stageAt }) } } : {}) }
+  }
   const lifecycle = advancePhase(project, meta.phase, now)
   if (meta.key === 'fase2') {
     const prev = normalizeLifecycle(project).devAt

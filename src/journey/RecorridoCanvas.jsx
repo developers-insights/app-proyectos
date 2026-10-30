@@ -204,7 +204,7 @@ function F2Edge({ id, sourceX, sourceY, targetX, targetY, data }) {
 const nodeTypes = { lane: LaneNode }
 const edgeTypes = { flow: FlowEdge, f2: F2Edge }
 const FIT = { padding: { top: '76px', right: '28px', bottom: '56px', left: '28px' }, maxZoom: 1 }
-const EDGES = [['onboarding', 'mvp'], ['mvp', 'prueba'], ['prueba', 'fase2'], ['prueba', 'plan'], ['prueba', 'standby']]
+const EDGES = [['onboarding', 'mvp'], ['mvp', 'prueba'], ['prueba', 'fase2'], ['prueba', 'plan'], ['prueba', 'anual'], ['prueba', 'partner'], ['prueba', 'standby']]
 
 const readSaved = (key) => { try { return JSON.parse(localStorage.getItem(key) || 'null') } catch { return null } }
 const writeSaved = (key, v) => { try { v ? localStorage.setItem(key, JSON.stringify(v)) : localStorage.removeItem(key) } catch { /* sin storage queda en memoria */ } }
