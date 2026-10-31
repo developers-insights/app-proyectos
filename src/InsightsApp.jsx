@@ -4481,7 +4481,8 @@ function VaultRow({ Ico, value, mono = true, secret = false, isLink = false }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
       <Ico width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
-      {isLink && !masked
+      {/* Sólo http(s) es link: un `javascript:` guardado en el baúl correría al hacer clic. */}
+      {isLink && !masked && /^https?:\/\//i.test(value)
         ? <a href={value} target="_blank" rel="noreferrer" className={mono ? 'mono' : ''} style={{ flex: 1, fontSize: 12.5, color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</a>
         : <span className={mono ? 'mono' : ''} style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: masked ? 2 : 0 }}>{display}</span>}
       {secret && <button className="btn btn-sm btn-ghost" onClick={() => setShow((s) => !s)} title={show ? 'Ocultar' : 'Mostrar'} style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}>{show ? <I2.eyeOff width={13} height={13} /> : <I2.eye width={13} height={13} />}</button>}
