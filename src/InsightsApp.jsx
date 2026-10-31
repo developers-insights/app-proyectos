@@ -4419,15 +4419,17 @@ function AccountsPanel({ project, patch }) {
 
 /* ============================================================================
    BAÚL DE DATOS DEL CLIENTE — credenciales y accesos sensibles por proyecto.
-   Cada item: etiqueta + tipo + usuario/mail + contraseña + URL + notas.
-   Copiar al portapapeles y mostrar/ocultar por campo. Persiste per-fila en el
-   proyecto (campo `vault`). Solo lo ve el equipo (nunca sale en el link público).
+   Los valores no viven en esta base: es la bóveda de Clarity (cifrada, con una clave que sólo
+   tiene su server), compartida con la pestaña Bóveda de claritybusiness.app. Se lee y escribe
+   por la edge function `boveda`, que sólo deja pasar al equipo. La lista trae nombres y
+   estado; cada valor se descifra al pedirlo y queda registrado en Clarity.
 ============================================================================ */
 const VAULT_TYPES = [
   { key: 'email', label: 'Correo', Ico: I2.mail, color: '#38BDF8' },
   { key: 'domain', label: 'Dominio', Ico: I2.globe, color: '#2DD4BF' },
   { key: 'payments', label: 'Pagos', Ico: I2.card, color: '#22C55E' },
   { key: 'social', label: 'Redes', Ico: I2.at, color: '#EC4899' },
+  { key: 'hosting', label: 'Hosting', Ico: I2.server, color: '#A78BFA' },
   { key: 'other', label: 'Otro', Ico: I2.key, color: '#9CA3AF' },
 ]
 const vaultMeta = (k) => VAULT_TYPES.find((t) => t.key === k) || VAULT_TYPES[VAULT_TYPES.length - 1]
@@ -4437,7 +4439,13 @@ const VAULT_PRESETS = [
   { label: 'Stripe / Mercado Pago', type: 'payments' },
   { label: 'Instagram', type: 'social' },
 ]
-const emptyVaultItem = (type = 'other', label = '') => ({ id: uid(), type, label, username: '', password: '', url: '', notes: '' })
+const emptyVaultItem = (type = 'other', label = '') => ({ id: null, nombre: '', tipo: 'credencial', type, label, username: '', password: '', url: '', notes: '', valor: '' })
+const boveda = async (body) => {
+  if (!supabase) throw new Error('sin conexión a la nube')
+  const { data, error } = await supabase.functions.invoke('boveda', { body })
+  if (error || data?.error) throw new Error(data?.error || error?.message || 'sin respuesta')
+  return data
+}
 const genPassword = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*?'
   let s = ''
@@ -4482,103 +4490,177 @@ function VaultRow({ Ico, value, mono = true, secret = false, isLink = false }) {
   )
 }
 
-function VaultModal({ open, project, onClose, patch }) {
+/* Un dato del baúl: la lista trae nombre y estado; los valores se piden al abrirlo. */
+function VaultItem({ it, project, onEdit, onRemoved }) {
+  const [valor, setValor] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const m = vaultMeta(it.tipo === 'credencial' ? it.categoria : 'other')
+  const titulo = it.etiqueta || it.nombre
+  const cargado = it.estado === 'cargado'
+
+  useEffect(() => {
+    if (!valor) return
+    const t = setTimeout(() => setValor(null), 30000)
+    return () => clearTimeout(t)
+  }, [valor])
+
+  const abrir = async () => {
+    setBusy(true); setErr('')
+    try { setValor((await boveda({ accion: 'ver', proyecto: project.id, item: it.id })).valor) }
+    catch (e) { setErr('No se pudo abrir: ' + e.message) }
+    setBusy(false)
+  }
+  const editar = async () => {
+    setBusy(true); setErr('')
+    try {
+      const v = cargado ? (await boveda({ accion: 'ver', proyecto: project.id, item: it.id })).valor : null
+      onEdit({
+        id: it.id, nombre: it.nombre, tipo: it.tipo, type: it.categoria || 'other', label: it.etiqueta || '',
+        username: v?.usuario || '', password: v?.clave || '', url: v?.url || '', notes: v?.notas || '', valor: v?.valor || '',
+      })
+    } catch (e) { setErr('No se pudo abrir: ' + e.message) }
+    setBusy(false)
+  }
+  const borrar = async () => {
+    if (!window.confirm(`¿Eliminar ${titulo}? Se borra también en Clarity y no se puede deshacer.`)) return
+    setBusy(true)
+    try { await boveda({ accion: 'borrar', proyecto: project.id, item: it.id }); onRemoved(it.id) }
+    catch (e) { setErr('No se pudo eliminar: ' + e.message); setBusy(false) }
+  }
+
+  return (
+    <div className="surface surface-hover" style={{ padding: 0, overflow: 'hidden', borderLeft: `3px solid ${m.color}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderBottom: valor || err ? '1px solid var(--border)' : 'none' }}>
+        <span style={{ width: 28, height: 28, borderRadius: 8, background: m.color + '22', color: m.color, display: 'grid', placeItems: 'center', flexShrink: 0 }}><m.Ico width={15} height={15} /></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className={it.tipo === 'env' ? 'mono' : ''} style={{ fontSize: it.tipo === 'env' ? 13 : 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titulo}</div>
+          <div style={{ fontSize: 11, color: cargado ? 'var(--text-faint)' : 'var(--amber, #F5B94A)' }}>
+            {it.tipo === 'env' ? 'Variable de entorno' : m.label}
+            {cargado ? (it.cargado_por === 'cliente' ? ' · lo cargó el cliente' : '') : ' · pedido al cliente, sin cargar'}
+          </div>
+        </div>
+        {cargado && <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => (valor ? setValor(null) : abrir())} title={valor ? 'Ocultar' : 'Mostrar'} style={{ padding: 5, color: 'var(--text-faint)' }}>{valor ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>}
+        <button className="btn btn-sm btn-ghost" disabled={busy} onClick={editar} title={cargado ? 'Editar' : 'Cargar'} style={{ padding: 5, color: 'var(--text-faint)' }}><I2.pencil width={14} height={14} /></button>
+        <button className="btn btn-sm btn-ghost" disabled={busy} onClick={borrar} title="Eliminar" style={{ padding: 5, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
+      </div>
+      {(valor || err) && (
+        <div style={{ padding: '7px 13px 10px' }}>
+          {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
+          {valor && (valor.tipo === 'credencial' ? (
+            <>
+              <VaultRow Ico={I2.user} value={valor.usuario} />
+              <VaultRow Ico={I2.lock} value={valor.clave} secret />
+              <VaultRow Ico={I2.link} value={valor.url} isLink mono={false} />
+              {valor.notas && <div style={{ display: 'flex', gap: 8, padding: '5px 0' }}><I2.comment width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0, marginTop: 2 }} /><span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{valor.notas}</span></div>}
+            </>
+          ) : <VaultRow Ico={I2.key} value={valor.valor} secret />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function VaultModal({ open, project, onClose }) {
   const [editing, setEditing] = useState(null)  // null | item (nuevo o en edición)
   const [pwShow, setPwShow] = useState(false)
+  const [items, setItems] = useState(null)       // null = cargando
+  const [err, setErr] = useState('')
+  const [saving, setSaving] = useState(false)
+  const projectId = project?.id
+
+  const cargar = useCallback(async () => {
+    if (!projectId) return
+    try { setItems((await boveda({ accion: 'listar', proyecto: projectId })).items || []); setErr('') }
+    catch (e) { setErr('No se pudo leer la bóveda: ' + e.message); setItems((x) => x || []) }
+  }, [projectId])
+
+  useEffect(() => { if (open) cargar() }, [open, cargar])
+  useEffect(() => { if (!open) { setEditing(null); setErr('') } }, [open])
+
   if (!project) return <Modal open={open} onClose={onClose} title="Datos del cliente" />
-  const items = project.vault || []
 
   const startNew = (preset) => { setPwShow(false); setEditing(preset ? emptyVaultItem(preset.type, preset.label) : emptyVaultItem()) }
-  const startEdit = (it) => { setPwShow(false); setEditing({ ...it }) }
   const set = (k, v) => setEditing((e) => ({ ...e, [k]: v }))
-  const save = () => {
+  const save = async () => {
     const it = editing
-    const clean = { ...it, label: (it.label || '').trim() || vaultMeta(it.type).label }
-    patch((p) => {
-      const cur = p.vault || []
-      const exists = cur.some((x) => x.id === clean.id)
-      return { ...p, vault: exists ? cur.map((x) => (x.id === clean.id ? clean : x)) : [...cur, clean] }
-    })
-    setEditing(null)
+    setSaving(true); setErr('')
+    try {
+      const base = { accion: 'guardar', proyecto: project.id, tipo: it.tipo }
+      if (it.nombre) base.nombre = it.nombre
+      const body = it.tipo === 'credencial'
+        ? { ...base, etiqueta: (it.label || '').trim() || vaultMeta(it.type).label, categoria: it.type, usuario: it.username, clave: it.password, url: it.url, notas: it.notes }
+        : { ...base, valor: it.valor }
+      await boveda(body)
+      setEditing(null)
+      await cargar()
+    } catch (e) { setErr('No se guardó: ' + e.message) }
+    setSaving(false)
   }
-  const remove = (id) => { if (window.confirm('¿Eliminar este dato? No se puede deshacer.')) patch((p) => ({ ...p, vault: (p.vault || []).filter((x) => x.id !== id) })) }
-  const canSave = editing && ((editing.label || '').trim() || editing.username || editing.password || editing.url || editing.notes)
+  const canSave = editing && !saving && (editing.tipo === 'credencial' ? (editing.username || editing.password) : (editing.valor || '').trim())
 
   return (
     <Modal open={open} onClose={onClose} title="Datos del cliente" sub={project.name} width={560}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.55, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
           <I2.lock width={15} height={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-          <span>Guardá acá los accesos y datos del cliente: correos, contraseñas, dominios, hosting, pagos… Solo lo ve el equipo — nunca aparece en el link público.</span>
+          <span>Accesos y claves del cliente, cifrados. Es la misma bóveda que la de Clarity: lo que cargues acá aparece allá y al revés. Solo lo ve el equipo.</span>
         </div>
+        {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
 
         {editing ? (
           /* ---- FORM de alta / edición ---- */
           <div className="surface" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--card)' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-              {VAULT_TYPES.map((t) => {
-                const on = editing.type === t.key
-                return (
-                  <button key={t.key} onClick={() => setEditing((e) => ({ ...e, type: t.key, ...(t.key === 'email' ? { password: '' } : {}) }))} className="tag" style={{ cursor: 'pointer', color: on ? '#fff' : t.color, background: on ? t.color : t.color + '1f', borderColor: 'transparent', fontWeight: 600 }}>
-                    <t.Ico width={12} height={12} /> {t.label}
-                  </button>
-                )
-              })}
-            </div>
-            <Field label="Etiqueta"><input className="input" value={editing.label} onChange={(e) => set('label', e.target.value)} placeholder={vaultMeta(editing.type).label + ' del cliente'} autoFocus /></Field>
-            {editing.type === 'email' ? (
-              /* Correo: solo anotar el mail, sin contraseña */
-              <Field label="Correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="cliente@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+            {editing.tipo === 'credencial' ? (
+              <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {VAULT_TYPES.map((t) => {
+                    const on = editing.type === t.key
+                    return (
+                      <button key={t.key} onClick={() => setEditing((e) => ({ ...e, type: t.key }))} className="tag" style={{ cursor: 'pointer', color: on ? '#fff' : t.color, background: on ? t.color : t.color + '1f', borderColor: 'transparent', fontWeight: 600 }}>
+                        <t.Ico width={12} height={12} /> {t.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <Field label="Etiqueta"><input className="input" value={editing.label} onChange={(e) => set('label', e.target.value)} placeholder={vaultMeta(editing.type).label + ' del cliente'} autoFocus /></Field>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="Usuario / correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="usuario@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+                  <Field label="Contraseña">
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
+                      <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>
+                      <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I2.spark width={14} height={14} /></button>
+                    </div>
+                  </Field>
+                </div>
+                <Field label="URL / enlace (opcional)"><input className="input mono" value={editing.url} onChange={(e) => set('url', e.target.value)} placeholder="https://…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+                <Field label="Notas (opcional)"><textarea className="input" rows={2} value={editing.notes} onChange={(e) => set('notes', e.target.value)} placeholder="2FA, PIN, datos de recuperación, etc." style={{ resize: 'none' }} /></Field>
+              </>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Field label="Usuario / correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="usuario@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
-                <Field label="Contraseña">
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
-                    <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>
-                    <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I2.spark width={14} height={14} /></button>
-                  </div>
-                </Field>
-              </div>
+              <Field label={editing.nombre || 'Valor'}>
+                <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Pegá el valor" autoComplete="new-password" style={{ fontSize: 13 }} autoFocus />
+              </Field>
             )}
-            <Field label="URL / enlace (opcional)"><input className="input mono" value={editing.url} onChange={(e) => set('url', e.target.value)} placeholder="https://…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
-            <Field label="Notas (opcional)"><textarea className="input" rows={2} value={editing.notes} onChange={(e) => set('notes', e.target.value)} placeholder="2FA, PIN, datos de recuperación, etc." style={{ resize: 'none' }} /></Field>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn" onClick={() => setEditing(null)}>Cancelar</button>
-              <button className="btn btn-accent" onClick={save} disabled={!canSave}><I2.check width={15} height={15} /> Guardar dato</button>
+              <button className="btn btn-accent" onClick={save} disabled={!canSave}><I2.check width={15} height={15} /> {saving ? 'Guardando…' : 'Guardar dato'}</button>
             </div>
           </div>
         ) : (
           <>
             {/* ---- LISTA de datos guardados ---- */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {items.length === 0 && (
+              {items === null && [0, 1].map((i) => <div key={i} className="surface" style={{ height: 52, opacity: 0.5 }} />)}
+              {items?.length === 0 && (
                 <div className="surface" style={{ padding: '22px 16px', textAlign: 'center', color: 'var(--text-faint)', fontSize: 13, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                   <I2.lock width={22} height={22} style={{ color: 'var(--text-faint)', opacity: 0.7 }} />
-                  Todavía no guardaste ningún dato. Sumá el primero con los accesos rápidos o el botón de abajo.
+                  Todavía no hay ningún dato. Sumá el primero con los accesos rápidos o el botón de abajo.
                 </div>
               )}
-              {items.map((it) => { const m = vaultMeta(it.type); return (
-                <div key={it.id} className="surface surface-hover" style={{ padding: 0, overflow: 'hidden', borderLeft: `3px solid ${m.color}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderBottom: (it.username || it.password || it.url || it.notes) ? '1px solid var(--border)' : 'none' }}>
-                    <span style={{ width: 28, height: 28, borderRadius: 8, background: m.color + '22', color: m.color, display: 'grid', placeItems: 'center', flexShrink: 0 }}><m.Ico width={15} height={15} /></span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{m.label}</div>
-                    </div>
-                    <button className="btn btn-sm btn-ghost" onClick={() => startEdit(it)} title="Editar" style={{ padding: 5, color: 'var(--text-faint)' }}><I2.pencil width={14} height={14} /></button>
-                    <button className="btn btn-sm btn-ghost" onClick={() => remove(it.id)} title="Eliminar" style={{ padding: 5, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
-                  </div>
-                  {(it.username || it.password || it.url || it.notes) && (
-                    <div style={{ padding: '7px 13px 10px' }}>
-                      <VaultRow Ico={I2.user} value={it.username} />
-                      <VaultRow Ico={I2.lock} value={it.password} secret />
-                      <VaultRow Ico={I2.link} value={it.url} isLink mono={false} />
-                      {it.notes && <div style={{ display: 'flex', gap: 8, padding: '5px 0' }}><I2.comment width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0, marginTop: 2 }} /><span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{it.notes}</span></div>}
-                    </div>
-                  )}
-                </div>
-              )})}
+              {items?.map((it) => (
+                <VaultItem key={it.id} it={it} project={project} onEdit={(e) => { setPwShow(false); setEditing(e) }} onRemoved={(id) => setItems((x) => (x || []).filter((y) => y.id !== id))} />
+              ))}
             </div>
 
             {/* ---- Accesos rápidos ---- */}
@@ -4594,7 +4676,7 @@ function VaultModal({ open, project, onClose, patch }) {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{items.length ? `${items.length} dato${items.length === 1 ? '' : 's'} guardado${items.length === 1 ? '' : 's'}` : ''}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{items?.length ? `${items.length} dato${items.length === 1 ? '' : 's'}` : ''}</span>
               <button className="btn btn-accent" onClick={() => startNew(null)}><I2.plus width={15} height={15} /> Agregar dato</button>
             </div>
           </>
@@ -6752,7 +6834,6 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
   let planDashUrl = ''
   if (planUrl) { try { const u = new URL(planUrl); planDashUrl = `${u.origin}/dashboard${u.pathname}` } catch (e) { planDashUrl = '' } }
   const scopeN = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0)
-  const vaultN = (project.vault || []).length
   const linkedMvp = projectMvps(project, data.mvps)[0] || null
   const mvpSuggested = !linkedMvp && suggestMvpsForProject(project, data.mvps || [], data.clients).length > 0
   const adv = lastAdvanceInfo(project)
@@ -6794,7 +6875,7 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
             ]} />
             <PanelsMenu items={[
               { Ico: I2.pdf, label: 'Alcance', count: scopeN, onClick: () => setScopeOpen(true), title: 'Propuesta, alcance firmado y links de venta' },
-              { Ico: I2.lock, label: 'Datos', count: vaultN, onClick: () => setVaultOpen(true), title: 'Datos y credenciales del cliente' },
+              { Ico: I2.lock, label: 'Datos', onClick: () => setVaultOpen(true), title: 'Datos y credenciales del cliente' },
               { Ico: I2.eye, label: 'Compartir', dot: project.shareEnabled ? 'var(--green)' : undefined, onClick: () => setShareOpen(true),
                 title: project.shareEnabled ? 'El cliente tiene acceso a la vista compartida' : 'Compartir la vista con el cliente' },
               ...(intakeFor(project.name) ? [{ Ico: I2.tasks, label: 'Cuestionario', onClick: () => setIntakeOpen(true),
@@ -6990,7 +7071,7 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
       <StageConfirmModal open={!!stageAsk} to={stageAsk} project={project}
         onClose={() => setStageAsk(null)} onConfirm={commitStage} />
       <ScopeModal open={scopeOpen} project={project} onClose={() => setScopeOpen(false)} patch={patch} />
-      <VaultModal open={vaultOpen} project={project} onClose={() => setVaultOpen(false)} patch={patch} />
+      <VaultModal open={vaultOpen} project={project} onClose={() => setVaultOpen(false)} />
       <ProjectMvpModal open={mvpOpen} project={project} onClose={() => setMvpOpen(false)} />
       <UpsellModal open={upsellOpen} project={project} onClose={() => setUpsellOpen(false)} />
       <Modal open={driveOpen} onClose={() => setDriveOpen(false)} title="Drive del proyecto" sub={project.name} width={440}>
