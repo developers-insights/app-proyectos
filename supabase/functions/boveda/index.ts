@@ -41,6 +41,9 @@ Deno.serve(async (req) => {
     const proyecto = String(b.proyecto || '')
     if (!ACCIONES.has(accion)) return json({ error: 'acción desconocida' })
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(proyecto)) return json({ error: 'falta el proyecto' })
+    // Sólo proyectos vivos de esta app: la bóveda de Clarity confía en el id que llega acá.
+    const { data: existe } = await admin.from('projects').select('id').eq('id', proyecto).is('deleted_at', null).maybeSingle()
+    if (!existe) return json({ error: 'no existe el proyecto' })
 
     const cuerpo: Record<string, unknown> = { accion, fuente: proyecto, quien: email }
     if (b.item) cuerpo.item = String(b.item)
