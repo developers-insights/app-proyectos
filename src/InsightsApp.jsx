@@ -4491,8 +4491,47 @@ function VaultRow({ Ico, value, mono = true, secret = false, isLink = false }) {
   )
 }
 
-/* Un dato del baúl: la lista trae nombre y estado; los valores se piden al abrirlo. */
-function VaultItem({ it, project, onEdit, onRemoved }) {
+/* Copia algo que hay que pedirle a la bóveda. Safari corta el permiso del portapapeles si se espera
+   a la red antes de escribir: va un ClipboardItem con la promesa adentro y, si el navegador no lo
+   soporta, writeText al llegar. La bóveda se consulta UNA vez (cada lectura queda registrada). */
+async function copiarRemoto(obtener) {
+  const pedido = obtener()
+  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': pedido.then((t) => new Blob([t], { type: 'text/plain' })) })])
+      return null
+    } catch { /* sigue abajo: o la bóveda dijo que no, o este navegador no acepta la promesa */ }
+  }
+  try { await navigator.clipboard.writeText(await pedido); return null }
+  catch (e) { return e?.message || 'No se pudo copiar' }
+}
+
+function CopyRemoteBtn({ obtener, label, title }) {
+  const [st, setSt] = useState('idle')
+  const [err, setErr] = useState('')
+  const go = async (e) => {
+    e.stopPropagation()
+    setErr(''); setSt('busy')
+    const fallo = await copiarRemoto(obtener)
+    if (fallo) { setErr(fallo); setSt('idle'); return }
+    setSt('ok'); setTimeout(() => setSt('idle'), 1300)
+  }
+  return (
+      <button className="btn btn-sm" disabled={st === 'busy'} onClick={go} title={err || title || label}
+        style={{ gap: 6, color: st === 'ok' ? 'var(--green)' : err ? 'var(--red, #ff7a5c)' : undefined, borderColor: st === 'ok' ? 'var(--green)' : undefined }}>
+        {st === 'ok' ? <I2.check width={13} height={13} /> : <I2.copy width={13} height={13} />}
+        {st === 'ok' ? 'Copiado' : st === 'busy' ? 'Copiando…' : label}
+      </button>
+  )
+}
+
+/* "contraseña gmail" → CONTRASENA_GMAIL: la ñ y las tildes pasan a su letra, el resto a guion bajo. */
+const aNombre = (v) => v.normalize('NFD').replace(/\p{M}/gu, '').toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+
+const textoDeValor = (v) => (v?.tipo === 'credencial' ? v.clave || v.usuario : v?.valor) || ''
+
+/* Un dato del baúl: la lista trae nombre y estado; los valores se piden al abrirlo o copiarlo. */
+function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved }) {
   const [valor, setValor] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -4506,16 +4545,17 @@ function VaultItem({ it, project, onEdit, onRemoved }) {
     return () => clearTimeout(t)
   }, [valor])
 
+  const leer = async () => (await boveda({ ...scope, accion: 'ver', item: it.id })).valor
   const abrir = async () => {
     setBusy(true); setErr('')
-    try { setValor((await boveda({ accion: 'ver', proyecto: project.id, item: it.id })).valor) }
+    try { setValor(await leer()) }
     catch (e) { setErr('No se pudo abrir: ' + e.message) }
     setBusy(false)
   }
   const editar = async () => {
     setBusy(true); setErr('')
     try {
-      const v = cargado ? (await boveda({ accion: 'ver', proyecto: project.id, item: it.id })).valor : null
+      const v = cargado ? await leer() : null
       onEdit({
         id: it.id, nombre: it.nombre, tipo: it.tipo, type: it.categoria || 'other', label: it.etiqueta || '',
         username: v?.usuario || '', password: v?.clave || '', url: v?.url || '', notes: v?.notas || '', valor: v?.valor || '',
@@ -4526,23 +4566,31 @@ function VaultItem({ it, project, onEdit, onRemoved }) {
   const borrar = async () => {
     if (!window.confirm(`¿Eliminar ${titulo}? Se borra también en Clarity y no se puede deshacer.`)) return
     setBusy(true)
-    try { await boveda({ accion: 'borrar', proyecto: project.id, item: it.id }); onRemoved(it.id) }
+    try { await boveda({ ...scope, accion: 'borrar', item: it.id }); onRemoved(it.id) }
     catch (e) { setErr('No se pudo eliminar: ' + e.message); setBusy(false) }
   }
 
+  const quien = it.cargado_por === 'cliente' ? (personal ? ' · lo cargó quien lo recibió' : ' · lo cargó el cliente') : ''
+  const color = recien ? 'var(--green)' : cargado ? m.color : 'var(--amber, #F5B94A)'
+
   return (
-    <div className="surface surface-hover" style={{ padding: 0, overflow: 'hidden', borderLeft: `3px solid ${m.color}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderBottom: valor || err ? '1px solid var(--border)' : 'none' }}>
+    <div className="surface surface-hover" style={{ padding: 0, overflow: 'hidden', borderLeft: `3px solid ${color}`, transition: 'border-color .4s, background .6s', background: recien ? 'color-mix(in srgb, var(--green) 7%, transparent)' : undefined }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', flexWrap: 'wrap', borderBottom: valor || err ? '1px solid var(--border)' : 'none' }}>
         <span style={{ width: 28, height: 28, borderRadius: 8, background: m.color + '22', color: m.color, display: 'grid', placeItems: 'center', flexShrink: 0 }}><m.Ico width={15} height={15} /></span>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 140 }}>
           <div className={it.tipo === 'env' ? 'mono' : ''} style={{ fontSize: it.tipo === 'env' ? 13 : 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titulo}</div>
-          <div style={{ fontSize: 11, color: cargado ? 'var(--text-faint)' : 'var(--amber, #F5B94A)' }}>
-            {it.tipo === 'env' ? 'Variable de entorno' : m.label}
-            {cargado ? (it.cargado_por === 'cliente' ? ' · lo cargó el cliente' : '') : ' · pedido al cliente, sin cargar'}
+          <div style={{ fontSize: 11, color: recien ? 'var(--green)' : cargado ? 'var(--text-faint)' : 'var(--amber, #F5B94A)' }}>
+            {recien ? 'Recién cargado' : <>
+              {it.tipo === 'env' ? 'Variable de entorno' : m.label}
+              {cargado ? quien : it.ayuda ? ` · ${it.ayuda}` : ' · esperando que lo carguen'}
+            </>}
           </div>
         </div>
+        {cargado
+          ? <CopyRemoteBtn label="Copiar" obtener={async () => textoDeValor(await leer())} />
+          : link && <CopyRemoteBtn label="Copiar link" obtener={async () => (await boveda({ ...scope, accion: 'link', link: link.id })).url} />}
         {cargado && <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => (valor ? setValor(null) : abrir())} title={valor ? 'Ocultar' : 'Mostrar'} style={{ padding: 5, color: 'var(--text-faint)' }}>{valor ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>}
-        <button className="btn btn-sm btn-ghost" disabled={busy} onClick={editar} title={cargado ? 'Editar' : 'Cargar'} style={{ padding: 5, color: 'var(--text-faint)' }}><I2.pencil width={14} height={14} /></button>
+        <button className="btn btn-sm btn-ghost" disabled={busy} onClick={editar} title={cargado ? 'Editar' : 'Cargarlo yo'} style={{ padding: 5, color: 'var(--text-faint)' }}><I2.pencil width={14} height={14} /></button>
         <button className="btn btn-sm btn-ghost" disabled={busy} onClick={borrar} title="Eliminar" style={{ padding: 5, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
       </div>
       {(valor || err) && (
@@ -4562,32 +4610,111 @@ function VaultItem({ it, project, onEdit, onRemoved }) {
   )
 }
 
-function VaultModal({ open, project, onClose }) {
+/* Pedir datos por link: se escriben los nombres, Clarity arma el link y queda en "Links activos"
+   para volver a copiarlo. Quien lo recibe sólo puede cargar, nunca ver. */
+function VaultAsk({ scope, personal, pedidos, onDone, onCancel }) {
+  const [filas, setFilas] = useState(pedidos.length ? pedidos.map((p) => ({ nombre: p.nombre, ayuda: p.ayuda || '' })) : [{ nombre: '', ayuda: '' }])
+  const [url, setUrl] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  const set = (i, k, v) => setFilas((f) => f.map((x, j) => (j === i ? { ...x, [k]: v } : x)))
+  const armar = async () => {
+    setBusy(true); setErr('')
+    try {
+      const r = await boveda({ ...scope, accion: 'pedir', items: filas.filter((f) => f.nombre.trim()) })
+      setUrl(r.url); onDone()
+    } catch (e) { setErr(e.message) }
+    setBusy(false)
+  }
+  return (
+    <div className="surface" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--card)' }}>
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>{personal ? 'Pedirle una clave a alguien' : 'Pedirle datos al cliente'}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>Escribí el nombre de cada dato y mandá el link. Vence en 7 días, sólo sirve para cargar y, cuando lo completen, acá se marca solo.</div>
+      </div>
+      {url ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid var(--accent)', borderRadius: 10, padding: '6px 6px 6px 12px', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}>
+            <span className="mono" style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</span>
+            <CopyRemoteBtn label="Copiar link" obtener={async () => url} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn" onClick={onCancel}>Listo</button></div>
+        </>
+      ) : (
+        <>
+          {filas.map((f, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.4fr) auto', gap: 8 }}>
+              <input className="input mono" value={f.nombre} onChange={(e) => set(i, 'nombre', aNombre(e.target.value))} placeholder={personal ? 'CONTRASENA_GMAIL' : 'SUPABASE_URL'} style={{ fontSize: 13 }} autoFocus={i === 0} />
+              <input className="input" value={f.ayuda} onChange={(e) => set(i, 'ayuda', e.target.value)} placeholder="Dónde lo consigue (opcional)" style={{ fontSize: 13 }} />
+              <button className="btn btn-sm btn-ghost" onClick={() => setFilas((x) => (x.length > 1 ? x.filter((_, j) => j !== i) : [{ nombre: '', ayuda: '' }]))} title="Quitar" style={{ padding: 6, color: 'var(--text-faint)' }}><I2.x width={13} height={13} /></button>
+            </div>
+          ))}
+          {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-sm" onClick={() => setFilas((x) => [...x, { nombre: '', ayuda: '' }])}><I2.plus width={13} height={13} /> Otro dato</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" onClick={onCancel}>Cancelar</button>
+              <button className="btn btn-accent" onClick={armar} disabled={busy || !filas.some((f) => f.nombre.trim())}><I2.link width={14} height={14} /> {busy ? 'Armando…' : 'Armar link'}</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/* Aviso en vivo desde la base de Clarity: broadcast en un topic secreto por bóveda que sólo trae
+   id y estado (nunca valores). El nombre del topic lo da `listar`, que ya pasó por la edge function. */
+function useVaultLive(rt, canal, onEvento) {
+  const cb = useRef(onEvento)
+  cb.current = onEvento
+  useEffect(() => {
+    if (!rt?.url || !rt?.key || !canal) return
+    const cli = createClient(rt.url, rt.key, { auth: { persistSession: false, autoRefreshToken: false } })
+    const ch = cli.channel(canal, { config: { private: false } })
+      .on('broadcast', { event: 'item' }, ({ payload }) => cb.current(payload || {}))
+      .subscribe()
+    return () => { cli.removeChannel(ch) }
+  }, [rt?.url, rt?.key, canal])
+}
+
+function VaultPanel({ scope, personal = false, active = true }) {
   const [editing, setEditing] = useState(null)  // null | item (nuevo o en edición)
+  const [asking, setAsking] = useState(false)
   const [pwShow, setPwShow] = useState(false)
-  const [items, setItems] = useState(null)       // null = cargando
+  const [res, setRes] = useState(null)           // null = cargando · { items, links, canal, realtime }
+  const [recien, setRecien] = useState([])
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
-  const projectId = project?.id
+  const scopeKey = JSON.stringify(scope)
 
   const cargar = useCallback(async () => {
-    if (!projectId) return
-    try { setItems((await boveda({ accion: 'listar', proyecto: projectId })).items || []); setErr('') }
-    catch (e) { setErr('No se pudo leer la bóveda: ' + e.message); setItems((x) => x || []) }
-  }, [projectId])
+    try { setRes(await boveda({ ...JSON.parse(scopeKey), accion: 'listar' })); setErr('') }
+    catch (e) { setErr('No se pudo leer la bóveda: ' + e.message); setRes((x) => x || { items: [], links: [] }) }
+  }, [scopeKey])
 
-  useEffect(() => { if (open) cargar() }, [open, cargar])
-  useEffect(() => { if (!open) { setEditing(null); setErr('') } }, [open])
+  useEffect(() => { if (active) cargar() }, [active, cargar])
+  useEffect(() => { if (!active) { setEditing(null); setAsking(false); setErr('') } }, [active])
+  useVaultLive(active ? res?.realtime : null, res?.canal, ({ id, estado }) => {
+    if (id && estado === 'cargado') {
+      setRecien((r) => [...r.filter((x) => x !== id), id])
+      setTimeout(() => setRecien((r) => r.filter((x) => x !== id)), 8000)
+    }
+    cargar()
+  })
 
-  if (!project) return <Modal open={open} onClose={onClose} title="Datos del cliente" />
+  const items = res?.items ?? null
+  const links = res?.links || []
+  const linkDe = (id) => links.find((l) => l.copiable && l.items.includes(id)) || null
+  const hayEnv = (items || []).some((i) => i.tipo === 'env' && i.estado === 'cargado')
 
-  const startNew = (preset) => { setPwShow(false); setEditing(preset ? emptyVaultItem(preset.type, preset.label) : emptyVaultItem()) }
+  const startNew = (preset) => { setPwShow(false); setAsking(false); setEditing(preset ? emptyVaultItem(preset.type, preset.label) : emptyVaultItem()) }
   const set = (k, v) => setEditing((e) => ({ ...e, [k]: v }))
   const save = async () => {
     const it = editing
     setSaving(true); setErr('')
     try {
-      const base = { accion: 'guardar', proyecto: project.id, tipo: it.tipo }
+      const base = { ...scope, accion: 'guardar', tipo: it.tipo }
       if (it.nombre) base.nombre = it.nombre
       const body = it.tipo === 'credencial'
         ? { ...base, etiqueta: (it.label || '').trim() || vaultMeta(it.type).label, categoria: it.type, usuario: it.username, clave: it.password, url: it.url, notas: it.notes }
@@ -4598,92 +4725,158 @@ function VaultModal({ open, project, onClose }) {
     } catch (e) { setErr('No se guardó: ' + e.message) }
     setSaving(false)
   }
-  const canSave = editing && !saving && (editing.tipo === 'credencial' ? (editing.username || editing.password) : (editing.valor || '').trim())
+  const revocar = async (l) => {
+    try { await boveda({ ...scope, accion: 'revocar', link: l.id }); await cargar() }
+    catch (e) { setErr('No se dio de baja: ' + e.message) }
+  }
+  const canSave = editing && !saving && (editing.tipo === 'credencial' ? (editing.username || editing.password) : (editing.nombre || '').trim() && (editing.valor || '').trim())
 
   return (
-    <Modal open={open} onClose={onClose} title="Datos del cliente" sub={project.name} width={560}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.55, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
-          <I2.lock width={15} height={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-          <span>Accesos y claves del cliente, cifrados. Es la misma bóveda que la de Clarity: lo que cargues acá aparece allá y al revés. Solo lo ve el equipo.</span>
-        </div>
-        {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.55, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
+        <I2.lock width={15} height={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+        <span>{personal
+          ? 'Tus claves, cifradas. Sólo las ves vos, acá y en Clarity. Pedile una a alguien con un link y aparece acá cuando la carga.'
+          : 'Accesos y claves del cliente, cifrados. Es la misma bóveda que la de Clarity: lo que cargues acá aparece allá y al revés. Solo lo ve el equipo.'}</span>
+      </div>
+      {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
 
-        {editing ? (
-          /* ---- FORM de alta / edición ---- */
-          <div className="surface" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--card)' }}>
-            {editing.tipo === 'credencial' ? (
-              <>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                  {VAULT_TYPES.map((t) => {
-                    const on = editing.type === t.key
-                    return (
-                      <button key={t.key} onClick={() => setEditing((e) => ({ ...e, type: t.key }))} className="tag" style={{ cursor: 'pointer', color: on ? '#fff' : t.color, background: on ? t.color : t.color + '1f', borderColor: 'transparent', fontWeight: 600 }}>
-                        <t.Ico width={12} height={12} /> {t.label}
-                      </button>
-                    )
-                  })}
-                </div>
-                <Field label="Etiqueta"><input className="input" value={editing.label} onChange={(e) => set('label', e.target.value)} placeholder={vaultMeta(editing.type).label + ' del cliente'} autoFocus /></Field>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="Usuario / correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="usuario@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
-                  <Field label="Contraseña">
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
-                      <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>
-                      <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I2.spark width={14} height={14} /></button>
-                    </div>
-                  </Field>
-                </div>
-                <Field label="URL / enlace (opcional)"><input className="input mono" value={editing.url} onChange={(e) => set('url', e.target.value)} placeholder="https://…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
-                <Field label="Notas (opcional)"><textarea className="input" rows={2} value={editing.notes} onChange={(e) => set('notes', e.target.value)} placeholder="2FA, PIN, datos de recuperación, etc." style={{ resize: 'none' }} /></Field>
-              </>
-            ) : (
-              <Field label={editing.nombre || 'Valor'}>
-                <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Pegá el valor" autoComplete="new-password" style={{ fontSize: 13 }} autoFocus />
-              </Field>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button className="btn" onClick={() => setEditing(null)}>Cancelar</button>
-              <button className="btn btn-accent" onClick={save} disabled={!canSave}><I2.check width={15} height={15} /> {saving ? 'Guardando…' : 'Guardar dato'}</button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* ---- LISTA de datos guardados ---- */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {items === null && [0, 1].map((i) => <div key={i} className="surface" style={{ height: 52, opacity: 0.5 }} />)}
-              {items?.length === 0 && (
-                <div className="surface" style={{ padding: '22px 16px', textAlign: 'center', color: 'var(--text-faint)', fontSize: 13, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                  <I2.lock width={22} height={22} style={{ color: 'var(--text-faint)', opacity: 0.7 }} />
-                  Todavía no hay ningún dato. Sumá el primero con los accesos rápidos o el botón de abajo.
-                </div>
-              )}
-              {items?.map((it) => (
-                <VaultItem key={it.id} it={it} project={project} onEdit={(e) => { setPwShow(false); setEditing(e) }} onRemoved={(id) => setItems((x) => (x || []).filter((y) => y.id !== id))} />
+      {asking ? (
+        <VaultAsk scope={scope} personal={personal} pedidos={(items || []).filter((i) => i.estado === 'pedido')} onDone={cargar} onCancel={() => setAsking(false)} />
+      ) : editing ? (
+        /* ---- FORM de alta / edición ---- */
+        <div className="surface" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--card)' }}>
+          {!editing.id && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['env', 'Variable de entorno'], ['credencial', 'Acceso']].map(([k, l]) => (
+                <button key={k} className="btn btn-sm" onClick={() => set('tipo', k)} style={{ background: editing.tipo === k ? 'var(--card-hover)' : 'transparent', color: editing.tipo === k ? 'var(--text)' : 'var(--text-faint)' }}>{l}</button>
               ))}
             </div>
+          )}
+          {editing.tipo === 'credencial' ? (
+            <>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                {VAULT_TYPES.map((t) => {
+                  const on = editing.type === t.key
+                  return (
+                    <button key={t.key} onClick={() => setEditing((e) => ({ ...e, type: t.key }))} className="tag" style={{ cursor: 'pointer', color: on ? '#fff' : t.color, background: on ? t.color : t.color + '1f', borderColor: 'transparent', fontWeight: 600 }}>
+                      <t.Ico width={12} height={12} /> {t.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <Field label="Etiqueta"><input className="input" value={editing.label} onChange={(e) => set('label', e.target.value)} placeholder={vaultMeta(editing.type).label + (personal ? '' : ' del cliente')} autoFocus /></Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label="Usuario / correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="usuario@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+                <Field label="Contraseña">
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
+                    <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>
+                    <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I2.spark width={14} height={14} /></button>
+                  </div>
+                </Field>
+              </div>
+              <Field label="URL / enlace (opcional)"><input className="input mono" value={editing.url} onChange={(e) => set('url', e.target.value)} placeholder="https://…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
+              <Field label="Notas (opcional)"><textarea className="input" rows={2} value={editing.notes} onChange={(e) => set('notes', e.target.value)} placeholder="2FA, PIN, datos de recuperación, etc." style={{ resize: 'none' }} /></Field>
+            </>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.4fr)', gap: 12 }}>
+              <Field label="Nombre"><input className="input mono" value={editing.nombre} disabled={!!editing.id} onChange={(e) => set('nombre', aNombre(e.target.value))} placeholder="SUPABASE_URL" style={{ fontSize: 13 }} autoFocus={!editing.id} /></Field>
+              <Field label="Valor">
+                <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Pegá el valor" autoComplete="new-password" style={{ fontSize: 13 }} autoFocus={!!editing.id} />
+              </Field>
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button className="btn" onClick={() => setEditing(null)}>Cancelar</button>
+            <button className="btn btn-accent" onClick={save} disabled={!canSave}><I2.check width={15} height={15} /> {saving ? 'Guardando…' : 'Guardar cifrado'}</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* ---- LISTA de datos guardados ---- */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {items === null && [0, 1].map((i) => <div key={i} className="surface" style={{ height: 52, opacity: 0.5 }} />)}
+            {items?.length === 0 && (
+              <div className="surface" style={{ padding: '22px 16px', textAlign: 'center', color: 'var(--text-faint)', fontSize: 13, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <I2.lock width={22} height={22} style={{ color: 'var(--text-faint)', opacity: 0.7 }} />
+                {personal ? 'Todavía no guardaste ninguna clave. Cargá una o pedísela a alguien con un link.' : 'Todavía no hay ningún dato. Cargalo vos o pedíselo al cliente con un link.'}
+              </div>
+            )}
+            {items?.map((it) => (
+              <VaultItem key={it.id} it={it} scope={scope} personal={personal} link={linkDe(it.id)} recien={recien.includes(it.id)}
+                onEdit={(e) => { setPwShow(false); setEditing(e) }} onRemoved={(id) => setRes((x) => ({ ...x, items: (x?.items || []).filter((y) => y.id !== id) }))} />
+            ))}
+          </div>
 
-            {/* ---- Accesos rápidos ---- */}
+          {links.length > 0 && (
+            <div>
+              <div className="label" style={{ marginBottom: 8 }}>Links activos</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {links.map((l) => {
+                  const del = l.items.map((id) => (items || []).find((i) => i.id === id)).filter(Boolean)
+                  const faltan = del.filter((i) => i.estado === 'pedido').length
+                  return (
+                    <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 10px' }}>
+                      <div style={{ flex: 1, minWidth: 160, fontSize: 12.5 }}>
+                        <span className="mono" style={{ color: 'var(--text)' }}>{del.map((i) => i.nombre).join(', ') || '—'}</span>
+                        <span style={{ color: 'var(--text-faint)' }}> · {faltan ? `faltan ${faltan}` : 'completo'} · vence {new Date(l.vence_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>
+                      </div>
+                      {l.copiable && <CopyRemoteBtn label="Copiar link" obtener={async () => (await boveda({ ...scope, accion: 'link', link: l.id })).url} />}
+                      <button className="btn btn-sm btn-ghost" onClick={() => revocar(l)} style={{ color: 'var(--text-faint)' }}>Dar de baja</button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {!personal && (
             <div>
               <div className="label" style={{ marginBottom: 8 }}>Agregar rápido</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {VAULT_PRESETS.map((pr) => { const m = vaultMeta(pr.type); return (
-                  <button key={pr.label} className="btn btn-sm" onClick={() => startNew(pr)}>
+                  <button key={pr.label} className="btn btn-sm" onClick={() => startNew({ ...pr })}>
                     <m.Ico width={13} height={13} style={{ color: m.color }} /> {pr.label}
                   </button>
                 )})}
               </div>
             </div>
+          )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{items?.length ? `${items.length} dato${items.length === 1 ? '' : 's'}` : ''}</span>
-              <button className="btn btn-accent" onClick={() => startNew(null)}><I2.plus width={15} height={15} /> Agregar dato</button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>{items?.length ? `${items.length} dato${items.length === 1 ? '' : 's'}` : ''}</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {hayEnv && <CopyRemoteBtn label="Copiar .env" title="Todas las variables cargadas, listas para pegar en un .env" obtener={async () => (await boveda({ ...scope, accion: 'ver_todos' })).env} />}
+              <button className="btn" onClick={() => { setEditing(null); setAsking(true) }}><I2.link width={14} height={14} /> {personal ? 'Pedir a alguien' : 'Pedir al cliente'}</button>
+              <button className="btn btn-accent" onClick={() => startNew(null)}><I2.plus width={15} height={15} /> Agregar</button>
             </div>
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function VaultModal({ open, project, onClose }) {
+  if (!project) return <Modal open={open} onClose={onClose} title="Datos del cliente" />
+  return (
+    <Modal open={open} onClose={onClose} title="Datos del cliente" sub={project.name} width={600}>
+      <VaultPanel scope={{ proyecto: project.id }} active={open} />
     </Modal>
+  )
+}
+
+/* MIS CLAVES — bóveda propia de cada usuario, la misma que "Mis claves" en Clarity. */
+function MisClavesView() {
+  return (
+    <div className="view" style={{ padding: '28px 34px 60px', maxWidth: 820 }}>
+      <div style={{ marginBottom: 18 }}>
+        <div className="label" style={{ marginBottom: 6 }}>Personal</div>
+        <h1 style={{ fontSize: 32 }}>Mis claves</h1>
+      </div>
+      <VaultPanel scope={{ personal: true }} personal />
+    </div>
   )
 }
 
@@ -8227,6 +8420,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
   const items = meCollab ? [
     { key: 'projects', label: 'Projects', icon: I2.folder },
     { key: 'tasks', label: 'Tareas', icon: I2.tasks },
+    { key: 'claves', label: 'Mis claves', icon: I2.lock },
   ] : [
     { key: 'projects', label: 'Projects', icon: I2.folder },
     { key: 'tasks', label: 'Tareas', icon: I2.tasks },
@@ -8237,6 +8431,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'encuesta', label: 'Encuesta', icon: I2.comment },
     { key: 'sops', label: 'SOP', icon: I2.doc },
     { key: 'cuentas', label: 'Cuentas', icon: I2.key },
+    { key: 'claves', label: 'Mis claves', icon: I2.lock },
     // Usuarios/aprobación: solo fundadores + Nacho Cachaza
     ...(meCanApprove ? [{ key: 'usuarios', label: 'Usuarios', icon: I2.users, badge: pendingUsers }] : []),
   ]
@@ -9262,6 +9457,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'calls' && <Calls />}
               {route.view === 'sops' && <Sops />}
               {route.view === 'cuentas' && <CuentasView />}
+              {route.view === 'claves' && <MisClavesView />}
               {route.view === 'assistant' && <AssistantView />}
               {route.view === 'planner' && <PlannerView />}
               {route.view === 'bot' && <BotView />}
