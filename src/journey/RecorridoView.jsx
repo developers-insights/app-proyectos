@@ -416,7 +416,8 @@ const RecorridoCanvas = lazy(() => import('./RecorridoCanvas.jsx'))
 /* Debajo de esto el lienzo deja de ser cómodo (tramos de 300 px y pinch con un dedo): cae a la lista vertical. */
 const CANVAS_MIN = 720
 
-function useWide(ref) {
+/* `ready` re-engancha la medición: mientras carga se pinta el skeleton sin el nodo medido, y sin esto `wide` quedaba en null para siempre y el lienzo nunca aparecía. */
+function useWide(ref, ready) {
   const [w, setW] = useState(null)
   useLayoutEffect(() => {
     const el = ref.current
@@ -426,7 +427,7 @@ function useWide(ref) {
     const ro = new ResizeObserver(m)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [ready])
   return w == null ? null : w >= CANVAS_MIN
 }
 
@@ -449,7 +450,7 @@ function Recorrido({ onOpenProject, onSetStage, projects, loading }) {
   const offersRef = useRef(null)
   const alertsRef = useRef(null)
   const root = useRef(null)
-  const wide = useWide(root)
+  const wide = useWide(root, !loading)
   const now = useMemo(() => new Date(), [])
 
   const planById = useMemo(() => new Map((plans || []).map((pl) => [pl.id, pl])), [plans])
