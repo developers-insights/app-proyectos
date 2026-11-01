@@ -1,7 +1,7 @@
 // ============================================================================
 // MVP sync — Supabase Edge Function (Deno)
 // Trae los repos del org de GitHub de ventas (insightsapps-mvp) y las demos de
-// Render, y los deja como filas en `mvps`. Corre por pg_cron cada 15 min y desde
+// Render, y los deja como filas en `mvps`. Corre por pg_cron cada hora y desde
 // el botón "Buscar nuevos" de la vista MVPs.
 // Secrets: GITHUB_TOKEN_MVP, RENDER_API_KEY, MVP_CRON_KEY (+ los de Supabase).
 // La escritura va por la RPC mvp_apply_sync: mergea solo los campos automáticos y
@@ -146,12 +146,13 @@ Deno.serve(async (req) => {
       listRepos('/user/repos?affiliation=owner&sort=created', token).catch(() => []),
       renderKey ? renderServices(renderKey) : Promise.resolve([]),
       admin.from('mvps').select('id,data,deleted_at'),
-      admin.from('projects').select('data').is('deleted_at', null),
-      admin.from('clients').select('data').is('deleted_at', null),
+      // Sólo lo que usa matchScore: la fila entera del proyecto pesa decenas de KB y esto corre por cron.
+      admin.from('projects').select('id, name:data->>name, clientId:data->>clientId, githubRepo:data->>githubRepo').is('deleted_at', null),
+      admin.from('clients').select('id, name:data->>name, company:data->>company').is('deleted_at', null),
     ])
     const existing = new Map<string, any>((existingRes.data || []).map((r: any) => [r.id, r]))
-    const projects = (projectsRes.data || []).map((r: any) => r.data).filter((p: any) => p?.id && p?.name)
-    const companyOf = new Map<string, string>((clientsRes.data || []).map((r: any) => [r.data?.id, `${r.data?.company || ''} ${r.data?.name || ''}`]))
+    const projects = (projectsRes.data || []).filter((p: any) => p?.id && p?.name)
+    const companyOf = new Map<string, string>((clientsRes.data || []).map((r: any) => [r.id, `${r.company || ''} ${r.name || ''}`]))
 
     const renderByRepo = new Map<string, any>()
     for (const s of services) { const k = repoKey(s.repo); if (k && !renderByRepo.has(k)) renderByRepo.set(k, s) }

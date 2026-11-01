@@ -33,17 +33,17 @@ Deno.serve(async (req) => {
     // Equipo + proyectos actuales para calcular PM/Dev — desde las tablas por-fila.
     const [{ data: teamRows }, { data: projRows }] = await Promise.all([
       supa.from('team_members').select('data').is('deleted_at', null),
-      supa.from('projects').select('data').is('deleted_at', null),
+      supa.from('projects').select('dev:data->assignments->dev->>userId').is('deleted_at', null),
     ])
     const team: any[] = (teamRows || []).map((r: any) => r.data).filter(Boolean)
-    const projects: any[] = (projRows || []).map((r: any) => r.data).filter(Boolean)
+    const projects: any[] = projRows || []
 
     // PM = Nacho
     const nacho = team.find((u) => /nacho/i.test(u.name || '') || String(u.email || '').toLowerCase() === 'nachocachaza@insightsapps.tech')
     // Dev = el que menos proyectos tenga asignados como dev (excluye a Nacho)
     const counts: Record<string, number> = {}
     team.forEach((u) => { counts[u.id] = 0 })
-    projects.forEach((p) => { const d = p.assignments?.dev?.userId; if (d != null && counts[d] != null) counts[d]++ })
+    projects.forEach((p) => { const d = p.dev; if (d != null && counts[d] != null) counts[d]++ })
     const candidates = team.filter((u) => !nacho || u.id !== nacho.id)
     candidates.sort((a, b) => (counts[a.id] || 0) - (counts[b.id] || 0))
     const dev = candidates[0] || null

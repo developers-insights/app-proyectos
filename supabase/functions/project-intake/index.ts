@@ -48,8 +48,8 @@ Deno.serve(async (req) => {
 
     // --- La puerta. Idéntica a la de project-share, a propósito: un solo link y
     // una sola contraseña para ver el avance y para contestar. -----------------
-    const projectsRes = await supa.from('projects').select('data').is('deleted_at', null)
-    const project: any = rows(projectsRes).find((p: any) => p.shareId === shareId)
+    const projectsRes = await supa.from('projects').select('data').is('deleted_at', null).eq('data->>shareId', String(shareId)).limit(1)
+    const project: any = rows(projectsRes)[0]
     if (!project || !project.shareEnabled) return json({ error: 'Este link no está activo.' }, 404)
     if (!project.sharePassword || String(password || '') !== String(project.sharePassword)) {
       return json({ error: 'Contraseña incorrecta.' }, 401)

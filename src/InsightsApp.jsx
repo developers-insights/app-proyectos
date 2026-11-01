@@ -2422,12 +2422,59 @@ function fileToImageDataURL(file, maxW = 1100, quality = 0.82) {
         const w = Math.round(img.width * scale), h = Math.round(img.height * scale)
         const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h
         canvas.getContext('2d').drawImage(img, 0, 0, w, h)
-        resolve(canvas.toDataURL('image/jpeg', quality))
+        // WebP pesa ~30% menos; Safari no lo codifica y devolvería PNG (más pesado): ahí va JPEG.
+        const webp = canvas.toDataURL('image/webp', quality)
+        resolve(webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', quality))
       }
       img.onerror = reject; img.src = reader.result
     }
     reader.onerror = reject; reader.readAsDataURL(file)
   })
+}
+
+/* Capturas de avances y comms: en el proyecto quedan como `shot:<id>` (un trigger de la base las saca
+   a project_shots para que la fila no pese). Se piden recién al mostrarse, juntas y una sola vez por
+   sesión. Un data: recién adjuntado todavía no tiene id y se muestra tal cual. */
+const shotCache = new Map()
+let shotQueue = null
+function loadShot(id) {
+  if (shotCache.has(id)) return shotCache.get(id)
+  const p = new Promise((resolve) => {
+    if (!shotQueue) {
+      shotQueue = new Map()
+      setTimeout(async () => {
+        const batch = shotQueue; shotQueue = null
+        const { data } = supabase ? await supabase.from('project_shots').select('id,data').in('id', [...batch.keys()]) : { data: [] }
+        const got = new Map((data || []).map((r) => [r.id, r.data]))
+        batch.forEach((res, k) => { if (!got.has(k)) shotCache.delete(k); res(got.get(k) || null) })
+      }, 30)
+    }
+    shotQueue.set(id, resolve)
+  })
+  shotCache.set(id, p)
+  return p
+}
+function useShot(src) {
+  const ref = typeof src === 'string' && src.startsWith('shot:') ? src.slice(5) : null
+  const [url, setUrl] = useState(ref ? null : src)
+  useEffect(() => {
+    if (!ref) { setUrl(src); return }
+    let vivo = true
+    loadShot(ref).then((u) => { if (vivo) setUrl(u) })
+    return () => { vivo = false }
+  }, [src, ref])
+  return url
+}
+function Shot({ src, size = 72 }) {
+  const url = useShot(src)
+  const box = { width: size, height: size, borderRadius: 8, border: '1px solid var(--border)' }
+  if (!url) return <span aria-busy="true" style={{ ...box, display: 'inline-block', background: 'var(--bg-elevated)' }} />
+  // Abrir un data: en otra pestaña lo bloquea el navegador: se abre como blob.
+  const abrir = (e) => {
+    e.preventDefault()
+    fetch(url).then((r) => r.blob()).then((b) => window.open(URL.createObjectURL(b), '_blank', 'noopener'))
+  }
+  return <a href="#" onClick={abrir}><img src={url} alt="" loading="lazy" style={{ ...box, objectFit: 'cover' }} /></a>
 }
 
 /* hilo de comentarios reutilizable: muestra avatar + nombre del autor, registra actividad */
@@ -4062,7 +4109,7 @@ function LogEntry({ entry, team, myId, projectName, onUpdate, onDelete, logActiv
         <button className="btn btn-sm btn-ghost" onClick={() => onDelete(entry.id)} style={{ padding: 3, color: 'var(--text-faint)' }}><I2.x width={12} height={12} /></button>
       </div>
       {entry.text && <MentionText text={entry.text} style={{ fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', display: 'block' }} />}
-      {(entry.shots || []).length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>{entry.shots.map((s, i) => <a key={i} href={s} target="_blank" rel="noreferrer"><img src={s} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></a>)}</div>}
+      {(entry.shots || []).length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>{entry.shots.map((s, i) => <Shot key={i} src={s} />)}</div>}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
         {Object.entries(reactions).map(([em, arr]) => arr.length > 0 && (
