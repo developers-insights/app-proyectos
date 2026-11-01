@@ -58,6 +58,7 @@ import { CloserNotesPanel } from './journey/CloserNotes.jsx'
 import { NotesView, ProjectNotesBlock } from './notes/ServiceNotes.jsx'
 import { useServiceNotes } from './notes/useServiceNotes.js'
 import { normalizeMvp, mvpDemoUrl, mvpRepoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
+import InsightsView, { InsightsIcon } from './insights/InsightsView.jsx'
 
 /* ============================================================================
    0 · SUPABASE (cloud persistence + auth) — optional, enabled via env vars
@@ -8518,6 +8519,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'tasks', label: 'Tareas', icon: I2.tasks },
     { key: 'claves', label: 'Mis claves', icon: I2.lock },
   ] : [
+    { key: 'insights', label: 'INSIGHTS', icon: InsightsIcon },
     { key: 'projects', label: 'Projects', icon: I2.folder },
     { key: 'tasks', label: 'Tareas', icon: I2.tasks },
     { key: 'clients', label: 'Clients', icon: I2.users },
@@ -8964,7 +8966,7 @@ function UpdateButton() {
    · SISTEMA (izq. del bloque derecho): estado de sync + versión. Informan, no son tuyos.
    · USUARIO: notificaciones, ajustes, tema y salir. Todos icon-buttons de 32px. */
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
-  const crumb = { overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', mvps: 'MVPs', notas: 'Notas', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
+  const crumb = { insights: 'Oficina', overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', mvps: 'MVPs', notas: 'Notas', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
   const dark = theme === 'dark'
   return (
     <header className="hd">
@@ -9547,6 +9549,7 @@ function AppShell({ session, onLogout }) {
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
               style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' || route.view === 'planner' || route.view === 'editor' || route.view === 'carousel' || route.view === 'bot' ? 'hidden' : 'auto' }}>
+              {route.view === 'insights' && <InsightsView onOpenProject={openProject} />}
               {route.view === 'projects' && <Projects onOpenProject={openProject} />}
               {route.view === 'tasks' && <TasksView />}
               {route.view === 'clients' && <Clients />}
