@@ -1604,10 +1604,11 @@ async function upsertPublishedPlan(plan) {
     .upsert({ slug: plan.slug, data: plan, updated_at: new Date().toISOString() }, { onConflict: 'slug' })
 }
 
+const PLANS_CACHE = 'rc_plans_v1'
 function usePlans() {
-  const [plans, setPlansState] = useState([])
+  const [plans, setPlansState] = useState(() => { try { return JSON.parse(localStorage.getItem(PLANS_CACHE) || '[]') } catch (e) { return [] } })
   const [ready, setReady] = useState(!cloudEnabled)
-  const plansRef = useRef([])
+  const plansRef = useRef(plans)
   const timers = useRef(new Map())    // id -> timeout del guardado debounced
   const pending = useRef(new Map())   // id -> última versión aún NO confirmada en el server
   // Auto-sync al link público (published_plans). Centralizado en el store para que
@@ -1622,6 +1623,7 @@ function usePlans() {
     const next = fn(plansRef.current)
     plansRef.current = next
     setPlansState(next)
+    try { localStorage.setItem(PLANS_CACHE, JSON.stringify(next)) } catch (e) { /* quota */ }
   }
 
   // Escritura real de una fila. Al confirmar, saca el pendiente si sigue siendo
@@ -1650,14 +1652,31 @@ function usePlans() {
   }
 
   // Carga la lista desde el server sin pisar ediciones locales aún sin sincronizar.
+  // Incremental por sync_at, igual que useRowCollection (ver ahí el porqué).
   const loadPlans = async () => {
     if (!cloudEnabled) return
-    const { data: rows, error } = await supabase
-      .from('plans').select('data').is('deleted_at', null)
-      .order('updated_at', { ascending: false })
+    let meta = null
+    try { meta = JSON.parse(localStorage.getItem(PLANS_CACHE + ':sync') || 'null') } catch (e) { /* ignore */ }
+    const incremental = !!(meta && meta.cursor && Date.now() - (meta.fullAt || 0) < 24 * 3600e3 && plansRef.current.length > 0)
+    let q = supabase.from('plans').select('id, data, deleted_at, sync_at')
+    q = incremental
+      ? q.gt('sync_at', new Date(Date.parse(meta.cursor) - 120e3).toISOString()).order('sync_at')
+      : q.is('deleted_at', null).order('updated_at', { ascending: false })
+    const { data: rows, error } = await q
     if (error) return
-    applyLocal(() => {
-      const server = (rows || []).map((r) => r.data)
+    const cursor = (rows || []).reduce((m, r) => (r.sync_at && r.sync_at > m ? r.sync_at : m), (incremental && meta.cursor) || '')
+    applyLocal((cur) => {
+      let server
+      if (incremental) {
+        const byId = new Map(cur.map((p) => [p.id, p]))
+        for (const r of rows || []) {
+          if (r.deleted_at) { byId.delete(r.id); continue }
+          if (r.data && r.data.id) byId.set(r.data.id, r.data)
+        }
+        server = [...byId.values()].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+      } else {
+        server = (rows || []).map((r) => r.data)
+      }
       if (pending.current.size === 0) return server
       const byId = new Map(server.map((p) => [p.id, p]))
       pending.current.forEach((local, id) => {
@@ -1666,6 +1685,7 @@ function usePlans() {
       })
       return [...byId.values()].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
     })
+    if (cursor) { try { localStorage.setItem(PLANS_CACHE + ':sync', JSON.stringify({ cursor, fullAt: incremental ? meta.fullAt : Date.now() })) } catch (e) { /* quota */ } }
   }
 
   useEffect(() => {
@@ -2031,11 +2051,26 @@ function useRowCollection({ table, normalize = (x) => x, seed = () => [], cacheK
     pending.current.forEach((item) => { writeRow(item) })
   }
 
+  // Carga incremental: con copia local reciente, sólo las filas con sync_at (reloj de la base) mayor
+  // al último visto; las bajas llegan como deleted_at. Una vez por día, o sin copia, va la carga
+  // completa (levanta también un DELETE de verdad, que no deja rastro). El solapamiento de 2 min cubre
+  // transacciones que confirmaron después de otra con sync_at mayor; repetir una fila no cambia nada.
+  const syncKey = cacheKey ? cacheKey + ':sync' : null
+  const readSync = () => { try { return syncKey ? JSON.parse(localStorage.getItem(syncKey) || 'null') : null } catch (e) { return null } }
+  const writeSync = (m) => { if (syncKey) { try { localStorage.setItem(syncKey, JSON.stringify(m)) } catch (e) { /* quota */ } } }
+
   // Carga la lista del server sin pisar ediciones locales aún sin sincronizar.
   const loadRows = async () => {
     if (!cloudEnabled) return
-    let q = supabase.from(table).select('data').is('deleted_at', null).order('updated_at', { ascending: false })
-    if (loadLimit) q = q.limit(loadLimit)
+    const meta = readSync()
+    const incremental = !!(meta && meta.cursor && Date.now() - (meta.fullAt || 0) < 24 * 3600e3 && itemsRef.current.length > 0)
+    let q = supabase.from(table).select('id, data, deleted_at, sync_at')
+    if (incremental) {
+      q = q.gt('sync_at', new Date(Date.parse(meta.cursor) - 120e3).toISOString()).order('sync_at')
+    } else {
+      q = q.is('deleted_at', null).order('updated_at', { ascending: false })
+      if (loadLimit) q = q.limit(loadLimit)
+    }
     const { data: rows, error } = await q
     if (error) return
     // Si hay ediciones locales sin sincronizar, chequeá cuáles de esas filas fueron
@@ -2045,8 +2080,21 @@ function useRowCollection({ table, normalize = (x) => x, seed = () => [], cacheK
       const { data: tomb } = await supabase.from(table).select('id').in('id', ids).not('deleted_at', 'is', null)
       ;(tomb || []).forEach((r) => deletedIds.current.add(r.id))
     }
-    applyLocal(() => {
-      const server = (rows || []).map((r) => normalize(r.data)).filter((x) => x && x.id)
+    const cursor = (rows || []).reduce((m, r) => (r.sync_at && r.sync_at > m ? r.sync_at : m), (incremental && meta.cursor) || '')
+    applyLocal((cur) => {
+      let server
+      if (incremental) {
+        const byId = new Map(cur.map((x) => [x.id, x]))
+        for (const r of rows || []) {
+          if (r.deleted_at) { deletedIds.current.add(r.id); byId.delete(r.id); continue }
+          const it = normalize(r.data)
+          if (it && it.id) byId.set(it.id, it)
+        }
+        server = [...byId.values()].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+        if (loadLimit) server = server.slice(0, loadLimit)
+      } else {
+        server = (rows || []).map((r) => normalize(r.data)).filter((x) => x && x.id)
+      }
       if (pending.current.size === 0) return server
       const byId = new Map(server.map((x) => [x.id, x]))
       pending.current.forEach((local, id) => {
@@ -2056,6 +2104,7 @@ function useRowCollection({ table, normalize = (x) => x, seed = () => [], cacheK
       })
       return [...byId.values()].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
     })
+    if (cursor) writeSync({ cursor, fullAt: incremental ? meta.fullAt : Date.now() })
   }
 
   useEffect(() => {

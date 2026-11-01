@@ -62,11 +62,22 @@ Deno.serve(async (req) => {
 
   let pq = db.from('projects').select('id,data,deleted_at')
   if (ids) pq = pq.in('id', ids.length ? ids : ['-'])
-  const [projects, clients, plans, team] = await Promise.all([
-    pq,
-    db.from('clients').select('id,data,deleted_at').is('deleted_at', null),
-    db.from('plans').select('id,data,deleted_at').is('deleted_at', null),
-    db.from('team_members').select('id,data,deleted_at').is('deleted_at', null),
+  const projects = await pq
+  // Con ids (el aviso de cada cambio) se traen sólo el cliente y el plan de esos proyectos: los planes
+  // completos pesan cientos de KB y esto corre en cada guardado. Sin ids (barrido) va todo.
+  const filas = (projects.data ?? []) as { data?: Record<string, unknown> }[]
+  const de = (k: string) => [...new Set(filas.map((r) => r.data?.[k]).filter((v): v is string => typeof v === 'string' && v !== ''))]
+  let cq = db.from('clients').select('id,data,deleted_at').is('deleted_at', null)
+  let plq = db.from('plans').select('id,data,deleted_at').is('deleted_at', null)
+  if (ids) {
+    cq = cq.in('id', de('clientId').length ? de('clientId') : ['-'])
+    plq = plq.in('id', de('planId').length ? de('planId') : ['-'])
+  }
+  const [clients, plans, team] = await Promise.all([
+    cq,
+    plq,
+    // Del equipo sólo hace falta el nombre (autor de las notas para el closer).
+    db.from('team_members').select('id, deleted_at, nombre:data->>name').is('deleted_at', null),
   ])
   const fallo = projects.error || clients.error || plans.error || team.error
   if (fallo) {
@@ -75,7 +86,8 @@ Deno.serve(async (req) => {
   }
 
   const fotos = buildBridgeSnapshots({
-    projects: projects.data ?? [], clients: clients.data ?? [], plans: plans.data ?? [], team: team.data ?? [],
+    projects: projects.data ?? [], clients: clients.data ?? [], plans: plans.data ?? [],
+    team: (team.data ?? []).map((u: { id: string; deleted_at: string | null; nombre: string | null }) => ({ id: u.id, deleted_at: u.deleted_at, data: { name: u.nombre } })),
   }, new Date())
   const vivos = new Set(fotos.map((f) => f.id))
   const bajas = ids ? ids.filter((id) => !vivos.has(id)) : []
