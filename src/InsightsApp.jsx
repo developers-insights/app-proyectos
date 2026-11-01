@@ -4956,9 +4956,9 @@ function VaultPanel({ scope, personal = false, active = true }) {
 }
 
 function VaultModal({ open, project, onClose }) {
-  if (!project) return <Modal open={open} onClose={onClose} title="Datos del cliente" />
+  if (!project) return <Modal open={open} onClose={onClose} title="Claves del proyecto" />
   return (
-    <Modal open={open} onClose={onClose} title="Datos del cliente" sub={project.name} width={600}>
+    <Modal open={open} onClose={onClose} title="Claves del proyecto" sub={project.name} width={600}>
       <VaultPanel scope={{ proyecto: project.id }} active={open} />
     </Modal>
   )
@@ -7165,8 +7165,8 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
               { Ico: I2.gantt, label: 'Progreso', url: planDashUrl, onEmpty: () => setPlanOpen(true) },
             ]} />
             <PanelsMenu items={[
+              { Ico: I2.lock, label: 'Claves del proyecto', onClick: () => setVaultOpen(true), title: 'Variables de entorno, contraseñas y accesos del proyecto' },
               { Ico: I2.pdf, label: 'Alcance', count: scopeN, onClick: () => setScopeOpen(true), title: 'Propuesta, alcance firmado y links de venta' },
-              { Ico: I2.lock, label: 'Datos', onClick: () => setVaultOpen(true), title: 'Datos y credenciales del cliente' },
               { Ico: I2.eye, label: 'Compartir', dot: project.shareEnabled ? 'var(--green)' : undefined, onClick: () => setShareOpen(true),
                 title: project.shareEnabled ? 'El cliente tiene acceso a la vista compartida' : 'Compartir la vista con el cliente' },
               ...(intakeFor(project.name) ? [{ Ico: I2.tasks, label: 'Cuestionario', onClick: () => setIntakeOpen(true),
