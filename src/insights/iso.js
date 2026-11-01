@@ -107,3 +107,12 @@ export function sceneBounds() {
   }
   return { dx: -minX + pad.x, dy: -minY + pad.top, w: maxX - minX + pad.x * 2, h: maxY - minY + pad.top + pad.bottom }
 }
+
+/* Sala bajo un punto del piso (z = 0) en píxeles de la escena: la isometría al revés. */
+export function roomAt(X, Y, pad = 0.35) {
+  const a = X / (U * C)
+  const b = (2 * Y) / U
+  const x = (a + b) / 2
+  const y = (b - a) / 2
+  return ROOMS.find((r) => x >= r.ox - pad && x <= r.ox + ROOM + pad && y >= r.oy - pad && y <= r.oy + ROOM + pad) || null
+}

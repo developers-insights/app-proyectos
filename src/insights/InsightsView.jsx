@@ -1,17 +1,17 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from 'framer-motion'
 import { useApp } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
-import { journeyBoard, laneMeta, normalizeThresholds, DEFAULT_THRESHOLDS, upsellBadges, laneAverage } from '../lib/journey.js'
+import { journeyBoard, laneMeta, normalizeThresholds, DEFAULT_THRESHOLDS, upsellBadges, laneAverage, laneDropStage, JOURNEY_LANES } from '../lib/journey.js'
 import { normalizeLifecycle } from '../lib/lifecycle.js'
-import { projectStage, stageMeta } from '../lib/stages.js'
+import { projectStage, stageMeta, applyStage, stageIsRegression } from '../lib/stages.js'
 import { storesSummary, storeShortLine, fmtDay } from '../lib/stores.js'
 import { visibleProjects } from '../lib/visibility.js'
 import { planBoardSummary } from '../plan/planModel.js'
 import { projectProgress } from '../lib/progress.js'
 import { initials, dayCell, daysText, plural } from '../journey/parts.jsx'
-import { ROOMS, ROOM, WALL, U, LINKS, LANE_PATH, SLOTS_PER_ROOM, iso, pts, corridor, isoBox, slotPos, sceneBounds, roomOf } from './iso.js'
+import { ROOMS, ROOM, WALL, U, LINKS, LANE_PATH, SLOTS_PER_ROOM, iso, pts, corridor, isoBox, slotPos, sceneBounds, roomOf, roomAt } from './iso.js'
 
 const B = sceneBounds()
 const MIN_SCALE = 0.62
@@ -133,6 +133,58 @@ button.io-kpi[aria-pressed="true"]{color:var(--text);background:var(--red-soft);
   box-shadow:inset 0 0 0 1px var(--border-strong),0 10px 24px -12px rgba(0,0,0,.6);transition:opacity .18s var(--e),transform .24s cubic-bezier(.3,1.4,.5,1)}
 .io-tk:hover .io-nm,.io-tk:focus-visible .io-nm,.io-tk[data-hit] .io-nm{opacity:1;transform:translate(-50%,-2px)}
 
+.io-tk:not(.io-more){touch-action:none;cursor:grab}
+.io-tilt{display:block;transform-origin:50% 130%}
+.io-tk[data-drag]{cursor:grabbing;transition:none}
+.io-tk[data-drag] .io-bob{animation-play-state:paused}
+.io-tk[data-drag] .io-av{transform:translateY(-16px) scale(1.18);transition:transform .32s cubic-bezier(.3,1.6,.5,1),box-shadow .25s var(--e);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4),inset 0 -6px 12px rgba(0,0,0,.18),0 22px 30px -12px rgba(0,0,0,.6),0 0 0 2px color-mix(in srgb,var(--lc) 45%,var(--bg))}
+.io-tk[data-drag] .io-ring{transform:scale(1.45);opacity:.5}
+.io-tk[data-drag] .io-beam{height:36px;transition:height .25s var(--e)}
+.io-tk[data-drag] .io-nm{opacity:0}
+.io-hint{position:absolute;left:50%;bottom:calc(100% + 18px);display:inline-flex;align-items:center;gap:7px;white-space:nowrap;padding:6px 11px;border-radius:10px;
+  font-size:12px;font-weight:650;letter-spacing:-.01em;color:var(--text);pointer-events:none;
+  background:color-mix(in srgb,var(--bg-elevated) 90%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:inset 0 0 0 1px var(--border-strong),0 14px 28px -14px rgba(0,0,0,.65)}
+.io-hint i{width:7px;height:7px;border-radius:50%;background:var(--hc)}
+.io-hint[data-no]{color:var(--text-dim);font-weight:550}
+html.io-dragging,html.io-dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
+.io-origin{position:absolute;left:0;top:0;width:30px;height:15px;margin:-7.5px 0 0 -15px;border-radius:50%;pointer-events:none;
+  border:1.5px dashed color-mix(in srgb,var(--lc) 60%,transparent)}
+.io-room[data-dz="ok"] .io-floor{stroke:color-mix(in srgb,var(--lc) 65%,transparent);stroke-width:1.6;stroke-dasharray:5 6;animation:ioMarch 1.1s linear infinite}
+@keyframes ioMarch{to{stroke-dashoffset:-22}}
+.io-room[data-dz="hot"] .io-floor{fill:color-mix(in srgb,var(--lc) 24%,var(--card));stroke:var(--lc);stroke-width:2.4}
+.io-room[data-dz="hot"] .io-scr{stroke:var(--lc)}
+.io-room[data-dz="hot"] .io-grid{stroke:color-mix(in srgb,var(--lc) 28%,transparent)}
+.io-room[data-dz="no"]{opacity:.3}
+.io-room[data-dz="hot"] .io-mon{opacity:1}
+
+.io-toast{position:fixed;z-index:80;left:50%;bottom:22px;display:flex;align-items:center;gap:12px;padding:8px 8px 8px 14px;border-radius:15px;max-width:calc(100vw - 28px);
+  font-size:13px;color:var(--text);background:color-mix(in srgb,var(--bg-elevated) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:inset 0 0 0 1px var(--border-strong),0 18px 40px -16px rgba(0,0,0,.6)}
+.io-toast .dt{flex:none;width:8px;height:8px;border-radius:50%;background:var(--lc)}
+.io-toast .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.io-toast .t b{font-weight:650}
+.io-toast button{flex:none;height:30px;padding:0 12px;border-radius:10px;font-size:12.5px;font-weight:650;color:var(--text);background:var(--card);
+  box-shadow:inset 0 0 0 1px var(--border);transition:background .16s var(--e),transform .14s var(--e)}
+.io-toast button:hover{background:var(--card-hover)}
+.io-toast button:active{transform:scale(.96)}
+.io-ask{position:fixed;z-index:90;left:50%;top:50%;width:min(420px,calc(100vw - 28px));padding:20px;border-radius:22px;background:var(--bg-elevated);
+  box-shadow:inset 0 0 0 1px var(--border-strong),var(--shadow-lift)}
+.io-ask h3{font-size:18px;letter-spacing:-.03em}
+.io-ask .sub{margin-top:3px;font-size:13px;color:var(--text-dim)}
+.io-ask .w{margin-top:14px;padding:11px 13px;border-radius:13px;font-size:13px;line-height:1.5;color:var(--text);background:var(--yellow-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--yellow) 30%,transparent)}
+.io-ask .act{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.io-mv{display:flex;flex-wrap:wrap;gap:6px}
+.io-mv button{--lc:var(--accent);display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:10px;font-size:12px;font-weight:600;color:var(--text-dim);
+  background:var(--card);box-shadow:inset 0 0 0 1px var(--border);transition:color .16s var(--e),box-shadow .16s var(--e),background .16s var(--e),transform .14s var(--e)}
+.io-mv button i{width:7px;height:7px;border-radius:50%;background:var(--lc)}
+.io-mv button:hover:not(:disabled){color:var(--text);background:color-mix(in srgb,var(--lc) 10%,var(--card));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lc) 45%,transparent)}
+.io-mv button:active:not(:disabled){transform:scale(.96)}
+.io-mv button:disabled{opacity:.4;cursor:default}
+.io-mv button[aria-current]{opacity:1;color:var(--text);background:color-mix(in srgb,var(--lc) 14%,var(--card));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lc) 50%,transparent)}
+.io-mv button:focus-visible{outline:2px solid var(--lc);outline-offset:2px}
+
 .io-legend{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--text-faint)}
 .io-legend span{display:inline-flex;align-items:center;gap:6px}
 .io-legend i{width:8px;height:8px;border-radius:50%}
@@ -235,13 +287,13 @@ button.io-kpi[aria-pressed="true"]{color:var(--text);background:var(--red-soft);
   .io-team{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){
-  .io-bob,.io-scan,.io-flow,.io-mon,.io-beacon-r,.io-live i::after,.io-al::after,.io-tk[data-sel] .io-av::before{animation:none!important}
+  .io-bob,.io-scan,.io-flow,.io-room[data-dz] .io-floor,.io-mon,.io-beacon-r,.io-live i::after,.io-al::after,.io-tk[data-sel] .io-av::before{animation:none!important}
 }
 `
 
 /* ─── Escena ──────────────────────────────────────────────────────────────── */
 
-function Room({ room, items, alertLv, focus, onOpen, onHover }) {
+function Room({ room, items, alertLv, focus, dz, onOpen, onHover }) {
   const { ox, oy, meta } = room
   const n = items.length
   const avg = laneAverage(items)
@@ -262,7 +314,7 @@ function Room({ room, items, alertLv, focus, onOpen, onHover }) {
   const label = `${meta.label}: ${plural(n, 'proyecto', 'proyectos')}`
   const busy = (room.lane === 'mvp' || room.lane === 'fase2') && n > 0
   return (
-    <g className="io-room" style={{ '--lc': `var(${meta.colorVar})` }} data-on={focus === room.lane ? '' : undefined} data-busy={busy ? '' : undefined}
+    <g className="io-room" style={{ '--lc': `var(${meta.colorVar})` }} data-on={focus === room.lane ? '' : undefined} data-busy={busy ? '' : undefined} data-dz={dz || undefined}
       role="button" tabIndex={0} aria-label={label}
       onClick={() => onOpen(room.lane)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(room.lane) } }}
       onMouseEnter={() => onHover(room.lane)} onMouseLeave={() => onHover(null)} onFocus={() => onHover(room.lane)} onBlur={() => onHover(null)}>
@@ -308,25 +360,76 @@ const HINTS = {
 }
 const laneHint = (k) => HINTS[k] || ''
 
-function Token({ item, pos, order, booted, reduce, state, onOpen, label }) {
+const SETTLE = { type: 'spring', stiffness: 380, damping: 27 }
+
+/*
+ * La posición vive en motion values y no en `animate`: el arrastre la escribe en cada
+ * pointermove sin pasar por React, y al cambiar de sala el resorte arranca desde donde
+ * se soltó. `held` frena el efecto mientras está en la mano, si no un re-render lo
+ * mandaría de vuelta a su lugar a mitad del arrastre.
+ */
+function Token({ item, pos, order, booted, reduce, state, onOpen, label, reg, grab, hint }) {
   const { project: p } = item
   const lc = `var(${laneMeta(item.entry.lane).colorVar})`
   const lv = item.level
-  const delay = booted ? 0 : 0.35 + order * 0.035
+  const x = useMotionValue(pos.X)
+  const y = useMotionValue(reduce ? pos.Y : pos.Y - 70)
+  const vx = useVelocity(x)
+  const tilt = useSpring(useTransform(vx, [-1100, 0, 1100], [-16, 0, 16], { clamp: true }), { stiffness: 300, damping: 22 })
+  const first = useRef(true)
+  const posRef = useRef(pos)
+  posRef.current = pos
+  const self = useRef(null)
+  if (!self.current) {
+    self.current = {
+      x, y, held: false, quick: false,
+      back() { animate(x, posRef.current.X, reduce ? { duration: 0 } : SETTLE); animate(y, posRef.current.Y, reduce ? { duration: 0 } : SETTLE) },
+    }
+  }
+
+  useEffect(() => {
+    if (item.more) return undefined
+    reg.current.set(p.id, self.current)
+    return () => { if (reg.current.get(p.id) === self.current) reg.current.delete(p.id) }
+  }, [p.id, item.more, reg])
+
+  useEffect(() => {
+    const s = self.current
+    if (s.held) return undefined
+    const delay = first.current && !booted ? 0.35 + order * 0.035 : 0
+    first.current = false
+    if (reduce) { x.set(pos.X); y.set(pos.Y); return undefined }
+    const quick = s.quick
+    s.quick = false
+    const ax = animate(x, pos.X, quick ? SETTLE : { type: 'spring', stiffness: 46, damping: 13, delay })
+    const ay = animate(y, pos.Y, quick ? SETTLE : { type: 'spring', stiffness: 60, damping: 11, delay })
+    return () => { ax.stop(); ay.stop() }
+  }, [pos.X, pos.Y, reduce])
+
   return (
     <motion.button type="button" className={`io-tk${item.more ? ' io-more' : ''}`}
-      style={{ '--lc': lc, '--bd': `${-((order * 0.61) % 4.2).toFixed(2)}s`, zIndex: Math.round(pos.depth * 10) }}
-      initial={reduce ? false : { x: pos.X, y: pos.Y - 70, opacity: 0 }}
-      animate={{ x: pos.X, y: pos.Y, opacity: 1 }}
-      transition={reduce ? { duration: 0 } : { x: { type: 'spring', stiffness: 46, damping: 13, delay }, y: { type: 'spring', stiffness: 60, damping: 11, delay }, opacity: { duration: 0.3, delay } }}
-      data-dim={state.dim ? '' : undefined} data-sel={state.sel ? '' : undefined} data-hit={state.hit ? '' : undefined}
-      aria-label={label} onClick={(e) => { e.stopPropagation(); onOpen() }}>
+      style={{ x, y, '--lc': lc, '--bd': `${-((order * 0.61) % 4.2).toFixed(2)}s`, zIndex: state.drag ? 9999 : Math.round(pos.depth * 10) }}
+      initial={reduce ? false : { opacity: 0 }} animate={{ opacity: 1 }}
+      transition={reduce ? { duration: 0 } : { duration: 0.3, delay: booted ? 0 : 0.35 + order * 0.035 }}
+      data-dim={state.dim ? '' : undefined} data-sel={state.sel ? '' : undefined} data-hit={state.hit ? '' : undefined} data-drag={state.drag ? '' : undefined}
+      aria-label={label} onClick={(e) => { e.stopPropagation(); onOpen() }} {...(grab || {})}>
       <span className="io-ring" />
       <span className="io-beam" />
       <span className="io-bob">
-        <span className="io-av">{item.more ? `+${item.more}` : item.mark}{!item.more && lv && <i className="io-al" data-lv={lv} />}</span>
+        <motion.span className="io-tilt" style={{ rotate: tilt }}>
+          <span className="io-av">{item.more ? `+${item.more}` : item.mark}{!item.more && lv && <i className="io-al" data-lv={lv} />}</span>
+        </motion.span>
       </span>
       {!item.more && <span className="io-nm">{p.name}</span>}
+      <AnimatePresence>
+        {hint && (
+          <motion.span key={hint.text} className="io-hint" data-no={hint.ok ? undefined : ''} style={{ '--hc': hint.color }}
+            initial={{ opacity: 0, x: '-50%', y: 6, scale: 0.92 }} animate={{ opacity: 1, x: '-50%', y: 0, scale: 1 }} exit={{ opacity: 0, x: '-50%', y: -4, scale: 0.96 }}
+            transition={{ type: 'spring', stiffness: 520, damping: 32 }}>
+            {hint.ok && <i />}{hint.text}
+          </motion.span>
+        )}
+      </AnimatePresence>
     </motion.button>
   )
 }
@@ -362,7 +465,7 @@ function Member({ user, role }) {
   )
 }
 
-function ProjectSheet({ item, client, team, list, onNav, onBack, onOpenFull, reduce }) {
+function ProjectSheet({ item, client, team, list, onNav, onBack, onOpenFull, reduce, canMove, onMove }) {
   const { project: p, entry } = item
   const lane = laneMeta(entry.lane)
   const stage = stageMeta(projectStage(p))
@@ -438,6 +541,24 @@ function ProjectSheet({ item, client, team, list, onNav, onBack, onOpenFull, red
             })}
           </div>
         </div>
+
+        {onMove && (
+          <div className="io-sec">
+            <div className="io-k">Mover a</div>
+            <div className="io-mv" role="group" aria-label={`Mover ${p.name} a otra sala`}>
+              {JOURNEY_LANES.map((l) => {
+                const here = entry.lane === l.key
+                const ok = !here && canMove(p.id, l.key)
+                return (
+                  <button key={l.key} type="button" style={{ '--lc': `var(${l.colorVar})` }} disabled={!ok} aria-current={here ? 'true' : undefined}
+                    onClick={() => onMove(p.id, l.key)} title={here ? 'Está en esta sala' : ok ? `Pasar a ${l.label}` : undefined}>
+                    <i aria-hidden="true" />{l.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {entry.alerts.length > 0 && (
           <div className="io-sec">
@@ -556,10 +677,63 @@ function Sheet({ open, lane, children, onClose }) {
   )
 }
 
+function StageAsk({ ask, onCancel, onConfirm }) {
+  const reduce = useReducedMotion()
+  const meta = ask ? stageMeta(ask.to) : null
+  const f2 = meta?.key === 'fase2'
+  const verb = meta ? (f2 ? `Pasar a ${meta.label}` : `Volver a ${meta.label}`) : ''
+  return createPortal(
+    <AnimatePresence>
+      {ask && <>
+        <motion.div key="s" className="io-scrim" style={{ zIndex: 89 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onCancel} />
+        <motion.div key="d" className="io-ask" role="alertdialog" aria-modal="true" aria-labelledby="io-ask-t"
+          initial={reduce ? { opacity: 0, x: '-50%', y: '-50%' } : { opacity: 0, x: '-50%', y: '-46%', scale: 0.96 }} animate={{ opacity: 1, x: '-50%', y: '-50%', scale: 1 }}
+          exit={{ opacity: 0, x: '-50%', y: '-48%', scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
+          <h3 id="io-ask-t">{verb}</h3>
+          <div className="sub">{ask.name}</div>
+          <div className="w">
+            {f2
+              ? <>La Fase 2 es un desarrollo nuevo: <b>deja de contar el cobro del plan</b> y se pierde el día en que arrancó. Si el cliente sigue pagando el mantenimiento aparte, dejalo en su plan y anotá la Fase 2 en Upsell.</>
+              : <>Volver atrás <b>borra las fechas de las etapas siguientes</b>. Si el proyecto estaba en un plan pago, deja de contar el cobro y se pierde el día en que arrancó.</>}
+          </div>
+          <div className="act">
+            <button type="button" className="btn" onClick={onCancel}>Cancelar</button>
+            <button type="button" className="btn btn-accent" onClick={onConfirm} autoFocus><I2.check width={15} height={15} /> {verb}</button>
+          </div>
+        </motion.div>
+      </>}
+    </AnimatePresence>,
+    document.body,
+  )
+}
+
+function MoveToast({ toast, onUndo, onDone }) {
+  const reduce = useReducedMotion()
+  useEffect(() => {
+    if (!toast) return undefined
+    const t = setTimeout(onDone, 6000)
+    return () => clearTimeout(t)
+  }, [toast, onDone])
+  return createPortal(
+    <AnimatePresence>
+      {toast && (
+        <motion.div key={toast.key} className="io-toast" role="status" style={{ '--lc': `var(${laneMeta(toast.lane).colorVar})` }}
+          initial={reduce ? { opacity: 0, x: '-50%' } : { opacity: 0, x: '-50%', y: 18, scale: 0.96 }} animate={{ opacity: 1, x: '-50%', y: 0, scale: 1 }}
+          exit={{ opacity: 0, x: '-50%', y: 10, scale: 0.98 }} transition={{ type: 'spring', stiffness: 460, damping: 34 }}>
+          <span className="dt" />
+          <span className="t"><b>{toast.name}</b> pasó a {laneMeta(toast.lane).label}</span>
+          {toast.undo && <button type="button" onClick={onUndo}>Deshacer</button>}
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  )
+}
+
 /* ─── Vista ───────────────────────────────────────────────────────────────── */
 
 export default function InsightsView({ onOpenProject }) {
-  const { data, plans, myId } = useApp()
+  const { data, plans, myId, projectStore, logActivity } = useApp()
   const reduce = useReducedMotion()
   const [search, setSearch] = useState('')
   const [hover, setHover] = useState(null)
@@ -568,6 +742,14 @@ export default function InsightsView({ onOpenProject }) {
   const [booted, setBooted] = useState(false)
   const [scale, setScale] = useState(1)
   const stageRef = useRef(null)
+  const layerRef = useRef(null)
+  const reg = useRef(new Map())
+  const dragSt = useRef(null)
+  const scaleRef = useRef(scale)
+  scaleRef.current = scale
+  const [drag, setDrag] = useState(null)
+  const [ask, setAsk] = useState(null)
+  const [toast, setToast] = useState(null)
   const now = useMemo(() => new Date(), [])
   const thresholds = useMemo(readThresholds, [])
 
@@ -616,6 +798,151 @@ export default function InsightsView({ onOpenProject }) {
     for (const k of Object.keys(lanes)) for (const it of lanes[k]) m.set(it.project.id, it)
     return m
   }, [lanes])
+
+  const projectById = useMemo(() => new Map(universe.map((p) => [p.id, p])), [universe])
+  const editable = !!projectStore
+  const canMove = useCallback((id, lane) => editable && !!laneDropStage(projectById.get(id), lane, ctx), [editable, projectById, ctx])
+
+  const commitMove = useCallback((id, to, lane) => {
+    const proj = projectById.get(id)
+    if (!proj) return
+    const prev = { stage: proj.stage, stageAt: proj.stageAt, lifecycle: proj.lifecycle, annual: proj.annual }
+    const m = reg.current.get(id)
+    if (m) {
+      m.quick = true
+      // Si la sala no cambió (otra pestaña ya lo movió), el efecto de posición no corre y quedaría donde se soltó.
+      requestAnimationFrame(() => requestAnimationFrame(() => { if (m.quick) { m.quick = false; m.back() } }))
+    }
+    projectStore.patch(id, (p) => ({ ...p, ...applyStage(p, to) }))
+    if (logActivity) logActivity({ type: 'stage', text: `pasó ${proj.name} a ${stageMeta(to).label}` })
+    setToast({ key: `${id}-${Date.now()}`, id, name: proj.name, lane, undo: prev })
+  }, [projectById, projectStore, logActivity])
+
+  const requestMove = useCallback((id, lane) => {
+    const proj = projectById.get(id)
+    const to = proj && laneDropStage(proj, lane, ctx)
+    if (!to) { reg.current.get(id)?.back(); return }
+    if (stageIsRegression(proj, to)) {
+      reg.current.get(id)?.back()
+      setAsk({ id, lane, to, name: proj.name })
+      return
+    }
+    commitMove(id, to, lane)
+  }, [projectById, ctx, commitMove])
+
+  const undoMove = useCallback(() => {
+    const t = toast
+    if (!t?.undo) return
+    setToast(null)
+    const m = reg.current.get(t.id)
+    if (m) m.quick = true
+    projectStore.patch(t.id, (p) => ({ ...p, ...t.undo }))
+    if (logActivity && t.undo.stage) logActivity({ type: 'stage', text: `devolvió ${t.name} a ${stageMeta(t.undo.stage).label}` })
+  }, [toast, projectStore, logActivity])
+  const doneToast = useCallback(() => setToast(null), [])
+
+  const fns = useRef({})
+  fns.current = { canMove, requestMove }
+
+  /*
+   * Mouse: arranca a los 5 px. Touch: hay que dejarlo apretado 260 ms, así un toque
+   * sigue abriendo la ficha. La sala se saca de la geometría (roomAt) y no de
+   * elementFromPoint: el propio pin y los vecinos tapan el piso.
+   */
+  const startDrag = useCallback((e, it, origin) => {
+    if (e.button !== 0 || !e.isPrimary || it.more || !editable) return
+    const id = it.project.id
+    const m = reg.current.get(id)
+    const layer = layerRef.current
+    if (!m || !layer) return
+    const touch = e.pointerType === 'touch'
+    const from = it.entry.lane
+    const s = { id, on: false, over: from, ok: false, x0: e.clientX, y0: e.clientY, cx: e.clientX, cy: e.clientY, timer: null, raf: 0 }
+    dragSt.current = s
+    const toScene = (cx, cy) => {
+      const r = layer.getBoundingClientRect()
+      const k = scaleRef.current
+      return { X: (cx - r.left) / k, Y: (cy - r.top) / k }
+    }
+    const g = toScene(e.clientX, e.clientY)
+    s.gx = g.X - m.x.get()
+    s.gy = g.Y - m.y.get()
+    const place = () => {
+      const p = toScene(s.cx, s.cy)
+      const fx = p.X - s.gx
+      const fy = p.Y - s.gy
+      m.x.set(fx)
+      m.y.set(fy)
+      const lane = roomAt(fx, fy)?.lane || null
+      const ok = !!lane && lane !== from && fns.current.canMove(id, lane)
+      if (lane !== s.over || ok !== s.ok) {
+        s.over = lane
+        s.ok = ok
+        setDrag((d) => (d ? { ...d, over: lane, ok } : d))
+      }
+    }
+    const tick = () => {
+      const st = stageRef.current
+      if (st && st.scrollWidth > st.clientWidth) {
+        const r = st.getBoundingClientRect()
+        const edge = 70
+        const v = s.cx < r.left + edge ? s.cx - (r.left + edge) : s.cx > r.right - edge ? s.cx - (r.right - edge) : 0
+        if (v) { st.scrollLeft += Math.max(-18, Math.min(18, v * 0.3)); place() }
+      }
+      s.raf = requestAnimationFrame(tick)
+    }
+    const begin = () => {
+      s.on = true
+      m.held = true
+      m.x.stop()
+      m.y.stop()
+      try { navigator.vibrate?.(8) } catch { /* sin vibración */ }
+      document.documentElement.classList.add('io-dragging')
+      setHover(null)
+      setDrag({ id, from, over: from, ok: false, origin })
+      place()
+      s.raf = requestAnimationFrame(tick)
+    }
+    const move = (ev) => {
+      if (ev.pointerId !== e.pointerId) return
+      s.cx = ev.clientX
+      s.cy = ev.clientY
+      if (!s.on) {
+        const d = Math.hypot(ev.clientX - s.x0, ev.clientY - s.y0)
+        if (touch) { if (d > 8) end(false); return }
+        if (d >= 5) begin()
+        return
+      }
+      ev.preventDefault()
+      place()
+    }
+    const end = (commit) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('keydown', esc, true)
+      clearTimeout(s.timer)
+      cancelAnimationFrame(s.raf)
+      if (!s.on) { dragSt.current = null; return }
+      m.held = false
+      document.documentElement.classList.remove('io-dragging')
+      setDrag(null)
+      // El click que el navegador dispara después del pointerup no tiene que abrir la ficha.
+      setTimeout(() => { if (dragSt.current === s) dragSt.current = null }, 0)
+      if (commit && s.ok) fns.current.requestMove(id, s.over)
+      else m.back()
+    }
+    const up = (ev) => { if (ev.pointerId === e.pointerId) end(true) }
+    const cancel = (ev) => { if (ev.pointerId === e.pointerId) end(false) }
+    const esc = (ev) => { if (ev.key === 'Escape' && s.on) { ev.preventDefault(); ev.stopPropagation(); end(false) } }
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('keydown', esc, true)
+    if (touch) s.timer = setTimeout(begin, 260)
+  }, [editable])
+
+  const swallowClick = useCallback((e) => { if (dragSt.current?.on) { e.preventDefault(); e.stopPropagation() } }, [])
 
   const q = search.trim().toLowerCase()
   const hits = useMemo(() => {
@@ -673,7 +1000,26 @@ export default function InsightsView({ onOpenProject }) {
 
   useEffect(() => { if (sheet?.kind === 'project' && !byId.has(sheet.id)) setSheet(null) }, [sheet, byId])
 
-  const focusLane = hover || sheetLane || null
+  useEffect(() => {
+    if (!ask) return undefined
+    const h = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); setAsk(null) } }
+    window.addEventListener('keydown', h, true)
+    return () => window.removeEventListener('keydown', h, true)
+  }, [ask])
+
+  const focusLane = drag ? null : hover || sheetLane || null
+  const dzOf = (lane) => {
+    if (!drag || lane === drag.from) return null
+    if (!canMove(drag.id, lane)) return 'no'
+    return drag.over === lane ? 'hot' : 'ok'
+  }
+  const hintOf = (id) => {
+    if (!drag || drag.id !== id) return null
+    if (drag.ok) return { ok: true, text: `Pasar a ${laneMeta(drag.over).label}`, color: `var(${laneMeta(drag.over).colorVar})` }
+    if (drag.over && drag.over !== drag.from) return { ok: false, text: 'Acá no puede ir' }
+    if (!drag.over) return { ok: false, text: 'Soltalo en una sala' }
+    return null
+  }
   const empty = board.total === 0
 
   return (
@@ -698,7 +1044,7 @@ export default function InsightsView({ onOpenProject }) {
 
       <div className="io-stage" ref={stageRef}>
         <div className="io-scaler" style={{ width: B.w * scale, height: B.h * scale }}>
-          <div className="io-scene" style={{ width: B.w, height: B.h, transform: `scale(${scale})` }} data-focus={focusLane ? '' : undefined}>
+          <div className="io-scene" style={{ width: B.w, height: B.h, transform: `scale(${scale})` }} data-focus={focusLane ? '' : undefined} data-drag={drag ? '' : undefined}>
             <svg className="io-svg" width={B.w} height={B.h} viewBox={`${-B.dx} ${-B.dy} ${B.w} ${B.h}`} aria-hidden={false}>
               <defs>
                 <linearGradient id="ioScan" x1="0" x2="1">
@@ -718,19 +1064,27 @@ export default function InsightsView({ onOpenProject }) {
               </g>
               {ROOMS.map((r, i) => (
                 <motion.g key={r.lane} initial={reduce ? false : { opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.05 + i * 0.06 }}>
-                  <Room room={r} items={lanes[r.lane]} alertLv={roomAlert(r.lane)} focus={focusLane}
+                  <Room room={r} items={lanes[r.lane]} alertLv={roomAlert(r.lane)} focus={focusLane} dz={dzOf(r.lane)}
                     onOpen={(lane) => setSheet({ kind: 'room', lane })} onHover={setHover} />
                 </motion.g>
               ))}
             </svg>
-            <div style={{ position: 'absolute', left: B.dx, top: B.dy }}>
+            <div ref={layerRef} style={{ position: 'absolute', left: B.dx, top: B.dy }}>
+              <AnimatePresence>
+                {drag?.origin && (
+                  <motion.span key="origin" className="io-origin" style={{ x: drag.origin.X, y: drag.origin.Y, '--lc': `var(${laneMeta(drag.from).colorVar})` }}
+                    initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ duration: 0.2 }} />
+                )}
+              </AnimatePresence>
               {tokens.map((t) => {
                 const it = t.item
                 const label = it.more ? `Ver los ${it.more} proyectos más de ${laneMeta(t.lane).label}` : `${it.project.name}${it.client?.company ? `, de ${it.client.company}` : ''}. ${laneMeta(t.lane).label}, ${daysText(it.entry)}${it.level ? '. Pide atención' : ''}`
-                const dim = (hits && !it.more && !hits.has(it.project.id)) || (!hits && focusLane && focusLane !== t.lane && !(sheet?.kind === 'project'))
+                const dim = !drag && ((hits && !it.more && !hits.has(it.project.id)) || (!hits && focusLane && focusLane !== t.lane && !(sheet?.kind === 'project')))
                 return (
                   <Token key={t.key} item={it} pos={t.pos} order={t.order} booted={booted} reduce={reduce} label={label}
-                    state={{ dim, sel: sheet?.kind === 'project' && sheet.id === it.project.id, hit: !!(hits && q && hits.has(it.project.id)) }}
+                    state={{ dim, sel: sheet?.kind === 'project' && sheet.id === it.project.id, hit: !!(hits && q && hits.has(it.project.id)), drag: drag?.id === it.project.id }}
+                    reg={reg} hint={hintOf(it.project.id)}
+                    grab={editable && !it.more ? { onPointerDown: (e) => startDrag(e, it, t.pos), onClickCapture: swallowClick } : null}
                     onOpen={() => (it.more ? setSheet({ kind: 'room', lane: t.lane }) : openProject(it.project.id))} />
                 )
               })}
@@ -743,7 +1097,7 @@ export default function InsightsView({ onOpenProject }) {
       <div className="io-legend">
         <span><i style={{ background: 'var(--red)' }} />Pasó un límite</span>
         <span><i style={{ background: 'var(--yellow)' }} />Conviene mirarlo</span>
-        <span>Cada sala es un tramo del recorrido: cuando un proyecto cambia de etapa, camina solo a la sala nueva. Tocá uno para ver su ficha, o una sala para ver quiénes están.</span>
+        <span>Cada sala es un tramo del recorrido: cuando un proyecto cambia de etapa, camina solo a la sala nueva. Tocá uno para ver su ficha, o una sala para ver quiénes están.{editable ? ' Para cambiarlo de etapa, agarralo y soltalo en otra sala.' : ''}</span>
       </div>
 
       <Sheet open={!!sheet && (sheet.kind === 'room' || !!selItem)} lane={sheetLane || 'mvp'} onClose={close}>
@@ -754,11 +1108,14 @@ export default function InsightsView({ onOpenProject }) {
             {selItem && (
               <ProjectSheet item={selItem} client={selItem.client} team={data.team || []} list={lanes[selItem.entry.lane]} reduce={reduce}
                 onNav={nav} onBack={sheet.from ? () => setSheet({ kind: 'room', lane: sheet.from }) : null}
+                canMove={canMove} onMove={editable ? requestMove : null}
                 onOpenFull={() => { setSheet(null); onOpenProject(selItem.project.id) }} />
             )}
           </motion.div>
         </AnimatePresence>
       </Sheet>
+      <StageAsk ask={ask} onCancel={() => setAsk(null)} onConfirm={() => { const a = ask; setAsk(null); if (a) commitMove(a.id, a.to, a.lane) }} />
+      <MoveToast toast={toast} onUndo={undoMove} onDone={doneToast} />
     </div>
   )
 }
