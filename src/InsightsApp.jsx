@@ -4570,11 +4570,11 @@ function CopyBtn({ value, title = 'Copiar' }) {
 }
 
 /* Fila de un campo del item: icono + valor (mono) + ocultar (si es secreto) + copiar */
-function VaultRow({ Ico, value, mono = true, secret = false, isLink = false }) {
+function VaultRow({ Ico, value, mono = true, secret = false, isLink = false, revelable = true }) {
   const [show, setShow] = useState(false)
   if (!value) return null
   const masked = secret && !show
-  const display = masked ? '•'.repeat(Math.min(Math.max(value.length, 6), 14)) : value
+  const display = masked ? '•'.repeat(revelable ? Math.min(Math.max(value.length, 6), 14) : 12) : value
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
       <Ico width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
@@ -4582,7 +4582,7 @@ function VaultRow({ Ico, value, mono = true, secret = false, isLink = false }) {
       {isLink && !masked && /^https?:\/\//i.test(value)
         ? <a href={value} target="_blank" rel="noreferrer" className={mono ? 'mono' : ''} style={{ flex: 1, fontSize: 12.5, color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</a>
         : <span className={mono ? 'mono' : ''} style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: masked ? 2 : 0 }}>{display}</span>}
-      {secret && <button className="btn btn-sm btn-ghost" onClick={() => setShow((s) => !s)} title={show ? 'Ocultar' : 'Mostrar'} style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}>{show ? <I2.eyeOff width={13} height={13} /> : <I2.eye width={13} height={13} />}</button>}
+      {secret && revelable && <button className="btn btn-sm btn-ghost" onClick={() => setShow((s) => !s)} title={show ? 'Ocultar' : 'Mostrar'} style={{ padding: 5, color: 'var(--text-faint)', flexShrink: 0 }}>{show ? <I2.eyeOff width={13} height={13} /> : <I2.eye width={13} height={13} />}</button>}
       <CopyBtn value={value} />
     </div>
   )
@@ -4649,13 +4649,14 @@ function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved }) {
     catch (e) { setErr('No se pudo abrir: ' + e.message) }
     setBusy(false)
   }
+  // El secreto nunca vuelve al formulario: se edita escribiendo uno nuevo (ver `save`).
   const editar = async () => {
     setBusy(true); setErr('')
     try {
-      const v = cargado ? await leer() : null
+      const v = cargado && it.tipo === 'credencial' ? await leer() : null
       onEdit({
         id: it.id, nombre: it.nombre, tipo: it.tipo, type: it.categoria || 'other', label: it.etiqueta || '',
-        username: v?.usuario || '', password: v?.clave || '', url: v?.url || '', notes: v?.notas || '', valor: v?.valor || '',
+        username: v?.usuario || '', password: '', url: v?.url || '', notes: v?.notas || '', valor: '', cargado,
       })
     } catch (e) { setErr('No se pudo abrir: ' + e.message) }
     setBusy(false)
@@ -4686,7 +4687,7 @@ function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved }) {
         {cargado
           ? <CopyRemoteBtn label="Copiar" obtener={async () => textoDeValor(await leer())} />
           : link && <CopyRemoteBtn label="Copiar link" obtener={async () => (await boveda({ ...scope, accion: 'link', link: link.id })).url} />}
-        {cargado && <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => (valor ? setValor(null) : abrir())} title={valor ? 'Ocultar' : 'Mostrar'} style={{ padding: 5, color: 'var(--text-faint)' }}>{valor ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>}
+        {cargado && it.tipo === 'credencial' && <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => (valor ? setValor(null) : abrir())} title={valor ? 'Cerrar' : 'Usuario, enlace y notas'} style={{ padding: 5, color: 'var(--text-faint)' }}><I2.chevD width={14} height={14} style={{ transform: valor ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} /></button>}
         <button className="btn btn-sm btn-ghost" disabled={busy} onClick={editar} title={cargado ? 'Editar' : 'Cargarlo yo'} style={{ padding: 5, color: 'var(--text-faint)' }}><I2.pencil width={14} height={14} /></button>
         <button className="btn btn-sm btn-ghost" disabled={busy} onClick={borrar} title="Eliminar" style={{ padding: 5, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
       </div>
@@ -4696,11 +4697,11 @@ function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved }) {
           {valor && (valor.tipo === 'credencial' ? (
             <>
               <VaultRow Ico={I2.user} value={valor.usuario} />
-              <VaultRow Ico={I2.lock} value={valor.clave} secret />
+              <VaultRow Ico={I2.lock} value={valor.clave} secret revelable={false} />
               <VaultRow Ico={I2.link} value={valor.url} isLink mono={false} />
               {valor.notas && <div style={{ display: 'flex', gap: 8, padding: '5px 0' }}><I2.comment width={13.5} height={13.5} style={{ color: 'var(--text-faint)', flexShrink: 0, marginTop: 2 }} /><span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{valor.notas}</span></div>}
             </>
-          ) : <VaultRow Ico={I2.key} value={valor.valor} secret />)}
+          ) : <VaultRow Ico={I2.key} value={valor.valor} secret revelable={false} />)}
         </div>
       )}
     </div>
@@ -4813,8 +4814,10 @@ function VaultPanel({ scope, personal = false, active = true }) {
     try {
       const base = { ...scope, accion: 'guardar', tipo: it.tipo }
       if (it.nombre) base.nombre = it.nombre
+      // Contraseña vacía al editar = se queda la que estaba: `guardar` pisa el item entero.
+      const clave = it.password || (it.id && it.cargado ? (await boveda({ ...scope, accion: 'ver', item: it.id })).valor?.clave || '' : '')
       const body = it.tipo === 'credencial'
-        ? { ...base, etiqueta: (it.label || '').trim() || vaultMeta(it.type).label, categoria: it.type, usuario: it.username, clave: it.password, url: it.url, notas: it.notes }
+        ? { ...base, etiqueta: (it.label || '').trim() || vaultMeta(it.type).label, categoria: it.type, usuario: it.username, clave, url: it.url, notas: it.notes }
         : { ...base, valor: it.valor }
       await boveda(body)
       setEditing(null)
@@ -4867,7 +4870,7 @@ function VaultPanel({ scope, personal = false, active = true }) {
                 <Field label="Usuario / correo"><input className="input mono" value={editing.username} onChange={(e) => set('username', e.target.value)} placeholder="usuario@…" autoComplete="off" style={{ fontSize: 13 }} /></Field>
                 <Field label="Contraseña">
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
+                    <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.password} onChange={(e) => set('password', e.target.value)} placeholder={editing.cargado ? 'Vacía = no cambia' : '••••••••'} autoComplete="new-password" style={{ flex: 1, fontSize: 13 }} />
                     <button className="btn btn-sm" onClick={() => setPwShow((s) => !s)} title={pwShow ? 'Ocultar' : 'Mostrar'} style={{ padding: '0 9px' }}>{pwShow ? <I2.eyeOff width={14} height={14} /> : <I2.eye width={14} height={14} />}</button>
                     <button className="btn btn-sm" onClick={() => { set('password', genPassword()); setPwShow(true) }} title="Generar contraseña segura" style={{ padding: '0 9px' }}><I2.spark width={14} height={14} /></button>
                   </div>
@@ -4880,7 +4883,7 @@ function VaultPanel({ scope, personal = false, active = true }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.4fr)', gap: 12 }}>
               <Field label="Nombre"><input className="input mono" value={editing.nombre} disabled={!!editing.id} onChange={(e) => set('nombre', aNombre(e.target.value))} placeholder="SUPABASE_URL" style={{ fontSize: 13 }} autoFocus={!editing.id} /></Field>
               <Field label="Valor">
-                <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Pegá el valor" autoComplete="new-password" style={{ fontSize: 13 }} autoFocus={!!editing.id} />
+                <input className="input mono" type={pwShow ? 'text' : 'password'} value={editing.valor} onChange={(e) => set('valor', e.target.value)} placeholder={editing.cargado ? 'Pegá el valor nuevo' : 'Pegá el valor'} autoComplete="new-password" style={{ fontSize: 13 }} autoFocus={!!editing.id} />
               </Field>
             </div>
           )}
