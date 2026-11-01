@@ -1,5 +1,10 @@
 # PROGRESS — app-proyectos
 
+## 2026-10-31 · Pestaña INSIGHTS: la oficina isométrica (pedido de Manuel)
+- Primera entrada del sidebar. Cada sala es un tramo del Recorrido (`journeyLane`, mismos umbrales que guarda el Recorrido en este navegador) y cada proyecto de cliente es una ficha que, cuando cambia de etapa por realtime, camina sola a la sala nueva (misma `key`, spring de framer).
+- Tocar un proyecto abre la ficha en un panel lateral, sin navegar; "Abrir el proyecto completo" es la única salida al detalle. Tocar una sala lista quiénes están.
+- SVG + HTML, sin Three.js: la geometría está en `src/insights/iso.js` (puro) y la vista en `src/insights/InsightsView.jsx`. Más de 12 proyectos en una sala se muestran 11 + "+N".
+
 ## 2026-10-30 · Recorrido: ramas Partners y Plan anual (call del 30/10, pedido de Fede)
 - Etapas nuevas `anual` y `partner` (grupo "Acuerdos") y tramos del Recorrido con el mismo nombre. No tocan el lifecycle ni el cobro mensual (el aviso de cobro se oculta en esas etapas). Sin migración: `stage` es texto y los datos van en el JSON del proyecto (`annual.startAt`, `partner.{pct,note}`).
 - Lógica en `src/lib/agreements.js`. Plan anual: cuenta los días que quedan del año desde `annual.startAt` (editable en el panel del Recorrido; por defecto, el día en que entra a la rama) y alerta con `annualWarnDays` (60) y `annualCritDays` (15) en Umbrales.
