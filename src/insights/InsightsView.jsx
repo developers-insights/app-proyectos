@@ -845,8 +845,8 @@ export default function InsightsView({ onOpenProject }) {
   fns.current = { canMove, requestMove }
 
   /*
-   * Mouse: arranca a los 5 px. Touch: hay que dejarlo apretado 260 ms, así un toque
-   * sigue abriendo la ficha. La sala se saca de la geometría (roomAt) y no de
+   * Mouse: se levanta al moverlo 5 px o al dejarlo apretado 240 ms. Touch: sólo
+   * apretado 260 ms, así un toque sigue abriendo la ficha y deslizar no lo agarra. La sala se saca de la geometría (roomAt) y no de
    * elementFromPoint: el propio pin y los vecinos tapan el piso.
    */
   const startDrag = useCallback((e, it, origin) => {
@@ -910,7 +910,7 @@ export default function InsightsView({ onOpenProject }) {
       if (!s.on) {
         const d = Math.hypot(ev.clientX - s.x0, ev.clientY - s.y0)
         if (touch) { if (d > 8) end(false); return }
-        if (d >= 5) begin()
+        if (d >= 5) { clearTimeout(s.timer); begin() }
         return
       }
       ev.preventDefault()
@@ -939,7 +939,7 @@ export default function InsightsView({ onOpenProject }) {
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', cancel)
     window.addEventListener('keydown', esc, true)
-    if (touch) s.timer = setTimeout(begin, 260)
+    s.timer = setTimeout(begin, touch ? 260 : 240)
   }, [editable])
 
   const swallowClick = useCallback((e) => { if (dragSt.current?.on) { e.preventDefault(); e.stopPropagation() } }, [])
