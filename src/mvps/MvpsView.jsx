@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useApp, Modal, Field, stagger, rise } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
-import { mvpDemoUrl, mvpRepoUrl, safeUrl, isNewMvp, suggestProjectsForMvp, suggestMvpsForProject } from '../lib/mvps.js'
+import { mvpDemoUrl, mvpRepoUrl, safeUrl, isNewMvp, suggestProjectsForMvp, suggestMvpsForProject, generadorDe, capturaMovil } from '../lib/mvps.js'
 
 const MVP_CSS = `
 .mv-list{display:flex;flex-direction:column;gap:8px}
@@ -43,12 +43,25 @@ const MVP_CSS = `
 .mv-pick .sc{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--green);flex:none}
 .mv-pick .sub{font-size:11.5px;color:var(--text-faint)}
 .mv-sync{font-size:12px;color:var(--text-faint)}
+.mv-row[data-cap="1"]{grid-template-columns:auto minmax(0,1fr) auto}
+.mv-cap{position:relative;display:block;flex:none;width:44px;height:84px;border-radius:10px;overflow:hidden;background:var(--bg-elevated);
+  transition:transform .24s var(--e)}
+.mv-cap:active{transform:scale(.97)}
+.mv-cap img{display:block;width:100%;height:100%;object-fit:cover;object-position:top center}
+.mv-cap::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 0 0 1px var(--border);
+  transition:box-shadow .24s var(--e)}
+.mv-cap:hover::after{box-shadow:inset 0 0 0 1px var(--border-strong)}
+.mv-gen{display:inline-block;min-width:0;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:600;
+  padding:2px 9px;border-radius:999px;color:var(--text-dim);background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border)}
+.mv-mt a.mv-prop{font-family:inherit;font-weight:600}
 @media (max-width:720px){
   .mv-view{padding:20px 16px 48px !important}
   .mv-view .pj-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}
   .mv-view .pj-seg::-webkit-scrollbar{display:none}
   .mv-view .pj-bar .pj-search{max-width:none;flex-basis:100%}
   .mv-row{grid-template-columns:1fr}
+  .mv-row[data-cap="1"]{grid-template-columns:auto minmax(0,1fr)}
+  .mv-row[data-cap="1"] .mv-act{grid-column:1 / -1}
   .mv-act{justify-content:flex-start}
   .mv-act .mv-demo,.mv-act .mv-link{flex:1;justify-content:center}
 }
@@ -166,12 +179,22 @@ function EditMvpModal({ mvp, onClose, onSave }) {
 function MvpRow({ m, project, onOpenProject, onLink, onUnlink, onEdit, onStatus }) {
   const demo = mvpDemoUrl(m)
   const off = m.status === 'descartado'
+  const gen = generadorDe(m)
+  const cap = capturaMovil(m)
+  const [capFalla, setCapFalla] = useState('')
+  const verCap = !!cap && capFalla !== cap
   return (
-    <motion.div variants={rise} className="mv-row" data-off={off ? '1' : '0'}>
+    <motion.div variants={rise} className="mv-row" data-off={off ? '1' : '0'} data-cap={verCap ? '1' : '0'}>
+      {verCap && (
+        <a className="mv-cap" href={cap} target="_blank" rel="noreferrer" title="Abrir la captura en celular" aria-label={`Captura en celular de ${m.title}`}>
+          <img src={cap} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setCapFalla(cap)} />
+        </a>
+      )}
       <div style={{ minWidth: 0 }}>
         <div className="mv-hd">
           <span className="mv-tt" title={m.title}>{m.title}</span>
           {isNewMvp(m) && <span className="mv-new">Nuevo</span>}
+          {gen && <span className="mv-gen" title={gen.closer.email || undefined}>{gen.closer.nombre ? `Generado · ${gen.closer.nombre}` : 'Generado'}</span>}
           {m.demoSuspended && !m.demoUrlManual && <span className="tag" style={{ fontSize: 10.5, color: 'var(--yellow)', borderColor: 'var(--border)' }}
             title="La demo existe pero alguien la pausó en Render: el link abre una página de servicio suspendido hasta que la reactiven">Pausada en Render</span>}
         </div>
@@ -180,6 +203,7 @@ function MvpRow({ m, project, onOpenProject, onLink, onUnlink, onEdit, onStatus 
           {m.fullName
             ? <a href={mvpRepoUrl(m) || undefined} target="_blank" rel="noreferrer" title="Abrir el repo en GitHub"><I2.github width={12} height={12} />{m.fullName}</a>
             : <span>cargada a mano</span>}
+          {gen?.propuesta.url && <a className="mv-prop" href={gen.propuesta.url} target="_blank" rel="noreferrer" title="Abrir la propuesta"><I2.doc width={12} height={12} />Ver propuesta</a>}
           <span>creado {ago(m.repoCreatedAt)}</span>
         </div>
       </div>

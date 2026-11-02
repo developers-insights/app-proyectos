@@ -18,6 +18,8 @@ export function mvpMatchScore(mvp, project, company = '') {
   return Math.min(1, p * 0.85 + c * 0.15 + (p === 1 ? 0.15 : 0))
 }
 
+// useRowCollection escribe de vuelta lo que devuelve esto en cada edición: lo que no copie (origen, generador y
+// evidencia, que sólo llena la RPC mvp_generador_guardar) se borra del servidor con la primera nota o vínculo.
 export const normalizeMvp = (m) => ({
   ...m,
   title: m.title || m.repo || 'MVP',
@@ -43,6 +45,27 @@ export function safeUrl(u) {
 
 export const mvpDemoUrl = (m) => (m && (safeUrl(m.demoUrlManual) || safeUrl(m.demoUrl))) || ''
 export const mvpRepoUrl = (m) => (m && safeUrl(m.repoUrl)) || ''
+
+const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {})
+const txt = (v) => (typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '')
+
+export const esGenerado = (m) => !!m && m.origen === 'generador'
+
+export function generadorDe(m) {
+  if (!esGenerado(m)) return null
+  const g = obj(m.generador)
+  const closer = obj(g.closer)
+  const propuesta = obj(g.propuesta)
+  const email = txt(closer.email)
+  return {
+    closer: { nombre: txt(closer.nombre) || email.split('@')[0], email },
+    propuesta: { id: txt(propuesta.id), slug: txt(propuesta.slug), url: safeUrl(propuesta.url) },
+    mvpId: txt(g.mvpId),
+    panelUrl: safeUrl(g.panelUrl),
+  }
+}
+
+export const capturaMovil = (m) => (esGenerado(m) ? safeUrl(obj(m.evidencia).movil) : '')
 
 export const isNewMvp = (m, days = 7) =>
   m.status !== 'descartado' && !m.projectId && !!m.repoCreatedAt &&
