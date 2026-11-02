@@ -22,14 +22,27 @@ const MIN = 60000
 const HOUR = 3600000
 const DAY = 86400000
 
-/* Espejo de bot_fede/src/lib/dias-habiles.ts: el umbral del bot no cuenta sábados ni domingos (hora AR, UTC-3 fijo). Si cambia allá, cambia acá. */
+/* Espejo de bot_fede/src/lib/dias-habiles.ts: el umbral del bot no cuenta sábados ni domingos (hora AR, del tzdata, sin offset fijo). Si cambia allá, cambia acá. */
+const fmtAR = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Argentina/Buenos_Aires', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+})
+const paredAR = (t) => {
+  const p = {}
+  for (const x of fmtAR.formatToParts(new Date(t))) p[x.type] = x.value
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second)
+}
+const offsetAR = (t) => Math.round((paredAR(t) - t) / MIN) * MIN
+const proximaMedianocheAR = (t) => {
+  const dia = (Math.floor(paredAR(t) / DAY) + 1) * DAY
+  return dia - offsetAR(dia - offsetAR(dia))
+}
 const msHabiles = (desde, hasta) => {
-  let cur = desde - 3 * HOUR
-  const fin = hasta - 3 * HOUR
+  let cur = desde
   let total = 0
-  while (cur < fin) {
-    const tramoFin = Math.min((Math.floor(cur / DAY) + 1) * DAY, fin)
-    const dow = new Date(cur).getUTCDay()
+  while (cur < hasta) {
+    const tramoFin = Math.min(proximaMedianocheAR(cur), hasta)
+    const dow = new Date(Math.floor(paredAR(cur) / DAY) * DAY).getUTCDay()
     if (dow !== 0 && dow !== 6) total += tramoFin - cur
     cur = tramoFin
   }
