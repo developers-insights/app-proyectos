@@ -339,6 +339,12 @@ export const I2 = {
       <rect x="7" y="13" width="8" height="5" rx="1" fill="currentColor" stroke="none"/>
     </svg>
   ),
+  rec: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={W} strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <rect x="2.5" y="6" width="13" height="12" rx="2.5" fill="currentColor" opacity=".18" stroke="none"/>
+      <rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.5 21 7.5v9l-5.5-3"/><circle cx="7" cy="10.5" r="1.4" fill="currentColor" stroke="none"/>
+    </svg>
+  ),
   film: (p) => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={W} strokeLinecap="round" strokeLinejoin="round" {...p}>
       <rect x="3" y="4" width="18" height="16" rx="2" fill="currentColor" opacity=".18" stroke="none"/>

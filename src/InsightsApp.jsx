@@ -68,6 +68,7 @@ import InsightsView, { InsightsIcon } from './insights/InsightsView.jsx'
 const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || 'https://yzmtzyuncekspgtsetwk.supabase.co'
 const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '' // ← pegá acá tu publishable key (sb_publishable_…) y el login funciona sin tocar Render
 const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY) : null
+const FALSO_LOOM_URL = import.meta.env.VITE_FALSO_LOOM_URL || 'https://videos.insightsapps.tech'
 const cloudEnabled = !!supabase
 /* versión de la app — bumpeá esto en cada release para que se vea en el botón "Actualizar" */
 const APP_VERSION = '1.1.0'
@@ -8538,11 +8539,13 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
   ]
   const tools = meCollab ? [
     { key: 'planner', label: 'Planificador', icon: I2.calendar },
+    { key: 'falso-loom', label: 'Falso Loom', icon: I2.rec, external: true, href: FALSO_LOOM_URL, sso: true },
   ] : [
     { key: 'planner', label: 'Planificador', icon: I2.calendar },
     { key: 'bot', label: 'Bot', icon: I2.whatsapp },
     { key: 'editor', label: 'Editor', icon: I2.film },
     { key: 'carousel', label: 'Carrusel', icon: I2.layers },
+    { key: 'falso-loom', label: 'Falso Loom', icon: I2.rec, external: true, href: FALSO_LOOM_URL, sso: true },
   ]
   const toolsActive = tools.some((t) => route.view === t.key)
   const [hovered, setHovered] = useState(false)
@@ -8560,6 +8563,16 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
   const toggleTools = () => setToolsOpen((v) => !v)
   const goTool = (t) => {
     setToolsOpen(false)
+    if (t.external && t.sso && supabase) {
+      // La pestaña se abre en el mismo gesto del click (si se abre después del await, el navegador la bloquea como popup).
+      const w = window.open('about:blank', '_blank')
+      supabase.auth.getSession().then(({ data }) => {
+        const s = data?.session
+        const url = s ? `${t.href}/auth/handoff#access_token=${encodeURIComponent(s.access_token)}&refresh_token=${encodeURIComponent(s.refresh_token)}` : t.href
+        if (w) { w.opener = null; w.location.href = url } else window.open(url, '_blank', 'noopener,noreferrer')
+      })
+      return
+    }
     if (t.external) { window.open(t.href, '_blank', 'noopener,noreferrer'); return }
     go(t.key)
   }
