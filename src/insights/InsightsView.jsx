@@ -1,3 +1,4 @@
+import { PanelNotes } from '../notes/ServiceNotes.jsx'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from 'framer-motion'
@@ -568,6 +569,11 @@ function ProjectSheet({ item, client, team, list, onNav, onBack, onOpenFull, red
             </div>
           </div>
         )}
+
+        <div className="io-sec">
+          <div className="io-k">Notas</div>
+          <PanelNotes project={p} />
+        </div>
 
         {desc && (
           <div className="io-sec"><div className="io-k">De qué se trata</div><div className="io-desc">{desc.length > 420 ? `${desc.slice(0, 420)}…` : desc}</div></div>

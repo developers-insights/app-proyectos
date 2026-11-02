@@ -10,6 +10,7 @@ import { normalizeLifecycle, daysBetween } from '../lib/lifecycle.js'
 import { openCloserNotes } from '../lib/closerNotes.js'
 import { fmtDay, toDateInput, fromDateInput } from '../lib/stores.js'
 import { annualInfo, setAnnualStart, normalizePartner, setPartner, PARTNER_NOTE_MAX } from '../lib/agreements.js'
+import { PanelNotes } from '../notes/ServiceNotes.jsx'
 import { ClientMark, dayCell, daysText, plural } from './parts.jsx'
 
 const CSS = `
@@ -340,6 +341,11 @@ function ProjectBody({ item, clientOf, onAnotar, onSaveNote, onSaveAgreement, ca
           </div>
         </section>
       )}
+
+      <section className="jp-sec">
+        <div className="jp-k">Notas</div>
+        <PanelNotes project={p} />
+      </section>
 
       {entry.lane === 'standby' && (
         <section className="jp-sec">
