@@ -55,6 +55,7 @@ import SurveyAdmin from './survey/SurveyAdmin.jsx'
 import SurveyPage from './survey/SurveyPage.jsx'
 import RecorridoView, { UpsellModal, UpsellPanel } from './journey/RecorridoView.jsx'
 import { CloserNotesPanel } from './journey/CloserNotes.jsx'
+import ClarityControl from './journey/ClarityControl.jsx'
 import { NotesView, ProjectNotesBlock } from './notes/ServiceNotes.jsx'
 import { useServiceNotes } from './notes/useServiceNotes.js'
 import { normalizeMvp, mvpDemoUrl, mvpRepoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
@@ -7204,6 +7205,8 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
           </div>
         </div>
 
+        <ClarityControl project={project} patch={patch} />
+
         {/* TIRA DE STATS — las 4 métricas del plan + el último avance, que en el
             detalle sí se usa (abre el registro de avance). Un solo bloque:
             antes eran cuatro cajas sueltas compitiendo con su propio marco. */}
@@ -9539,7 +9542,7 @@ function AppShell({ session, onLogout }) {
   }
 
   return (
-    <AppCtx.Provider value={{ data: dataView, myId, logActivity, supabase, botComms, serviceNoteStore, ...planStore, ...taskStore, ...collectionStores }}>
+    <AppCtx.Provider value={{ data: dataView, myId, sessionEmail: session?.user?.email || '', logActivity, supabase, botComms, serviceNoteStore, ...planStore, ...taskStore, ...collectionStores }}>
       {gate === 'loading' ? <AccessLoading onLogout={onLogout} />
         : gate === 'revoked' ? <AccessRevoked onLogout={onLogout} />
         : gate === 'pending' ? <PendingApproval me={me} onLogout={onLogout} />
