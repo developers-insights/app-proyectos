@@ -7,10 +7,11 @@
 -- Ausente y false cuentan como lo mismo en data->'clarity'; el resto de data no se mira, así que
 -- guardar cualquier otro campo del proyecto sigue andando para todo el equipo.
 --
--- Cuidado con una pestaña vieja: el guardado de la app escribe el `data` entero. Si Manuel prende
--- Clarity y otro compañero guarda desde una copia anterior al cambio, ese guardado vuelve a mandar
--- clarity en su valor viejo y este candado lo rechaza (42501). Realtime mantiene las copias al día,
--- así que es raro, pero es el costo de rechazar en vez de pisar en silencio.
+-- Un UPDATE de otra sesión no se rechaza: se le devuelve a clarity/clarityAt (y a clarity_instancia)
+-- el valor que ya tenían. El guardado de la app escribe el `data` entero con debounce y sin avisar si
+-- falla: una pestaña vieja de un compañero que mandara clarity en su valor anterior perdería todo su
+-- guardado con un 42501 mudo. Así su cambio entra y la marca de Manuel queda intacta. Un INSERT nuevo
+-- que trae clarity sí se rechaza (42501): ahí no hay valor viejo que conservar.
 --
 -- Mismo mail que src/lib/clarity.js (CLARITY_ADMIN_EMAIL).
 
@@ -32,6 +33,12 @@ begin
 
   if tg_op = 'UPDATE' then
     v_viejo := coalesce(old.data->>'clarity', 'false');
+    if v_nuevo is distinct from v_viejo
+       or (new.data->'clarityAt') is distinct from (old.data->'clarityAt') then
+      new.data := (new.data - 'clarity' - 'clarityAt')
+                  || jsonb_strip_nulls(jsonb_build_object('clarity', old.data->'clarity', 'clarityAt', old.data->'clarityAt'));
+    end if;
+    return new;
   else
     -- INSERT ... ON CONFLICT DO UPDATE dispara este trigger antes de saber que la fila existe: si
     -- existe, lo juzga el trigger de UPDATE que viene después.
@@ -66,7 +73,11 @@ begin
   if lower(coalesce(auth.jwt()->>'email', '')) = 'manuelnavarro@insightsapps.tech' then
     return new;
   end if;
-  if new.clarity_instancia is distinct from (case when tg_op = 'UPDATE' then old.clarity_instancia else null end) then
+  if tg_op = 'UPDATE' then
+    new.clarity_instancia := old.clarity_instancia;
+    return new;
+  end if;
+  if new.clarity_instancia is not null then
     raise exception 'El número que contesta en Clarity lo cambia sólo manuelnavarro@insightsapps.tech'
       using errcode = '42501', hint = 'wa_groups.clarity_instancia';
   end if;
