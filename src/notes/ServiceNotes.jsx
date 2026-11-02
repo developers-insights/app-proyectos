@@ -150,13 +150,27 @@ const CSS = `
 .sn-off{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;margin-bottom:12px;font-size:13px;color:var(--text);
   background:var(--red-soft);box-shadow:inset 0 0 0 1px var(--border)}
 
-.sn-toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));z-index:60;display:flex;align-items:center;gap:12px;
+.sn-toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));z-index:90;display:flex;align-items:center;gap:12px;
   padding:8px 8px 8px 16px;border-radius:999px;background:var(--text);color:var(--bg);font-size:13.5px;font-weight:550;
   box-shadow:0 18px 40px -18px rgba(0,0,0,.55);max-width:calc(100vw - 32px)}
 .sn-toast button{height:34px;padding:0 14px;border-radius:999px;font-weight:700;font-size:13px;background:var(--bg);color:var(--text)}
 
 .sn-block{margin:0 0 26px}
 .sn-block .sn-comp{margin-bottom:12px}
+.sn-panel{margin:0}
+.sn-panel .sn-comp{margin-top:10px}
+.sn-add{display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 12px;border-radius:12px;font-size:13px;font-weight:600;color:var(--text-dim);
+  background:var(--card);box-shadow:inset 0 0 0 1px var(--border);transition:color .18s,box-shadow .18s,transform .16s}
+.sn-add:hover{color:var(--text);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.sn-add:active{transform:scale(.985)}
+.sn-add:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sn-add .pl{display:grid;place-items:center;width:20px;height:20px;border-radius:6px;background:var(--card-hover);transition:transform .22s cubic-bezier(.22,1,.36,1)}
+.sn-add[aria-expanded="true"] .pl{transform:rotate(45deg)}
+.sn-add .dr{margin-left:auto;font-size:11px;font-weight:500;color:var(--yellow)}
+.sn-panel .sn-notes{margin-top:10px}
+.sn-panel .sn-empty{margin:10px 0 0;font-size:12.5px;line-height:1.5;color:var(--text-faint)}
+.sn-panel .sn-expand{margin-top:6px}
+@media (prefers-reduced-motion: reduce){.sn-add:active{transform:none}.sn-add .pl{transition:none}}
 .sn-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 `
 
@@ -744,5 +758,54 @@ export function ProjectNotesBlock({ project, onOpenAll }) {
       {top.length > 0 && <NoteList notes={top} project={project} actions={actions} query="" onDeleted={del} who={who} />}
       {toastEl}
     </section>
+  )
+}
+
+/*
+ * Versión compacta para los paneles del recorrido y de la oficina. Usa el mismo
+ * store y las mismas notas que el bloque del detalle del proyecto: lo que se anota
+ * acá aparece allá y al revés, con el mismo borrador, edición, fijado y deshacer.
+ */
+export function PanelNotes({ project }) {
+  const actions = useNoteActions(project)
+  const [toast, toastEl] = useUndoToast()
+  const who = useWho()
+  const reduce = useReducedMotion()
+  const { serviceNoteStore: store } = useApp()
+  const all = notesOfProject(store.items, project.id)
+  const hasDraft = useMemo(() => { const d = readDraft(project.id); return !!(d && (String(d.text || '').trim() || Object.keys(d.answers || {}).length)) }, [project.id])
+  const [adding, setAdding] = useState(hasDraft)
+  const [more, setMore] = useState(false)
+  useEffect(() => { setAdding(hasDraft); setMore(false) }, [project.id])
+  const shown = more ? all : all.slice(0, 3)
+  const del = (n) => { actions.remove(n.id); toast('Borraste la nota', () => actions.restore(n.id)) }
+  return (
+    <div className="sn-block sn-panel">
+      <style>{CSS}</style>
+      <SaveError />
+      <button type="button" className="sn-add" aria-expanded={adding} onClick={() => setAdding((v) => !v)}>
+        <span className="pl" aria-hidden="true"><I2.plus width={12} height={12} /></span>
+        {adding ? 'Cerrar' : `Anotar algo de ${project.name}`}
+        {!adding && hasDraft && <span className="dr">Borrador</span>}
+      </button>
+      <AnimatePresence initial={false}>
+        {adding && (
+          <motion.div key="comp" style={{ overflow: 'hidden' }}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }} animate={reduce ? { opacity: 1 } : { opacity: 1, height: 'auto' }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }} transition={{ duration: .24, ease: [.22, 1, .36, 1] }}>
+            <Composer key={project.id} project={project} actions={actions} onSaved={() => setAdding(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {all.length === 0
+        ? !adding && <p className="sn-empty">Todavía no hay notas. Lo que anotes acá también se ve en el detalle del proyecto.</p>
+        : <NoteList notes={shown} project={project} actions={actions} query="" onDeleted={del} who={who} />}
+      {all.length > 3 && (
+        <button type="button" className="sn-link sn-expand" aria-expanded={more} onClick={() => setMore((v) => !v)}>
+          {more ? 'Ver menos' : `Ver las ${all.length} notas`}
+        </button>
+      )}
+      {toastEl}
+    </div>
   )
 }
