@@ -8,6 +8,7 @@
  *   Onboarding  → vendido pero el desarrollo todavía no arrancó: el contador no corre
  *   Desarrollo  → se está construyendo (el MVP que vendió el closer)
  *   Fase 2      → venta nueva de ticket alto sobre el mismo cliente: otro desarrollo
+ *   Nuevo sistema → se le vendió otro sistema a un cliente que ya tenemos
  *   Free Maint. → mantenimiento sin cargo (la prueba gratis)
  *   Plan mensual → mantenimiento pago (un solo plan, US$97)
  *
@@ -31,7 +32,8 @@ export const PROJECT_STAGES = [
   // lo pone en cero y pasar a Desarrollo lo arranca desde ese momento.
   { key: 'onboarding', label: 'Onboarding',  group: 'obra',          phase: 1, colorVar: '--text-dim', hint: 'Todavía no arrancó el desarrollo', waiting: true },
   { key: 'desarrollo', label: 'Desarrollo',  group: 'obra',          phase: 1, colorVar: '--accent', hint: 'Se está construyendo' },
-  { key: 'fase2',      label: 'Fase 2',      group: 'obra',          phase: 1, colorVar: '--violet', hint: 'Venta nueva sobre el mismo cliente' },
+  { key: 'fase2',      label: 'Fase 2',      group: 'obra',          phase: 1, colorVar: '--violet', hint: 'Venta nueva sobre el mismo cliente', resale: { lead: 'La Fase 2 es un desarrollo nuevo', upsell: 'la Fase 2' } },
+  { key: 'nuevo',      label: 'Nuevo sistema', group: 'obra',        phase: 1, colorVar: '--pink',   hint: 'Otro sistema para un cliente que ya tenemos', resale: { lead: 'Un sistema nuevo es otro desarrollo', upsell: 'el sistema nuevo' } },
   { key: 'free',       label: 'Free Maint.', group: 'mantenimiento', phase: 2, colorVar: '--blue',   hint: 'Mantenimiento sin cargo' },
   { key: 'plan',       label: 'Plan mensual', group: 'mantenimiento', phase: 3, colorVar: '--green',  hint: 'US$97 por mes' },
   // Ramas de acuerdo (call del 30/10): no cobran el plan mensual, así que no tocan el
@@ -103,9 +105,9 @@ export function applyStage(project, key, now = new Date()) {
     return { stage: meta.key, stageAt, ...(meta.key === 'anual' ? { annual: { ...(project && project.annual), startAt: annualStart({ annual: project && project.annual, stageAt }) } } : {}) }
   }
   const lifecycle = advancePhase(project, meta.phase, now)
-  if (meta.key === 'fase2') {
+  if (meta.resale) {
     const prev = normalizeLifecycle(project).devAt
-    return { stage: meta.key, stageAt, lifecycle: { ...lifecycle, devAt: current === 'fase2' && prev ? prev : stamp } }
+    return { stage: meta.key, stageAt, lifecycle: { ...lifecycle, devAt: current === meta.key && prev ? prev : stamp } }
   }
   if (meta.key === 'onboarding') return { stage: meta.key, stageAt, lifecycle: { ...lifecycle, startedAt: current === 'onboarding' ? lifecycle.startedAt : stamp, devAt: null } }
   // Salir de Onboarding es el arranque real del desarrollo: el contador nace acá.

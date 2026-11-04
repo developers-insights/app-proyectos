@@ -1,5 +1,12 @@
 # PROGRESS — app-proyectos
 
+## 2026-11-03 · Oficina con salas móviles, zoom y Nuevo sistema (pedido de Manuel)
+- Cada sala se arrastra como en Miro: mouse a los 5 px, touch apretando 260 ms (si el dedo se desliza antes, es pan). Va pegada al puntero con sus proyectos, un recuadro punteado marca la baldosa libre donde cae (`freeSpot`: entera y con 1 de separación, nunca dos salas encimadas) y Escape la devuelve. Flechas con la sala enfocada también la mueven. La posición va en `localStorage` (`ip.oficina.salas`), por navegador, igual que el lienzo del Recorrido; "Ordenar" vuelve al original.
+- Cámara en `src/insights/useViewport.js`: ruedita y pinch hacen zoom hacia el cursor, el fondo se arrastra, botones Ajustar y 100 %. Todo en motion values: un render de la vista por wheel se nota. El zoom interpola k, x e y con el mismo factor para que el punto bajo el cursor no se corra.
+- Las salas se dibujan en el origen y las mueve `RoomSpot`. Los pasillos ya no son polígonos fijos: `route`/`corridor` en `iso.js` los recalculan (recto si se enfrentan, una curva si no) y `paintLinks` escribe `points` a mano: si fuera un prop de React saltarían a su forma final un cuadro antes del resorte.
+- Etapa y tramo `nuevo` ("Nuevo sistema", grupo En obra, `--pink`), en la Oficina y en el Recorrido: funciona como Fase 2 (`resale` en stages.js: sella `devAt`, cuenta sus días, pide confirmación si el proyecto venía cobrando) y es también oferta de Upsell. Sin migración: `stage` es texto.
+- Tocados: stages.js, journey.js, iso.js, InsightsView, useViewport (nuevo), RecorridoCanvas/View, ProjectPanel, InsightsApp. `tests/oficina.test.js`.
+
 ## 2026-10-31 · Pestaña INSIGHTS: la oficina isométrica (pedido de Manuel)
 - Primera entrada del sidebar. Cada sala es un tramo del Recorrido (`journeyLane`, mismos umbrales que guarda el Recorrido en este navegador) y cada proyecto de cliente es una ficha que, cuando cambia de etapa por realtime, camina sola a la sala nueva (misma `key`, spring de framer).
 - Tocar un proyecto abre la ficha en un panel lateral, sin navegar; "Abrir el proyecto completo" es la única salida al detalle. Tocar una sala lista quiénes están.

@@ -65,7 +65,7 @@ const CSS = `
 .jp-dl dt{color:var(--text-dim)}
 .jp-dl dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 .jp-dl dd small{color:var(--text-faint);font-size:11.5px}
-.jp-up{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.jp-up{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px}
 .jp-up > div{padding:10px 11px;border-radius:12px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border)}
 .jp-up .t{font-size:11.5px;color:var(--text-faint)}
 .jp-up .v{margin-top:5px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:650}
@@ -263,7 +263,7 @@ function UpsellBox({ project, onAnotar }) {
   }
   return (
     <>
-      <div className="jp-up">{card('plan')}{card('fase2')}</div>
+      <div className="jp-up">{card('plan')}{card('fase2')}{card('nuevo')}</div>
       {lastNote && <div className="jp-q"><q>{lastNote.note}</q></div>}
       {st.objections && <div className="jp-q">Objeción del onboarding: <q>{st.objections}</q></div>}
       <button type="button" className="jp-act" onClick={() => onAnotar(project.id)}>
@@ -298,7 +298,7 @@ function ProjectBody({ item, clientOf, onAnotar, onSaveNote, onSaveAgreement, ca
   const cell = entry.lane ? dayCell(entry) : null
   const notes = openCloserNotes(p)
   const who = (id) => (data.team || []).find((u) => u.id === id)?.name || 'Alguien'
-  const showPct = entry.pct != null && ['onboarding', 'mvp', 'fase2'].includes(entry.lane)
+  const showPct = entry.pct != null && ['onboarding', 'mvp', 'fase2', 'nuevo'].includes(entry.lane)
   return (
     <>
       {lm && (

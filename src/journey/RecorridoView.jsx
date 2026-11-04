@@ -77,6 +77,7 @@ button.jr-kpi:active{transform:scale(.97)}
 .jr-chip{--cc:var(--accent);flex:none;display:inline-flex;align-items:center;height:16px;padding:0 6px;border-radius:999px;font-size:9.5px;font-weight:650;letter-spacing:.01em;
   color:var(--cc);background:color-mix(in srgb,var(--cc) 11%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cc) 32%,transparent)}
 .jr-chip[data-o="fase2"]{--cc:var(--violet)}
+.jr-chip[data-o="nuevo"]{--cc:var(--pink)}
 .jr-chip[data-o="plan"]{--cc:var(--green)}
 .jr-chip[data-s="acepta"]{background:color-mix(in srgb,var(--cc) 20%,transparent)}
 .jr-pt .jr-sub{font-size:10.5px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -747,6 +748,7 @@ export function UpsellModal({ open, project, onClose }) {
         <div className="up-states">
           <StateCard k="plan" />
           <StateCard k="fase2" />
+          <StateCard k="nuevo" />
         </div>
 
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -855,7 +857,7 @@ export function UpsellPanel({ project, onOpen }) {
     <div className="up-panel">
       <style>{JR_CSS}</style>
       <span className="pd-eyebrow">Upsell</span>
-      <div className="its">{item('plan')}{item('fase2')}</div>
+      <div className="its">{item('plan')}{item('fase2')}{item('nuevo')}</div>
       <button className="jr-act" onClick={onOpen}><I2.pencil width={13} height={13} /> {st.entries.length ? 'Ver y anotar' : 'Anotar oferta'}</button>
       {(lastNote || st.objections) && (
         <div className="ob">
