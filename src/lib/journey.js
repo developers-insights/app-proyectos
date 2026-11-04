@@ -20,6 +20,7 @@ export const JOURNEY_LANES = [
   { key: 'plan', label: 'Plan mensual', colorVar: '--green', branch: true },
   { key: 'anual', label: 'Plan anual', colorVar: '--green', branch: true },
   { key: 'fase2', label: 'Fase 2', colorVar: '--violet', branch: true },
+  { key: 'nuevo', label: 'Nuevo sistema', colorVar: '--pink', branch: true },
   { key: 'standby', label: 'Stand-by', colorVar: '--yellow', branch: true },
   { key: 'partner', label: 'Partners', colorVar: '--accent', branch: true },
 ]
@@ -72,6 +73,7 @@ export function journeyLane(project) {
   if (stage === 'onboarding') return 'onboarding'
   if (stage === 'pausado' || stage === 'finalizado') return 'standby'
   if (stage === 'fase2') return 'fase2'
+  if (stage === 'nuevo') return 'nuevo'
   if (stage === 'anual') return 'anual'
   if (stage === 'partner') return 'partner'
   if (stage === 'free') return 'prueba'
@@ -83,7 +85,7 @@ export function journeyLane(project) {
  * Etapa que se le pone a un proyecto al soltarlo en un tramo. Stand-by entra como
  * Pausado: Finalizado se elige desde el proyecto. null = no cambia nada.
  */
-const LANE_STAGE = { onboarding: 'onboarding', mvp: 'desarrollo', prueba: 'free', fase2: 'fase2', plan: 'plan', anual: 'anual', partner: 'partner', standby: 'pausado' }
+const LANE_STAGE = { onboarding: 'onboarding', mvp: 'desarrollo', prueba: 'free', fase2: 'fase2', nuevo: 'nuevo', plan: 'plan', anual: 'anual', partner: 'partner', standby: 'pausado' }
 
 export function laneDropStage(project, lane, ctx) {
   const to = LANE_STAGE[lane]
@@ -115,8 +117,8 @@ export function journeyEntry(project, ctx, now = new Date(), thresholds) {
 
   if (lane === 'onboarding') {
     entry = { ...base, since: since(project.stageAt || lc.startedAt), days: elapsed(project.stageAt || lc.startedAt) }
-  } else if (lane === 'mvp' || lane === 'fase2') {
-    const anchor = lane === 'fase2' ? (lc.devAt || project.stageAt || lc.startedAt) : (lc.devAt || lc.startedAt)
+  } else if (lane === 'mvp' || lane === 'fase2' || lane === 'nuevo') {
+    const anchor = lane !== 'mvp' ? (lc.devAt || project.stageAt || lc.startedAt) : (lc.devAt || lc.startedAt)
     entry = { ...base, since: since(anchor), days: elapsed(anchor), limit: t.devMaxDays }
   } else if (lane === 'prueba') {
     const info = phaseInfo(project, now)
@@ -138,8 +140,8 @@ export function journeyEntry(project, ctx, now = new Date(), thresholds) {
 function journeyAlerts(project, entry, now, t) {
   const out = []
   const { lane, days, remaining, pct } = entry
-  const inDev = lane === 'mvp' || lane === 'fase2'
-  const what = lane === 'fase2' ? 'Fase 2' : 'desarrollo'
+  const inDev = lane === 'mvp' || lane === 'fase2' || lane === 'nuevo'
+  const what = lane === 'mvp' ? 'desarrollo' : laneMeta(lane).label
 
   if (inDev && days != null) {
     if (days > t.devMaxDays) {
@@ -181,6 +183,7 @@ export const alertLevel = (alerts) => (alerts.some((a) => a.level === 'crit') ? 
 export const UPSELL_OFFERS = [
   { key: 'plan', label: 'Plan mensual' },
   { key: 'fase2', label: 'Fase 2' },
+  { key: 'nuevo', label: 'Nuevo sistema' },
 ]
 
 export const UPSELL_STATUS = [
@@ -228,7 +231,7 @@ export function normalizeUpsell(project) {
 export function upsellState(project) {
   const u = normalizeUpsell(project)
   const latest = (k) => u.entries.find((e) => e.offer === k) || null
-  return { plan: latest('plan'), fase2: latest('fase2'), objections: u.objections, entries: u.entries }
+  return { plan: latest('plan'), fase2: latest('fase2'), nuevo: latest('nuevo'), objections: u.objections, entries: u.entries }
 }
 
 const newId = () => `up-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
@@ -345,14 +348,20 @@ export function journeyBoard(projects, ctx, now = new Date(), thresholds) {
  * marca roja más por card ensucia el mapa. Si el proyecto ya está en el tramo de
  * esa oferta, la marca sobra.
  */
+const BADGE = {
+  fase2: { offered: 'F2 ofrecida', closed: 'F2 aceptada' },
+  nuevo: { offered: 'Sistema ofrecido', closed: 'Sistema aceptado' },
+  plan: { offered: 'Plan ofrecido', closed: 'Plan aceptado' },
+}
+
 export function upsellBadges(project, lane) {
   const up = upsellState(project)
   const out = []
-  for (const k of ['fase2', 'plan']) {
+  for (const k of ['fase2', 'nuevo', 'plan']) {
     const e = up[k]
     if (!e || lane === k) continue
-    if (e.status === 'ofrecido') out.push({ offer: k, status: 'ofrecido', label: k === 'fase2' ? 'F2 ofrecida' : 'Plan ofrecido', entry: e })
-    else if (CLOSED.has(e.status)) out.push({ offer: k, status: 'acepta', label: k === 'fase2' ? 'F2 aceptada' : 'Plan aceptado', entry: e })
+    if (e.status === 'ofrecido') out.push({ offer: k, status: 'ofrecido', label: BADGE[k].offered, entry: e })
+    else if (CLOSED.has(e.status)) out.push({ offer: k, status: 'acepta', label: BADGE[k].closed, entry: e })
   }
   return out
 }
@@ -407,7 +416,7 @@ export function laneNodeHeight(items, laneKey, cap = LANE_CAP) {
 
 /*
  * Izquierda a derecha como el recorrido real: Onboarding → MVP → 30 días → Fase 2
- * arriba y Plan mensual, Plan anual y Partners apilados debajo. Stand-by cuelga debajo de 30 días (se sale del
+ * arriba y Nuevo sistema, Plan mensual, Plan anual y Partners apilados debajo. Stand-by cuelga debajo de 30 días (se sale del
  * camino) en vez de apilarse con los otros dos: así el lienzo queda más ancho que
  * alto y entra con un zoom legible en una notebook. Fase 2 a la altura del flujo
  * principal deja que la conexión punteada desde MVP pase por arriba de 30 días.
@@ -422,9 +431,10 @@ export function canvasLayout(board) {
     mvp: { x: col(1), y: 0 },
     prueba: { x: col(2), y: 0 },
     fase2: { x: col(3), y: 0 },
-    plan: { x: col(3), y: h('fase2') + C.rowGap },
-    anual: { x: col(3), y: h('fase2') + h('plan') + C.rowGap * 2 },
-    partner: { x: col(3), y: h('fase2') + h('plan') + h('anual') + C.rowGap * 3 },
+    nuevo: { x: col(3), y: h('fase2') + C.rowGap },
+    plan: { x: col(3), y: h('fase2') + h('nuevo') + C.rowGap * 2 },
+    anual: { x: col(3), y: h('fase2') + h('nuevo') + h('plan') + C.rowGap * 3 },
+    partner: { x: col(3), y: h('fase2') + h('nuevo') + h('plan') + h('anual') + C.rowGap * 4 },
     standby: { x: col(2), y: h('prueba') + C.rowGap },
   }
 }

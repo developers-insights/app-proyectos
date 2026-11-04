@@ -1,7 +1,7 @@
 import { PanelNotes } from '../notes/ServiceNotes.jsx'
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from 'framer-motion'
+import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useSpring, useTransform, useVelocity } from 'framer-motion'
 import { useApp } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
 import { journeyBoard, laneMeta, normalizeThresholds, DEFAULT_THRESHOLDS, upsellBadges, laneAverage, laneDropStage, JOURNEY_LANES } from '../lib/journey.js'
@@ -12,17 +12,20 @@ import { visibleProjects } from '../lib/visibility.js'
 import { planBoardSummary } from '../plan/planModel.js'
 import { projectProgress } from '../lib/progress.js'
 import { initials, dayCell, daysText, plural } from '../journey/parts.jsx'
-import { ROOMS, ROOM, WALL, U, LINKS, LANE_PATH, SLOTS_PER_ROOM, iso, pts, corridor, isoBox, slotPos, sceneBounds, roomOf, roomAt } from './iso.js'
+import { ROOMS, ROOM, WALL, U, LINKS, LANE_PATH, SLOTS_PER_ROOM, CORRIDOR, iso, unIso, pts, corridor, footprint, isoBox, slotPos, sceneBounds, roomAt, layoutRooms, freeSpot } from './iso.js'
+import { useViewport } from './useViewport.js'
 
-const B = sceneBounds()
-const MIN_SCALE = 0.62
+const ROOMS_KEY = 'ip.oficina.salas'
+const LIFT = 14
+const readRooms = () => { try { return JSON.parse(localStorage.getItem(ROOMS_KEY) || 'null') } catch { return null } }
+const writeRooms = (v) => { try { v ? localStorage.setItem(ROOMS_KEY, JSON.stringify(v)) : localStorage.removeItem(ROOMS_KEY) } catch { /* sin storage queda en memoria */ } }
 
 /* Mismos umbrales que el Recorrido: los guarda esa pantalla en este navegador. */
 function readThresholds() {
   try { return normalizeThresholds(JSON.parse(localStorage.getItem('ip.recorrido.umbrales') || 'null')) } catch { return { ...DEFAULT_THRESHOLDS } }
 }
 
-const OBRA = ['onboarding', 'mvp', 'fase2']
+const OBRA = ['onboarding', 'mvp', 'fase2', 'nuevo']
 const MANT = ['prueba', 'plan', 'anual', 'partner']
 const PRIO = { alta: { label: 'Alta', c: 'var(--red)' }, normal: { label: 'Normal', c: 'var(--yellow)' }, baja: { label: 'Baja', c: 'var(--blue)' } }
 
@@ -58,7 +61,7 @@ button.io-kpi[aria-pressed="true"]{color:var(--text);background:var(--red-soft);
   border:none;box-shadow:inset 0 0 0 1px var(--border);outline:none;transition:box-shadow .2s var(--e)}
 .io-search input:focus{box-shadow:inset 0 0 0 1px var(--accent-line),0 0 0 4px var(--accent-soft)}
 
-.io-stage{position:relative;border-radius:26px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;
+.io-stage{position:relative;height:clamp(460px,calc(100dvh - 176px),920px);border-radius:26px;overflow:clip;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;
   background:
     radial-gradient(60% 55% at 50% 42%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 70%),
     radial-gradient(40% 40% at 85% 90%,color-mix(in srgb,var(--violet) 7%,transparent),transparent 70%),
@@ -66,11 +69,24 @@ button.io-kpi[aria-pressed="true"]{color:var(--text);background:var(--red-soft);
   box-shadow:inset 0 0 0 1px var(--border),var(--shadow)}
 .io-stage::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
   background:radial-gradient(120% 90% at 50% 50%,transparent 55%,color-mix(in srgb,var(--bg) 70%,transparent));z-index:3}
-.io-scaler{position:relative;margin:0 auto}
-.io-scene{position:absolute;left:0;top:0;transform-origin:0 0}
+.io-scene{position:absolute;left:0;top:0;width:0;height:0;transform-origin:0 0}
 .io-svg{position:absolute;left:0;top:0;overflow:visible}
+.io-ctl{position:absolute;z-index:4;display:flex;align-items:center;gap:2px;padding:3px;border-radius:12px;cursor:default;background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border),var(--shadow)}
+.io-ctl[data-at="bl"]{left:12px;bottom:12px}
+.io-ctl[data-at="tr"]{right:12px;top:12px}
+.io-tb{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:32px;height:32px;padding:0 9px;border-radius:9px;font-size:12px;font-weight:600;color:var(--text-dim);
+  transition:color .18s var(--e),background .18s var(--e),transform .14s var(--e)}
+.io-tb:hover:not(:disabled){color:var(--text);background:var(--card-hover)}
+.io-tb:active:not(:disabled){transform:scale(.96)}
+.io-tb:disabled{opacity:.4;cursor:default}
+.io-tb:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.io-pct{min-width:48px;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11.5px}
+.io-tip{position:absolute;z-index:4;left:18px;top:16px;font-size:11.5px;color:var(--text-faint);pointer-events:none}
 
-.io-room{--lc:var(--accent);cursor:pointer;transition:opacity .35s var(--e)}
+.io-room{--lc:var(--accent);cursor:grab;transition:opacity .35s var(--e)}
+.io-room[data-lift] .io-floor{stroke:var(--lc);stroke-width:1.8}
+.io-land{--lc:var(--accent);fill:color-mix(in srgb,var(--lc) 10%,transparent);stroke:color-mix(in srgb,var(--lc) 60%,transparent);stroke-width:1.5;stroke-dasharray:6 6;opacity:0;pointer-events:none;transition:opacity .16s var(--e)}
+.io-land[data-on]{opacity:1}
 .io-scene[data-focus] .io-room:not([data-on]){opacity:.38}
 .io-room:focus{outline:none}
 .io-floor{fill:color-mix(in srgb,var(--lc) 6%,var(--card));stroke:color-mix(in srgb,var(--lc) 26%,var(--border));stroke-width:1;transition:fill .3s var(--e)}
@@ -101,7 +117,8 @@ button.io-kpi[aria-pressed="true"]{color:var(--text);background:var(--red-soft);
 .io-beacon-r{fill:none;stroke:var(--red);stroke-width:1.5;transform-box:fill-box;transform-origin:center;animation:ioBeacon 1.8s ease-out infinite}
 @keyframes ioBeacon{0%{transform:scale(.5);opacity:1}100%{transform:scale(2.6);opacity:0}}
 
-.io-cor{fill:color-mix(in srgb,var(--text) 3.5%,transparent);stroke:var(--border);stroke-width:1}
+.io-cor-b{fill:none;stroke:var(--border);stroke-width:${(CORRIDOR + 2).toFixed(1)};stroke-linejoin:miter}
+.io-cor{fill:none;stroke:color-mix(in srgb,var(--text) 3.5%,var(--bg-elevated));stroke-width:${CORRIDOR.toFixed(1)};stroke-linejoin:miter}
 .io-flow{fill:none;stroke:var(--accent-line);stroke-width:1.6;stroke-dasharray:2 9;stroke-linecap:round;animation:ioFlow 1.6s linear infinite}
 @keyframes ioFlow{to{stroke-dashoffset:-22}}
 
@@ -283,6 +300,8 @@ html.io-dragging,html.io-dragging *{cursor:grabbing!important;user-select:none!i
 
 @media (max-width:720px){
   .io{padding:20px 14px 40px}
+  .io-tip{display:none}
+  .io-stage{height:min(62dvh,520px)}
   .io-title h1{font-size:28px}
   .io-sheet{top:auto;left:8px;right:8px;bottom:8px;width:auto;height:min(86vh,760px)}
   .io-team{grid-template-columns:1fr}
@@ -294,8 +313,10 @@ html.io-dragging,html.io-dragging *{cursor:grabbing!important;user-select:none!i
 
 /* ─── Escena ──────────────────────────────────────────────────────────────── */
 
-function Room({ room, items, alertLv, focus, dz, onOpen, onHover }) {
-  const { ox, oy, meta } = room
+function Room({ room, items, alertLv, focus, dz, lift, onOpen, onHover, onNudge }) {
+  const { meta } = room
+  const ox = 0
+  const oy = 0
   const n = items.length
   const avg = laneAverage(items)
   const floor = pts(iso(ox, oy), iso(ox + ROOM, oy), iso(ox + ROOM, oy + ROOM), iso(ox, oy + ROOM))
@@ -313,11 +334,15 @@ function Room({ room, items, alertLv, focus, dz, onOpen, onHover }) {
   const plant = { p: isoBox(ox + ROOM - 0.9, oy + 0.4, 0, 0.5, 0.5, 0.45), l: isoBox(ox + ROOM - 0.98, oy + 0.32, 0.45, 0.66, 0.66, 0.5) }
   const beacon = iso(ox + ROOM - 0.25, oy, WALL + 0.25)
   const label = `${meta.label}: ${plural(n, 'proyecto', 'proyectos')}`
-  const busy = (room.lane === 'mvp' || room.lane === 'fase2') && n > 0
+  const busy = (room.lane === 'mvp' || room.lane === 'fase2' || room.lane === 'nuevo') && n > 0
   return (
-    <g className="io-room" style={{ '--lc': `var(${meta.colorVar})` }} data-on={focus === room.lane ? '' : undefined} data-busy={busy ? '' : undefined} data-dz={dz || undefined}
-      role="button" tabIndex={0} aria-label={label}
-      onClick={() => onOpen(room.lane)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(room.lane) } }}
+    <g className="io-room" style={{ '--lc': `var(${meta.colorVar})` }} data-on={focus === room.lane ? '' : undefined} data-busy={busy ? '' : undefined} data-dz={dz || undefined} data-lift={lift ? '' : undefined} data-lane={room.lane}
+      role="button" tabIndex={0} aria-label={label} aria-description="Enter abre la sala. Las flechas la mueven."
+      onClick={() => onOpen(room.lane)} onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(room.lane); return }
+        const step = ARROWS[e.key]
+        if (step) { e.preventDefault(); onNudge(room.lane, step[0], step[1]) }
+      }}
       onMouseEnter={() => onHover(room.lane)} onMouseLeave={() => onHover(null)} onFocus={() => onHover(room.lane)} onBlur={() => onHover(null)}>
       <polygon className="io-floor" points={floor} />
       <path className="io-grid" d={grid.join('')} />
@@ -356,12 +381,49 @@ function Room({ room, items, alertLv, focus, dz, onOpen, onHover }) {
 
 const HINTS = {
   onboarding: 'todavía no arrancó', mvp: 'construyendo el MVP', prueba: 'probando gratis',
-  plan: 'pagan US$97 por mes', fase2: 'segundo desarrollo', anual: 'un año de servicio',
+  plan: 'pagan US$97 por mes', fase2: 'segundo desarrollo', nuevo: 'otro sistema, mismo cliente', anual: 'un año de servicio',
   partner: 'a cambio de un porcentaje', standby: 'en pausa o terminados',
 }
 const laneHint = (k) => HINTS[k] || ''
 
 const SETTLE = { type: 'spring', stiffness: 380, damping: 27 }
+
+/* Una flecha mueve la sala en la dirección que se ve en pantalla, no por los ejes del mundo. */
+const ARROWS = { ArrowRight: [1, -1], ArrowLeft: [-1, 1], ArrowUp: [-1, -1], ArrowDown: [1, 1] }
+
+/*
+ * La sala se dibuja en el origen y esto la lleva a su lugar. Es un motion value por la
+ * misma razón que Token, y porque los pasillos la siguen cuadro a cuadro desde `onMove`:
+ * también durante el resorte, cuando React ya no se entera.
+ */
+function RoomSpot({ room, reduce, reg, onMove, children }) {
+  const pos = iso(room.ox, room.oy)
+  const x = useMotionValue(pos.X)
+  const y = useMotionValue(pos.Y)
+  const posRef = useRef(pos)
+  posRef.current = pos
+  const self = useRef(null)
+  if (!self.current) {
+    self.current = {
+      x, y, held: false,
+      back() { animate(x, posRef.current.X, reduce ? { duration: 0 } : SETTLE); animate(y, posRef.current.Y, reduce ? { duration: 0 } : SETTLE) },
+    }
+  }
+  useEffect(() => {
+    reg.current.set(room.lane, self.current)
+    return () => { reg.current.delete(room.lane) }
+  }, [room.lane, reg])
+  useEffect(() => {
+    if (self.current.held) return undefined
+    if (reduce) { x.set(pos.X); y.set(pos.Y); return undefined }
+    const ax = animate(x, pos.X, SETTLE)
+    const ay = animate(y, pos.Y, SETTLE)
+    return () => { ax.stop(); ay.stop() }
+  }, [pos.X, pos.Y, reduce])
+  useMotionValueEvent(x, 'change', () => onMove(room.lane))
+  useMotionValueEvent(y, 'change', () => onMove(room.lane))
+  return <motion.g style={{ x, y }}>{children}</motion.g>
+}
 
 /*
  * La posición vive en motion values y no en `animate`: el arrastre la escribe en cada
@@ -389,10 +451,9 @@ function Token({ item, pos, order, booted, reduce, state, onOpen, label, reg, gr
   }
 
   useEffect(() => {
-    if (item.more) return undefined
     reg.current.set(p.id, self.current)
     return () => { if (reg.current.get(p.id) === self.current) reg.current.delete(p.id) }
-  }, [p.id, item.more, reg])
+  }, [p.id, reg])
 
   useEffect(() => {
     const s = self.current
@@ -409,7 +470,7 @@ function Token({ item, pos, order, booted, reduce, state, onOpen, label, reg, gr
 
   return (
     <motion.button type="button" className={`io-tk${item.more ? ' io-more' : ''}`}
-      style={{ x, y, '--lc': lc, '--bd': `${-((order * 0.61) % 4.2).toFixed(2)}s`, zIndex: state.drag ? 9999 : Math.round(pos.depth * 10) }}
+      style={{ x, y, '--lc': lc, '--bd': `${-((order * 0.61) % 4.2).toFixed(2)}s`, zIndex: state.drag ? 9999 : Math.round(pos.depth * 10) + (state.lift ? 5000 : 0) }}
       initial={reduce ? false : { opacity: 0 }} animate={{ opacity: 1 }}
       transition={reduce ? { duration: 0 } : { duration: 0.3, delay: booted ? 0 : 0.35 + order * 0.035 }}
       data-dim={state.dim ? '' : undefined} data-sel={state.sel ? '' : undefined} data-hit={state.hit ? '' : undefined} data-drag={state.drag ? '' : undefined}
@@ -686,7 +747,7 @@ function Sheet({ open, lane, children, onClose }) {
 function StageAsk({ ask, onCancel, onConfirm }) {
   const reduce = useReducedMotion()
   const meta = ask ? stageMeta(ask.to) : null
-  const f2 = meta?.key === 'fase2'
+  const f2 = meta?.resale
   const verb = meta ? (f2 ? `Pasar a ${meta.label}` : `Volver a ${meta.label}`) : ''
   return createPortal(
     <AnimatePresence>
@@ -699,7 +760,7 @@ function StageAsk({ ask, onCancel, onConfirm }) {
           <div className="sub">{ask.name}</div>
           <div className="w">
             {f2
-              ? <>La Fase 2 es un desarrollo nuevo: <b>deja de contar el cobro del plan</b> y se pierde el día en que arrancó. Si el cliente sigue pagando el mantenimiento aparte, dejalo en su plan y anotá la Fase 2 en Upsell.</>
+              ? <>{f2.lead}: <b>deja de contar el cobro del plan</b> y se pierde el día en que arrancó. Si el cliente sigue pagando el mantenimiento aparte, dejalo en su plan y anotá {f2.upsell} en Upsell.</>
               : <>Volver atrás <b>borra las fechas de las etapas siguientes</b>. Si el proyecto estaba en un plan pago, deja de contar el cobro y se pierde el día en que arrancó.</>}
           </div>
           <div className="act">
@@ -746,34 +807,53 @@ export default function InsightsView({ onOpenProject }) {
   const [onlyAlerts, setOnlyAlerts] = useState(false)
   const [sheet, setSheet] = useState(null)
   const [booted, setBooted] = useState(false)
-  const [scale, setScale] = useState(1)
+  const [hint, setHint] = useState(true)
+  const [saved, setSaved] = useState(readRooms)
+  const rooms = useMemo(() => layoutRooms(saved), [saved])
+  const roomsRef = useRef(rooms)
+  roomsRef.current = rooms
+  const boundsRef = useRef(sceneBounds(rooms))
+  boundsRef.current = sceneBounds(rooms)
   const stageRef = useRef(null)
   const layerRef = useRef(null)
   const reg = useRef(new Map())
   const dragSt = useRef(null)
-  const scaleRef = useRef(scale)
-  scaleRef.current = scale
+  const fx = useRef(new Map())
+  const corEls = useRef(new Map())
+  const landRef = useRef(null)
+  const armed = useRef(null)
+  const quiet = useRef(false)
+  const tokensRef = useRef([])
+  const hideHint = useCallback(() => setHint(false), [])
+  const view = useViewport(stageRef, boundsRef, reduce, hideHint)
   const [drag, setDrag] = useState(null)
+  const [liftLane, setLiftLane] = useState(null)
   const [ask, setAsk] = useState(null)
   const [toast, setToast] = useState(null)
   const now = useMemo(() => new Date(), [])
   const thresholds = useMemo(readThresholds, [])
 
   useEffect(() => { const t = setTimeout(() => setBooted(true), 1800); return () => clearTimeout(t) }, [])
-  useLayoutEffect(() => {
-    const el = stageRef.current
-    if (!el) return
-    const fit = () => {
-      const availH = Math.max(440, window.innerHeight - el.getBoundingClientRect().top - 56)
-      setScale(Math.max(MIN_SCALE, Math.min(1.18, (el.clientWidth - 8) / B.w, availH / B.h)))
+
+  /* El pasillo no pasa por React: si `points` fuera un prop, al soltar saltaría a su forma final un cuadro antes del resorte. */
+  const paintLinks = useCallback((lane) => {
+    const live = (k) => {
+      const m = fx.current.get(k)
+      if (!m) return roomsRef.current.find((r) => r.lane === k)
+      const w = unIso(m.x.get(), m.y.get())
+      return { ox: w.x, oy: w.y }
     }
-    fit()
-    requestAnimationFrame(() => { if (el.scrollWidth > el.clientWidth) el.scrollLeft = (el.scrollWidth - el.clientWidth) * 0.42 })
-    const ro = new ResizeObserver(fit)
-    ro.observe(el)
-    window.addEventListener('resize', fit)
-    return () => { ro.disconnect(); window.removeEventListener('resize', fit) }
+    for (const [a, b] of LINKS) {
+      if (lane && a !== lane && b !== lane) continue
+      const g = corEls.current.get(`${a}-${b}`)
+      if (!g) continue
+      const c = corridor(live(a), live(b))
+      g.children[0].setAttribute('points', c.floor)
+      g.children[1].setAttribute('points', c.floor)
+      g.children[2].setAttribute('points', c.flow)
+    }
   }, [])
+  useEffect(() => { paintLinks(null) }, [paintLinks])
 
   const me = useMemo(() => (data.team || []).find((u) => u.id === myId) || null, [data.team, myId])
   const universe = useMemo(() => visibleProjects(data.projects || [], me), [data.projects, me])
@@ -855,6 +935,162 @@ export default function InsightsView({ onOpenProject }) {
    * apretado 260 ms, así un toque sigue abriendo la ficha y deslizar no lo agarra. La sala se saca de la geometría (roomAt) y no de
    * elementFromPoint: el propio pin y los vecinos tapan el piso.
    */
+  const toScene = useCallback((cx, cy) => {
+    const r = layerRef.current.getBoundingClientRect()
+    const k = view.k.get()
+    return { X: (cx - r.left) / k, Y: (cy - r.top) / k }
+  }, [view])
+
+  /* El click que sigue a soltar un arrastre no tiene que abrir nada. */
+  const mute = useCallback(() => { quiet.current = true; setTimeout(() => { quiet.current = false }, 60) }, [])
+
+  const placeRoom = useCallback((lane, spot) => {
+    for (const t of tokensRef.current) {
+      if (t.lane === lane) { const m = reg.current.get(t.key); if (m) m.quick = true }
+    }
+    setSaved((s) => {
+      const next = { ...(s && typeof s === 'object' ? s : {}), [lane]: spot }
+      writeRooms(next)
+      return next
+    })
+  }, [])
+
+  const nudgeRoom = useCallback((lane, dx, dy) => {
+    const r = roomsRef.current.find((x) => x.lane === lane)
+    const spot = freeSpot(roomsRef.current, lane, r.ox + dx, r.oy + dy)
+    if (spot.ox !== r.ox || spot.oy !== r.oy) placeRoom(lane, spot)
+  }, [placeRoom])
+
+  /*
+   * Mismo gesto que un pin: el mouse la levanta a los 5 px; el touch, apretando 260 ms,
+   * y si el dedo se desliza antes es un pan. La sala va pegada al puntero y sus proyectos
+   * con ella; el recuadro punteado marca la baldosa libre donde va a caer.
+   */
+  const startRoomDrag = useCallback((e, lane) => {
+    const m = fx.current.get(lane)
+    if (!m || !layerRef.current) return
+    const touch = e.pointerType === 'touch'
+    const s = { on: false, x0: e.clientX, y0: e.clientY, cx: e.clientX, cy: e.clientY, timer: null, raf: 0, lift: 0, spot: null, cell: '', crew: [] }
+    const g = toScene(e.clientX, e.clientY)
+    s.gx = g.X - m.x.get()
+    s.gy = g.Y - m.y.get()
+    const sx = m.x.get()
+    const sy = m.y.get()
+    const place = () => {
+      const p = toScene(s.cx, s.cy)
+      const fX = p.X - s.gx
+      const fY = p.Y - s.gy
+      m.x.set(fX)
+      m.y.set(fY - s.lift)
+      for (const c of s.crew) { c.m.x.set(c.x + fX - sx); c.m.y.set(c.y + fY - s.lift - sy) }
+      const w = unIso(fX, fY)
+      const cell = `${Math.round(w.x)},${Math.round(w.y)}`
+      if (cell !== s.cell) {
+        s.cell = cell
+        s.spot = freeSpot(roomsRef.current, lane, w.x, w.y)
+        landRef.current?.setAttribute('points', footprint(s.spot.ox, s.spot.oy))
+      }
+    }
+    const tick = () => {
+      s.lift += (reduce ? LIFT : (LIFT - s.lift) * 0.22)
+      view.edgePan(s.cx, s.cy)
+      place()
+      s.raf = requestAnimationFrame(tick)
+    }
+    const begin = () => {
+      s.on = true
+      armed.current = null
+      m.held = true
+      m.x.stop()
+      m.y.stop()
+      s.crew = tokensRef.current.filter((t) => t.lane === lane).map((t) => reg.current.get(t.key)).filter(Boolean).map((tm) => {
+        tm.held = true
+        tm.x.stop()
+        tm.y.stop()
+        return { m: tm, x: tm.x.get(), y: tm.y.get() }
+      })
+      try { navigator.vibrate?.(8) } catch { /* sin vibración */ }
+      document.documentElement.classList.add('io-dragging')
+      setHover(null)
+      hideHint()
+      setLiftLane(lane)
+      const land = landRef.current
+      if (land) { land.style.setProperty('--lc', `var(${laneMeta(lane).colorVar})`); land.setAttribute('data-on', '') }
+      place()
+      s.raf = requestAnimationFrame(tick)
+    }
+    const move = (ev) => {
+      if (ev.pointerId !== e.pointerId) return
+      s.cx = ev.clientX
+      s.cy = ev.clientY
+      if (s.on) { ev.preventDefault(); return }
+      const d = Math.hypot(ev.clientX - s.x0, ev.clientY - s.y0)
+      if (touch) { if (d > 8) { end(false); view.panFrom(e.pointerId, ev.clientX, ev.clientY) } return }
+      if (d >= 5) begin()
+    }
+    const end = (commit) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('keydown', esc, true)
+      clearTimeout(s.timer)
+      cancelAnimationFrame(s.raf)
+      armed.current = null
+      if (!s.on) return
+      m.held = false
+      for (const c of s.crew) c.m.held = false
+      document.documentElement.classList.remove('io-dragging')
+      landRef.current?.removeAttribute('data-on')
+      setLiftLane(null)
+      mute()
+      const r = roomsRef.current.find((x) => x.lane === lane)
+      if (commit && s.spot && (s.spot.ox !== r.ox || s.spot.oy !== r.oy)) { placeRoom(lane, s.spot); return }
+      m.back()
+      for (const c of s.crew) c.m.back()
+    }
+    const up = (ev) => { if (ev.pointerId === e.pointerId) end(true) }
+    const cancel = (ev) => { if (ev.pointerId === e.pointerId) end(false) }
+    const esc = (ev) => { if (ev.key === 'Escape' && s.on) { ev.preventDefault(); ev.stopPropagation(); end(false) } }
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('keydown', esc, true)
+    if (touch) {
+      s.timer = setTimeout(begin, 260)
+      armed.current = () => { end(false); view.panFrom(e.pointerId, s.cx, s.cy, (moved) => { if (moved) mute() }) }
+    }
+  }, [view, toScene, reduce, hideHint, mute, placeRoom])
+
+  const onStageDown = useCallback((e) => {
+    if (e.target.closest('.io-ctl')) return
+    if (e.pointerType === 'touch' && view.touchCount() > 1) { armed.current?.(); return }
+    if (e.target.closest('.io-tk')) return
+    if (e.button === 1) { e.preventDefault(); view.panFrom(e.pointerId, e.clientX, e.clientY); return }
+    if (e.button !== 0 || !e.isPrimary) return
+    const lane = e.target.closest('.io-room')?.dataset.lane
+    if (lane) startRoomDrag(e, lane)
+    else view.panFrom(e.pointerId, e.clientX, e.clientY, (moved) => { if (moved) mute() })
+  }, [view, startRoomDrag, mute])
+
+  const swallowStage = useCallback((e) => { if (quiet.current) { e.preventDefault(); e.stopPropagation() } }, [])
+
+  /* overflow:clip no scrollea: con Tab hay que llevar la cámara hasta lo enfocado. */
+  const onStageFocus = useCallback((e) => {
+    if (!e.target.matches(':focus-visible') || e.target.closest('.io-ctl')) return
+    const b = stageRef.current.getBoundingClientRect()
+    const r = e.target.getBoundingClientRect()
+    if (r.left < b.left + 8 || r.right > b.right - 8 || r.top < b.top + 8 || r.bottom > b.bottom - 8) view.center(r.left + r.width / 2, r.top + r.height / 2)
+  }, [view])
+
+  const relayout = useCallback(() => {
+    for (const t of tokensRef.current) {
+      if (saved?.[t.lane]) { const m = reg.current.get(t.key); if (m) m.quick = true }
+    }
+    writeRooms(null)
+    setSaved(null)
+    view.fit(sceneBounds(ROOMS))
+  }, [saved, view])
+
   const startDrag = useCallback((e, it, origin) => {
     if (e.button !== 0 || !e.isPrimary || it.more || !editable) return
     const id = it.project.id
@@ -865,11 +1101,6 @@ export default function InsightsView({ onOpenProject }) {
     const from = it.entry.lane
     const s = { id, on: false, over: from, ok: false, x0: e.clientX, y0: e.clientY, cx: e.clientX, cy: e.clientY, timer: null, raf: 0 }
     dragSt.current = s
-    const toScene = (cx, cy) => {
-      const r = layer.getBoundingClientRect()
-      const k = scaleRef.current
-      return { X: (cx - r.left) / k, Y: (cy - r.top) / k }
-    }
     const g = toScene(e.clientX, e.clientY)
     s.gx = g.X - m.x.get()
     s.gy = g.Y - m.y.get()
@@ -879,7 +1110,7 @@ export default function InsightsView({ onOpenProject }) {
       const fy = p.Y - s.gy
       m.x.set(fx)
       m.y.set(fy)
-      const lane = roomAt(fx, fy)?.lane || null
+      const lane = roomAt(fx, fy, roomsRef.current)?.lane || null
       const ok = !!lane && lane !== from && fns.current.canMove(id, lane)
       if (lane !== s.over || ok !== s.ok) {
         s.over = lane
@@ -888,23 +1119,19 @@ export default function InsightsView({ onOpenProject }) {
       }
     }
     const tick = () => {
-      const st = stageRef.current
-      if (st && st.scrollWidth > st.clientWidth) {
-        const r = st.getBoundingClientRect()
-        const edge = 70
-        const v = s.cx < r.left + edge ? s.cx - (r.left + edge) : s.cx > r.right - edge ? s.cx - (r.right - edge) : 0
-        if (v) { st.scrollLeft += Math.max(-18, Math.min(18, v * 0.3)); place() }
-      }
+      if (view.edgePan(s.cx, s.cy)) place()
       s.raf = requestAnimationFrame(tick)
     }
     const begin = () => {
       s.on = true
+      armed.current = null
       m.held = true
       m.x.stop()
       m.y.stop()
       try { navigator.vibrate?.(8) } catch { /* sin vibración */ }
       document.documentElement.classList.add('io-dragging')
       setHover(null)
+      hideHint()
       setDrag({ id, from, over: from, ok: false, origin })
       place()
       s.raf = requestAnimationFrame(tick)
@@ -915,7 +1142,7 @@ export default function InsightsView({ onOpenProject }) {
       s.cy = ev.clientY
       if (!s.on) {
         const d = Math.hypot(ev.clientX - s.x0, ev.clientY - s.y0)
-        if (touch) { if (d > 8) end(false); return }
+        if (touch) { if (d > 8) { end(false); view.panFrom(e.pointerId, ev.clientX, ev.clientY) } return }
         if (d >= 5) { clearTimeout(s.timer); begin() }
         return
       }
@@ -929,6 +1156,7 @@ export default function InsightsView({ onOpenProject }) {
       window.removeEventListener('keydown', esc, true)
       clearTimeout(s.timer)
       cancelAnimationFrame(s.raf)
+      armed.current = null
       if (!s.on) { dragSt.current = null; return }
       m.held = false
       document.documentElement.classList.remove('io-dragging')
@@ -946,7 +1174,8 @@ export default function InsightsView({ onOpenProject }) {
     window.addEventListener('pointercancel', cancel)
     window.addEventListener('keydown', esc, true)
     s.timer = setTimeout(begin, touch ? 260 : 240)
-  }, [editable])
+    if (touch) armed.current = () => { end(false); view.panFrom(e.pointerId, s.cx, s.cy) }
+  }, [editable, view, toScene, hideHint])
 
   const swallowClick = useCallback((e) => { if (dragSt.current?.on) { e.preventDefault(); e.stopPropagation() } }, [])
 
@@ -964,7 +1193,7 @@ export default function InsightsView({ onOpenProject }) {
   const tokens = useMemo(() => {
     const out = []
     let order = 0
-    for (const r of ROOMS) {
+    for (const r of rooms) {
       let list = lanes[r.lane]
       if (hits) list = [...list].sort((a, b) => Number(hits.has(b.project.id)) - Number(hits.has(a.project.id)))
       const over = list.length > SLOTS_PER_ROOM
@@ -973,7 +1202,18 @@ export default function InsightsView({ onOpenProject }) {
       if (over) out.push({ key: `more-${r.lane}`, item: { project: { id: `more-${r.lane}`, name: '' }, entry: { lane: r.lane, alerts: [] }, more: list.length - shown.length }, pos: slotPos(r, SLOTS_PER_ROOM - 1), order: order++, lane: r.lane })
     }
     return out
-  }, [lanes, hits])
+  }, [lanes, hits, rooms])
+  tokensRef.current = tokens
+
+  const searched = useRef(false)
+  useEffect(() => {
+    if (!searched.current) { searched.current = true; return undefined }
+    const t = setTimeout(() => {
+      const hit = q && hits ? roomsRef.current.filter((r) => lanes[r.lane].some((it) => hits.has(it.project.id))) : []
+      view.fit(sceneBounds(hit.length ? hit : roomsRef.current))
+    }, 280)
+    return () => clearTimeout(t)
+  }, [q])
 
   const count = (keys) => keys.reduce((n, k) => n + (lanes[k]?.length || 0), 0)
   const critCount = useMemo(() => [...byId.values()].filter((it) => it.level).length, [byId])
@@ -1013,7 +1253,7 @@ export default function InsightsView({ onOpenProject }) {
     return () => window.removeEventListener('keydown', h, true)
   }, [ask])
 
-  const focusLane = drag ? null : hover || sheetLane || null
+  const focusLane = drag || liftLane ? null : hover || sheetLane || null
   const dzOf = (lane) => {
     if (!drag || lane === drag.from) return null
     if (!canMove(drag.id, lane)) return 'no'
@@ -1027,6 +1267,8 @@ export default function InsightsView({ onOpenProject }) {
     return null
   }
   const empty = board.total === 0
+  const custom = !!saved && Object.keys(saved).length > 0
+  const paintOrder = useMemo(() => [...rooms].sort((a, b) => (a.lane === liftLane) - (b.lane === liftLane) || (a.ox + a.oy) - (b.ox + b.oy)), [rooms, liftLane])
 
   return (
     <div className="io">
@@ -1048,34 +1290,34 @@ export default function InsightsView({ onOpenProject }) {
         </div>
       </div>
 
-      <div className="io-stage" ref={stageRef}>
-        <div className="io-scaler" style={{ width: B.w * scale, height: B.h * scale }}>
-          <div className="io-scene" style={{ width: B.w, height: B.h, transform: `scale(${scale})` }} data-focus={focusLane ? '' : undefined} data-drag={drag ? '' : undefined}>
-            <svg className="io-svg" width={B.w} height={B.h} viewBox={`${-B.dx} ${-B.dy} ${B.w} ${B.h}`} aria-hidden={false}>
+      <div className="io-stage" ref={stageRef} onPointerDown={onStageDown} onClickCapture={swallowStage} onFocusCapture={onStageFocus}>
+          <motion.div className="io-scene" style={{ x: view.x, y: view.y, scale: view.k }} data-focus={focusLane ? '' : undefined} data-drag={drag ? '' : undefined}>
+            <svg className="io-svg" width="1" height="1" aria-hidden={false}>
               <defs>
                 <linearGradient id="ioScan" x1="0" x2="1">
                   <stop offset="0" stopColor="#fff" stopOpacity="0" /><stop offset=".5" stopColor="#fff" stopOpacity=".07" /><stop offset="1" stopColor="#fff" stopOpacity="0" />
                 </linearGradient>
               </defs>
               <g>
-                {LINKS.map(([a, b]) => {
-                  const c = corridor(a, b)
-                  return (
-                    <g key={`${a}-${b}`}>
-                      <polygon className="io-cor" points={c.floor} />
-                      <line className="io-flow" x1={c.from.X} y1={c.from.Y} x2={c.to.X} y2={c.to.Y} />
-                    </g>
-                  )
-                })}
+                {LINKS.map(([a, b]) => (
+                  <g key={`${a}-${b}`} ref={(el) => { if (el) corEls.current.set(`${a}-${b}`, el) }}>
+                    <polyline className="io-cor-b" />
+                    <polyline className="io-cor" />
+                    <polyline className="io-flow" />
+                  </g>
+                ))}
               </g>
-              {ROOMS.map((r, i) => (
-                <motion.g key={r.lane} initial={reduce ? false : { opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.05 + i * 0.06 }}>
-                  <Room room={r} items={lanes[r.lane]} alertLv={roomAlert(r.lane)} focus={focusLane} dz={dzOf(r.lane)}
-                    onOpen={(lane) => setSheet({ kind: 'room', lane })} onHover={setHover} />
+              <polygon className="io-land" ref={landRef} />
+              {paintOrder.map((r) => (
+                <motion.g key={r.lane} initial={reduce ? false : { opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.05 + ROOMS.findIndex((x) => x.lane === r.lane) * 0.06 }}>
+                  <RoomSpot room={r} reduce={reduce} reg={fx} onMove={paintLinks}>
+                    <Room room={r} items={lanes[r.lane]} alertLv={roomAlert(r.lane)} focus={focusLane} dz={dzOf(r.lane)} lift={liftLane === r.lane}
+                      onOpen={(lane) => setSheet({ kind: 'room', lane })} onHover={setHover} onNudge={nudgeRoom} />
+                  </RoomSpot>
                 </motion.g>
               ))}
             </svg>
-            <div ref={layerRef} style={{ position: 'absolute', left: B.dx, top: B.dy }}>
+            <div ref={layerRef} style={{ position: 'absolute', left: 0, top: 0 }}>
               <AnimatePresence>
                 {drag?.origin && (
                   <motion.span key="origin" className="io-origin" style={{ x: drag.origin.X, y: drag.origin.Y, '--lc': `var(${laneMeta(drag.from).colorVar})` }}
@@ -1088,14 +1330,31 @@ export default function InsightsView({ onOpenProject }) {
                 const dim = !drag && ((hits && !it.more && !hits.has(it.project.id)) || (!hits && focusLane && focusLane !== t.lane && !(sheet?.kind === 'project')))
                 return (
                   <Token key={t.key} item={it} pos={t.pos} order={t.order} booted={booted} reduce={reduce} label={label}
-                    state={{ dim, sel: sheet?.kind === 'project' && sheet.id === it.project.id, hit: !!(hits && q && hits.has(it.project.id)), drag: drag?.id === it.project.id }}
+                    state={{ dim, sel: sheet?.kind === 'project' && sheet.id === it.project.id, hit: !!(hits && q && hits.has(it.project.id)), drag: drag?.id === it.project.id, lift: liftLane === t.lane }}
                     reg={reg} hint={hintOf(it.project.id)}
                     grab={editable && !it.more ? { onPointerDown: (e) => startDrag(e, it, t.pos), onClickCapture: swallowClick } : null}
                     onOpen={() => (it.more ? setSheet({ kind: 'room', lane: t.lane }) : openProject(it.project.id))} />
                 )
               })}
             </div>
-          </div>
+          </motion.div>
+        {hint && <div className="io-tip">Arrastrá el fondo para moverte y cada sala a donde quieras. Con la ruedita acercás o alejás.</div>}
+        <div className="io-ctl" data-at="bl" role="group" aria-label="Zoom">
+          <button type="button" className="io-tb" onClick={() => view.zoom(1 / 1.25)} aria-label="Alejar" title="Alejar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M5 12h14" /></svg>
+          </button>
+          <button type="button" className="io-tb io-pct" onClick={() => view.zoomTo(1)} aria-label="Volver al 100 %" title="Volver al 100 %"><motion.span>{view.pct}</motion.span></button>
+          <button type="button" className="io-tb" onClick={() => view.zoom(1.25)} aria-label="Acercar" title="Acercar"><I2.plus width={14} height={14} /></button>
+        </div>
+        <div className="io-ctl" data-at="tr">
+          <button type="button" className="io-tb" onClick={() => view.refit()} title="Que entre toda la oficina en la pantalla">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4" /></svg>
+            Ajustar
+          </button>
+          <button type="button" className="io-tb" onClick={relayout} disabled={!custom} title={custom ? 'Volver al orden original' : 'Ya está en el orden original'}>
+            <I2.refresh width={14} height={14} />
+            Ordenar
+          </button>
         </div>
         {empty && <div className="io-empty">Todavía no hay proyectos de clientes para mostrar.</div>}
       </div>

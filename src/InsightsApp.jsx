@@ -108,6 +108,10 @@ const THEMES = {
     '--violet': '#A78BFA',
     '--violet-soft': 'rgba(167,139,250,0.15)',
     '--violet-line': 'rgba(167,139,250,0.34)',
+    /* rosa: Nuevo sistema. Igual que el violeta, sólo para esa etapa. */
+    '--pink': '#F472B6',
+    '--pink-soft': 'rgba(244,114,182,0.14)',
+    '--pink-line': 'rgba(244,114,182,0.34)',
     '--shadow': '0 1px 0 rgba(255,255,255,0.03), 0 18px 40px -20px rgba(0,0,0,0.8)',
     '--shadow-lift': '0 1px 0 rgba(255,255,255,0.05), 0 30px 56px -26px rgba(0,0,0,0.95)',
     '--track': 'rgba(255,255,255,0.055)',
@@ -146,6 +150,10 @@ const THEMES = {
     '--violet': '#6D28D9',
     '--violet-soft': 'rgba(109,40,217,0.10)',
     '--violet-line': 'rgba(109,40,217,0.28)',
+    /* rosa: Nuevo sistema. Igual que el violeta, sólo para esa etapa. */
+    '--pink': '#DB2777',
+    '--pink-soft': 'rgba(219,39,119,0.14)',
+    '--pink-line': 'rgba(219,39,119,0.34)',
     '--shadow': '0 1px 2px rgba(0,0,0,0.04), 0 12px 30px -18px rgba(0,0,0,0.14)',
     '--shadow-lift': '0 2px 4px rgba(0,0,0,0.06), 0 24px 46px -20px rgba(0,0,0,0.22)',
     '--track': 'rgba(0,0,0,0.075)',
@@ -486,6 +494,7 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
 [data-stage="onboarding"]{--sc:var(--text-dim);--ss:var(--card-hover);--sl:var(--border-strong)}
 [data-stage="desarrollo"]{--sc:var(--accent);--ss:var(--accent-soft);--sl:var(--accent-line)}
 [data-stage="fase2"]{--sc:var(--violet);--ss:var(--violet-soft);--sl:var(--violet-line)}
+[data-stage="nuevo"]{--sc:var(--pink);--ss:var(--pink-soft);--sl:var(--pink-line)}
 [data-stage="free"]{--sc:var(--blue);--ss:var(--blue-soft);--sl:var(--blue-line)}
 [data-stage="plan"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
 [data-stage="anual"]{--sc:var(--green);--ss:var(--green-soft);--sl:var(--green-line)}
@@ -2722,7 +2731,7 @@ function StageMenu({ stage, onChange, variant = 'tag' }) {
         </button>
       ) : variant === 'compact' ? (
         <button ref={btnRef} onClick={toggle} className="pj-status" title={`Etapa: ${meta.label} — cambiar`} aria-haspopup="listbox" aria-expanded={open}>
-          <span className={`pj-dot${key === 'desarrollo' || key === 'fase2' ? ' live' : ''}`} style={{ background: stageColor(key) }} />
+          <span className={`pj-dot${key === 'desarrollo' || stageMeta(key).resale ? ' live' : ''}`} style={{ background: stageColor(key) }} />
           {meta.label}
           <I2.chevD className="cv" width={10} height={10} style={{ color: 'var(--text-faint)' }} />
         </button>
@@ -2762,7 +2771,7 @@ function StageConfirmModal({ open, project, to, onClose, onConfirm }) {
   // El modal queda montado aunque `to` vuelva a null: desmontarlo de golpe se
   // saltea la animación de salida del <Modal>.
   const meta = stageMeta(to)
-  const f2 = meta.key === 'fase2'
+  const f2 = meta.resale
   const verb = f2 ? `Pasar a ${meta.label}` : `Volver a ${meta.label}`
   return (
     <Modal open={open && !!to} onClose={onClose} width={460} title={verb} sub={project?.name}>
@@ -2771,8 +2780,8 @@ function StageConfirmModal({ open, project, to, onClose, onConfirm }) {
           <span className="ic" style={{ background: 'var(--card)', color: 'var(--yellow)' }}><I2.alert width={15} height={15} /></span>
           {f2 ? (
             <div>
-              La Fase 2 es un desarrollo nuevo: <b>deja de contar el cobro del plan</b> y se pierde el día en que arrancó.
-              Si el cliente sigue pagando el mantenimiento aparte, dejalo en su plan y anotá la Fase 2 en Upsell.
+              {f2.lead}: <b>deja de contar el cobro del plan</b> y se pierde el día en que arrancó.
+              Si el cliente sigue pagando el mantenimiento aparte, dejalo en su plan y anotá {f2.upsell} en Upsell.
             </div>
           ) : (
             <div>
