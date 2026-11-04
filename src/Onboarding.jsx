@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { CUENTAS } from './lib/accesos'
 
 /* ============================================================================
    ONBOARDING · 3 landings públicas (estilo editorial Insights + animaciones Apple)
    ?onb=inicio  → bienvenida + wizard de alta (crea cliente + proyecto)
    ?onb=presentacion → video + calendario para agendar la call
-   ?onb=gracias → gracias + qué preparar (Supabase + GitHub)
+   ?onb=gracias → gracias + qué preparar (las tres cuentas: GitHub, Supabase y Vercel)
 ============================================================================ */
 const C = { bg: '#FFFFFF', ink: '#1D1D1F', dim: '#6E6E73', faint: '#9A9AA0', accent: '#0A63E8', accentHi: '#0C56C4', line: 'rgba(0,0,0,0.09)', line2: 'rgba(0,0,0,0.045)', card: '#F5F5F7', red: '#DC2626', ok: '#0E9F6E' }
 
@@ -213,10 +214,9 @@ function Presentacion() {
 /* ---------- LANDING 3: gracias + qué preparar ---------- */
 const WA_URL = 'https://wa.me/16187090987?text=' + encodeURIComponent('Hola Nacho, ya termine el proceso de onboarding y agende mi llamada.')
 function Gracias() {
-  const prep = [
-    { n: 1, title: 'Creá tu cuenta de Supabase', desc: 'Es donde va a vivir la base de datos de tu proyecto. Registrate gratis con tu email o con Google.', href: 'https://supabase.com/dashboard/sign-up', cta: 'Crear cuenta en Supabase', logo: 'https://supabase.com/favicon/favicon-32x32.png' },
-    { n: 2, title: 'Creá tu cuenta de GitHub', desc: 'Es donde se guarda el código de tu proyecto. Registrate gratis; con eso alcanza para arrancar.', href: 'https://github.com/signup', cta: 'Crear cuenta en GitHub', logo: 'https://github.githubassets.com/favicons/favicon-dark.png' },
-  ]
+  /* Las tres cuentas y a quién se le da acceso salen de `lib/accesos.js`, espejo de la lista de
+     Clarity (speed-funnels, `_shared/cb-accesos.ts`): el texto de esta página no puede depender de
+     que el video de arriba esté al día. */
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 90 }}>
       <LogoBar />
@@ -250,19 +250,19 @@ function Gracias() {
 
         {/* Preparación (menos prominente, más abajo) */}
         <div style={{ height: 1, background: C.line, margin: '46px 0 34px' }} />
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.24 }} className="onb-kicker" style={{ textAlign: 'center', marginBottom: 8 }}>Para más adelante</motion.div>
-        <motion.h2 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.28 }} className="onb-serif" style={{ fontSize: 'clamp(19px,3.8vw,24px)', textAlign: 'center', color: C.dim, marginBottom: 6 }}>Dejá creadas estas dos cuentas</motion.h2>
-        <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.3 }} style={{ color: C.faint, fontSize: 14, marginBottom: 22, lineHeight: 1.6, textAlign: 'center', maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>Son gratis y toman 2 minutos cada una. Las vas a necesitar para tu proyecto.</motion.p>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.24 }} className="onb-kicker" style={{ textAlign: 'center', marginBottom: 8 }}>Antes de la llamada</motion.div>
+        <motion.h2 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.28 }} className="onb-serif" style={{ fontSize: 'clamp(19px,3.8vw,24px)', textAlign: 'center', color: C.dim, marginBottom: 6 }}>Dejá creadas estas tres cuentas</motion.h2>
+        <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.3 }} style={{ color: C.faint, fontSize: 14, marginBottom: 22, lineHeight: 1.6, textAlign: 'center', maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>Son gratis y toman 2 minutos cada una. Van a tu nombre: tu proyecto vive siempre en tus cuentas, y nos das acceso para trabajar.</motion.p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 560, margin: '0 auto' }}>
-          {prep.map((s, i) => (
-            <motion.div key={s.n} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.34 + i * 0.08 }} style={{ padding: 15, display: 'flex', alignItems: 'center', gap: 13, flexWrap: 'wrap', background: 'transparent', border: `1px solid ${C.line}`, borderRadius: 14 }}>
-              <div style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, background: C.line2, color: C.dim, display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14 }}>{s.n}</div>
+          {CUENTAS.map((c, i) => (
+            <motion.div key={c.id} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ ease, duration: 0.5, delay: 0.34 + i * 0.08 }} style={{ padding: 15, display: 'flex', alignItems: 'center', gap: 13, flexWrap: 'wrap', background: 'transparent', border: `1px solid ${C.line}`, borderRadius: 14 }}>
               <div style={{ flex: 1, minWidth: 160 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>{s.title}</div>
-                <div style={{ color: C.faint, fontSize: 13, lineHeight: 1.5 }}>{s.desc}</div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Creá tu cuenta de {c.nombre}</div>
+                <div style={{ color: C.faint, fontSize: 13, lineHeight: 1.5 }}>{c.para}</div>
+                <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, marginTop: 4 }}>{c.compartir}</div>
               </div>
-              <a href={s.href} target="_blank" rel="noreferrer" className="onb-btn onb-btn-ghost" style={{ fontSize: 13.5, padding: '9px 16px', flexShrink: 0 }}>{s.cta} ↗</a>
+              <a href={c.alta} target="_blank" rel="noreferrer" className="onb-btn onb-btn-ghost" style={{ fontSize: 13.5, padding: '9px 16px', flexShrink: 0 }}>{c.cta} ↗</a>
             </motion.div>
           ))}
         </div>
