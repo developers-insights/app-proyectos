@@ -75,6 +75,17 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
     const supa = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+
+    // Esta función usa service_role (saltea RLS), así que "verify_jwt" del
+    // dashboard no alcanza: la anon key también es un JWT válido y lo pasa.
+    // Acá exigimos además un usuario real autenticado del equipo.
+    const authHeader = req.headers.get('Authorization') || ''
+    const jwt = authHeader.replace(/^Bearer\s+/i, '')
+    const { data: { user } = { user: null }, error: authErr } = await supa.auth.getUser(jwt)
+    if (authErr || !user?.email || !user.email.toLowerCase().endsWith('@' + TEAM_DOMAIN)) {
+      return json({ error: 'unauthorized' }, 403)
+    }
+
     const { action, ...args } = await req.json().catch(() => ({}))
 
     if (action === 'add_account') {
