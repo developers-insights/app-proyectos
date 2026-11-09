@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     }
     if (b.item) cuerpo.item = String(b.item)
     if (b.link) cuerpo.link = String(b.link)
-    if (Array.isArray(b.items)) cuerpo.items = b.items.slice(0, 30).map((i: { nombre?: unknown; ayuda?: unknown }) => ({ nombre: String(i?.nombre || ''), ayuda: String(i?.ayuda || '') }))
+    if (Array.isArray(b.items)) cuerpo.items = b.items.slice(0, 30).map((i: { nombre?: unknown; ayuda?: unknown; tipo?: unknown }) => ({ nombre: String(i?.nombre || ''), ayuda: String(i?.ayuda || ''), tipo: i?.tipo === 'imagen' ? 'imagen' : 'env' }))
     for (const k of CAMPOS) if (b[k] !== undefined) cuerpo[k] = String(b[k])
 
     const secreto = Deno.env.get('CLARITY_PUENTE_SECRET') || ''
