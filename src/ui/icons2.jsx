@@ -155,6 +155,12 @@ export const I2 = {
       <rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19M6 15h4"/>
     </svg>
   ),
+  image: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={W} strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.5" fill="currentColor" opacity=".18" stroke="none"/>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m21 15.5-4.5-4.5L7 19.5"/>
+    </svg>
+  ),
   key: (p) => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={W} strokeLinecap="round" strokeLinejoin="round" {...p}>
       <circle cx="7.5" cy="15.5" r="4.5" fill="currentColor" opacity=".18" stroke="none"/>
