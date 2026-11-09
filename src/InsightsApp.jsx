@@ -4709,7 +4709,14 @@ function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved }) {
         <div style={{ padding: '7px 13px 10px' }}>
           {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
           {valor && (valor.tipo === 'imagen' ? (
-            /^data:image\/(jpeg|png|webp);base64,/.test(valor.src || '') && <img src={valor.src} alt={titulo} style={{ display: 'block', maxWidth: '100%', maxHeight: '60vh', margin: '4px auto 0', borderRadius: 8, objectFit: 'contain' }} />
+            /^data:image\/(jpeg|png|webp);base64,/.test(valor.src || '') && (
+              <>
+                <img src={valor.src} alt={titulo} style={{ display: 'block', maxWidth: '100%', maxHeight: '60vh', margin: '4px auto 0', borderRadius: 8, objectFit: 'contain' }} />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                  <a className="btn btn-sm" href={valor.src} download={`${it.nombre.toLowerCase()}.${valor.src.startsWith('data:image/png') ? 'png' : valor.src.startsWith('data:image/webp') ? 'webp' : 'jpg'}`} style={{ gap: 6 }}><I2.download width={13} height={13} /> Descargar</a>
+                </div>
+              </>
+            )
           ) : valor.tipo === 'credencial' ? (
             <>
               <VaultRow Ico={I2.user} value={valor.usuario} />
@@ -4727,8 +4734,7 @@ function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved }) {
 /* Pedir datos por link: se escriben los nombres, Clarity arma el link y queda en "Links activos"
    para volver a copiarlo. Quien lo recibe sólo puede cargar, nunca ver. */
 function VaultAsk({ scope, personal, pedidos, onDone, onCancel }) {
-  const vacia = { nombre: '', ayuda: '', tipo: 'env' }
-  const [filas, setFilas] = useState(pedidos.length ? pedidos.map((p) => ({ nombre: p.nombre, ayuda: p.ayuda || '', tipo: p.tipo === 'imagen' ? 'imagen' : 'env' })) : [vacia])
+  const [filas, setFilas] = useState(pedidos.length ? pedidos.map((p) => ({ nombre: p.nombre, ayuda: p.ayuda || '' })) : [{ nombre: '', ayuda: '' }])
   const [url, setUrl] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -4745,7 +4751,7 @@ function VaultAsk({ scope, personal, pedidos, onDone, onCancel }) {
     <div className="surface" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--card)' }}>
       <div>
         <div style={{ fontWeight: 600, fontSize: 14 }}>{personal ? 'Pedirle una clave a alguien' : 'Pedirle datos al cliente'}</div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>Escribí el nombre de cada dato y elegí si es un texto o una imagen (la foto de una tarjeta, por ejemplo: así no viaja por WhatsApp). Vence en 7 días, sólo sirve para cargar y, cuando lo completen, acá se marca solo.</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>Escribí el nombre de cada dato y mandá el link. Quien lo recibe puede pegar un texto o subir una imagen, como la foto de una tarjeta: así no viaja por WhatsApp. Vence en 7 días, sólo sirve para cargar y, cuando lo completen, acá se marca solo.</div>
       </div>
       {url ? (
         <>
@@ -4758,20 +4764,15 @@ function VaultAsk({ scope, personal, pedidos, onDone, onCancel }) {
       ) : (
         <>
           {filas.map((f, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) minmax(0,1.4fr) auto', gap: 8, alignItems: 'center' }}>
-              <div style={{ display: 'flex', gap: 2, border: '1px solid var(--border)', borderRadius: 999, padding: 2 }}>
-                {[['env', 'Texto'], ['imagen', 'Imagen']].map(([k, l]) => (
-                  <button key={k} className="btn btn-sm" onClick={() => set(i, 'tipo', k)} style={{ borderRadius: 999, border: 'none', padding: '3px 9px', background: f.tipo === k ? 'var(--card-hover)' : 'transparent', color: f.tipo === k ? 'var(--text)' : 'var(--text-faint)' }}>{l}</button>
-                ))}
-              </div>
-              <input className="input mono" value={f.nombre} onChange={(e) => set(i, 'nombre', aNombre(e.target.value))} placeholder={f.tipo === 'imagen' ? 'FOTO_TARJETA' : personal ? 'CONTRASENA_GMAIL' : 'SUPABASE_URL'} style={{ fontSize: 13 }} autoFocus={i === 0} />
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.4fr) auto', gap: 8 }}>
+              <input className="input mono" value={f.nombre} onChange={(e) => set(i, 'nombre', aNombre(e.target.value))} placeholder={personal ? 'CONTRASENA_GMAIL' : 'SUPABASE_URL'} style={{ fontSize: 13 }} autoFocus={i === 0} />
               <input className="input" value={f.ayuda} onChange={(e) => set(i, 'ayuda', e.target.value)} placeholder="Dónde lo consigue (opcional)" style={{ fontSize: 13 }} />
-              <button className="btn btn-sm btn-ghost" onClick={() => setFilas((x) => (x.length > 1 ? x.filter((_, j) => j !== i) : [vacia]))} title="Quitar" style={{ padding: 6, color: 'var(--text-faint)' }}><I2.x width={13} height={13} /></button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setFilas((x) => (x.length > 1 ? x.filter((_, j) => j !== i) : [{ nombre: '', ayuda: '' }]))} title="Quitar" style={{ padding: 6, color: 'var(--text-faint)' }}><I2.x width={13} height={13} /></button>
             </div>
           ))}
           {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn btn-sm" onClick={() => setFilas((x) => [...x, vacia])}><I2.plus width={13} height={13} /> Otro dato</button>
+            <button className="btn btn-sm" onClick={() => setFilas((x) => [...x, { nombre: '', ayuda: '' }])}><I2.plus width={13} height={13} /> Otro dato</button>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" onClick={onCancel}>Cancelar</button>
               <button className="btn btn-accent" onClick={armar} disabled={busy || !filas.some((f) => f.nombre.trim())}><I2.link width={14} height={14} /> {busy ? 'Armando…' : 'Armar link'}</button>
