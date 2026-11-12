@@ -3,7 +3,8 @@
  * con lo que el closer necesita para cobrar y para ofrecer (etapa, tramo y días,
  * avance, próximo hito, upsell, candidato a oferta y notas para el closer) y lo
  * mínimo para emparejarlo con su venta (nombre, empresa, mail y teléfono del
- * cliente). Nada de credenciales, presupuestos ni notas internas.
+ * cliente). Nada de credenciales, presupuestos ni notas internas. `portafolio`
+ * es lo único que un closer le muestra a un prospecto (src/lib/portafolio.js).
  *
  * Puro y con `now` inyectable: lo corre la edge function y lo corren los tests.
  * Recibe las filas tal cual salen de las tablas por-fila (`{ id, data }`).
@@ -14,6 +15,7 @@ import { stageMeta } from './stages.js'
 import { projectProgress } from './progress.js'
 import { planBoardSummary, currentWeekNumber, hitoForWeek } from '../plan/planModel.js'
 import { openCloserNotes } from './closerNotes.js'
+import { portafolioDe } from './portafolio.js'
 
 export const APP_URL = 'https://proyectos.insightsapps.tech'
 
@@ -93,6 +95,7 @@ export function buildBridgeSnapshots({ projects = [], clients = [], plans = [], 
       notes: openCloserNotes(p).map((n) => ({ id: n.id, text: n.text, at: n.at, by: n.by ? nameOf.get(n.by) || null : null })),
       url: `${appUrl}/?proyecto=${encodeURIComponent(p.id)}`,
       updatedAt: p.updatedAt || null,
+      portafolio: portafolioDe(p, c, entry.stage, entry.pct),
     }
   })
 }
