@@ -128,7 +128,7 @@ async function authorized(req: Request, admin: ReturnType<typeof createClient>) 
   if (!email) return false
   const { data: rows } = await admin.from('team_members').select('data').is('deleted_at', null)
   const me = (rows || []).map((r: any) => r.data).find((m: any) => String(m?.email || '').toLowerCase() === email)
-  return !!me && me.status !== 'pending' && me.access !== 'project'
+  return !!me && me.status !== 'pending' && me.access !== 'project' && me.access !== 'read'
 }
 
 Deno.serve(async (req) => {

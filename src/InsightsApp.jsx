@@ -37,7 +37,9 @@ import {
 } from './lib/stores.js'
 import { StoreIcon } from './ui/storeLogos.jsx'
 import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
-import { isDev, isCollab, isExternalMember, visibleProjects, collabProjectIds } from './lib/visibility.js'
+import { isDev, isCollab, isExternalMember, isReader, visibleProjects, collabProjectIds } from './lib/visibility.js'
+import { bloqueado, setSoloLectura, avisarSoloLectura, fetchConCandado, ERROR_SOLO_LECTURA } from './lib/soloLectura.js'
+import SoloLecturaAviso from './ui/SoloLecturaAviso.jsx'
 import {
   taskText, taskDone, weekProgress,
   toggleTaskDone, hitoForWeek,
@@ -68,7 +70,7 @@ import InsightsView, { InsightsIcon } from './insights/InsightsView.jsx'
 // Podés configurarlo por variables de entorno (Render) O hardcodearlo acá abajo.
 const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || 'https://yzmtzyuncekspgtsetwk.supabase.co'
 const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '' // ← pegá acá tu publishable key (sb_publishable_…) y el login funciona sin tocar Render
-const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY) : null
+const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY, { global: { fetch: fetchConCandado() } }) : null
 const FALSO_LOOM_URL = import.meta.env.VITE_FALSO_LOOM_URL || 'https://videos.insightsapps.tech'
 const cloudEnabled = !!supabase
 /* versión de la app — bumpeá esto en cada release para que se vea en el botón "Actualizar" */
@@ -965,6 +967,11 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   font-size:12.5px;font-weight:600;color:var(--text-dim);
   transition:color .24s var(--e),background .24s var(--e)}
 .hd-lbl:hover{color:var(--text);background:var(--card-hover)}
+.hd-lectura{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px 0 10px;border-radius:999px;
+  font-size:12px;font-weight:650;color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent-line);
+  white-space:nowrap;transition:filter .24s var(--e),transform .18s var(--e)}
+.hd-lectura:hover{filter:brightness(1.12)}
+.hd-lectura:active{transform:scale(.96)}
 .hd-badge{position:absolute;top:1px;right:1px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;
   display:grid;place-items:center;font-size:9.5px;font-weight:700;color:#fff;
   box-shadow:0 0 0 2px var(--bg-elevated)}
@@ -994,6 +1001,8 @@ textarea:focus-visible,[role="button"]:focus-visible,[role="switch"]:focus-visib
   .hd-grp.sys{display:none}
   .hd-lbl span{display:none}
   .hd-lbl{padding:0;width:32px;justify-content:center}
+  .hd-lectura span{display:none}
+  .hd-lectura{width:32px;padding:0;justify-content:center}
 }
 `
 
@@ -1791,6 +1800,7 @@ function usePlans() {
   // Crear: escritura inmediata (sin debounce) para que exista en el server ya.
   // Si falla (ej. sin red), queda como pendiente y se reintenta.
   const createPlan = async (plan) => {
+    if (bloqueado()) return { error: ERROR_SOLO_LECTURA }
     applyLocal((cur) => [plan, ...cur])
     if (!cloudEnabled) return { error: null }
     const { error } = await supabase.from('plans').insert(
@@ -1802,6 +1812,7 @@ function usePlans() {
 
   // Editar: patch por id, optimista + guardado debounced de esa sola fila.
   const patchPlan = (id, fn) => {
+    if (bloqueado()) return null
     let saved = null
     applyLocal((cur) => cur.map((p) => {
       if (p.id !== id) return p
@@ -1816,6 +1827,7 @@ function usePlans() {
   // Borrar: soft-delete (tombstone). El upsert de edición no toca deleted_at,
   // así que una pestaña vieja editando no puede resucitar un plan borrado.
   const deletePlan = async (id) => {
+    if (bloqueado()) return { error: ERROR_SOLO_LECTURA }
     clearTimeout(timers.current.get(id)); timers.current.delete(id)
     pending.current.delete(id)   // que un flush no reescriba un plan recién borrado
     clearTimeout(pubTimers.current.get(id)); pubTimers.current.delete(id)   // ni re-suba su link
@@ -1964,6 +1976,7 @@ function useTasks() {
   // Crear: escritura inmediata (sin debounce) para que exista en el server ya.
   // Si falla (ej. sin red), queda pendiente y se reintenta.
   const createTask = async (task) => {
+    if (bloqueado()) return { error: ERROR_SOLO_LECTURA }
     const t = { ...normalizeTask(task), updatedAt: new Date().toISOString() }
     applyLocal((cur) => [t, ...cur])
     if (!cloudEnabled) return { error: null }
@@ -1974,6 +1987,7 @@ function useTasks() {
 
   // Editar: patch por id, optimista + guardado debounced de esa sola fila.
   const patchTask = (id, fn) => {
+    if (bloqueado()) return null
     let saved = null
     applyLocal((cur) => cur.map((t) => {
       if (t.id !== id) return t
@@ -1987,6 +2001,7 @@ function useTasks() {
   // Borrar: soft-delete (tombstone). El upsert de una edición vieja no toca
   // deleted_at, así que una pestaña vieja no puede resucitar una tarea borrada.
   const deleteTask = async (id) => {
+    if (bloqueado()) return { error: ERROR_SOLO_LECTURA }
     clearTimeout(timers.current.get(id)); timers.current.delete(id)
     pending.current.delete(id)   // que un flush no reescriba una tarea recién borrada
     applyLocal((cur) => cur.filter((t) => t.id !== id))
@@ -2179,6 +2194,7 @@ function useRowCollection({ table, normalize = (x) => x, seed = () => [], cacheK
   // Crear: escritura inmediata (sin debounce) para que exista en el server ya.
   // Si falla (ej. sin red), queda pendiente y se reintenta.
   const create = async (item) => {
+    if (bloqueado()) return { error: ERROR_SOLO_LECTURA, item: null }
     const it = { ...normalize(item), updatedAt: item.updatedAt || new Date().toISOString() }
     applyLocal((cur) => [it, ...cur.filter((x) => x.id !== it.id)])
     if (!cloudEnabled) return { error: null, item: it }
@@ -2189,6 +2205,7 @@ function useRowCollection({ table, normalize = (x) => x, seed = () => [], cacheK
 
   // Editar: patch por id, optimista + guardado debounced de esa sola fila.
   const patch = (id, fn) => {
+    if (bloqueado()) return null
     let saved = null
     applyLocal((cur) => cur.map((x) => {
       if (x.id !== id) return x
@@ -2205,6 +2222,7 @@ function useRowCollection({ table, normalize = (x) => x, seed = () => [], cacheK
   // Borrar: soft-delete (tombstone). El upsert de una edición vieja no toca
   // deleted_at, así que una pestaña vieja no puede resucitar lo borrado.
   const remove = async (id) => {
+    if (bloqueado()) return { error: ERROR_SOLO_LECTURA }
     clearTimeout(timers.current.get(id)); timers.current.delete(id)
     pending.current.delete(id); syncSaving()
     deletedIds.current.add(id)   // tombstone local → ningún eco ni resync lo resucita
@@ -9005,7 +9023,7 @@ function UpdateButton() {
    de ancho. Ahora hay dos grupos con peso propio y una sola forma de botón:
    · SISTEMA (izq. del bloque derecho): estado de sync + versión. Informan, no son tuyos.
    · USUARIO: notificaciones, ajustes, tema y salir. Todos icon-buttons de 32px. */
-function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu }) {
+function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu, soloLectura }) {
   const crumb = { insights: 'Oficina', overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', mvps: 'MVPs', notas: 'Notas', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
   const dark = theme === 'dark'
   return (
@@ -9018,6 +9036,12 @@ function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, on
       </div>
 
       <div className="hd-right">
+        {soloLectura && (
+          <button type="button" className="hd-lectura" onClick={() => avisarSoloLectura({ forzar: true })}
+            title="Podés ver todo, pero no hacer cambios" aria-label="Acceso de lectura: qué podés hacer">
+            <I2.lock width={14} height={14} /><span>Solo lectura</span>
+          </button>
+        )}
         <span className="hd-grp sys hide-mobile">
           <SyncBadge sync={sync} />
           <UpdateButton />
@@ -9574,6 +9598,8 @@ function AppShell({ session, onLogout }) {
     else if (me.status === 'pending') gate = 'pending'
     else if (me.access === 'project') gate = 'portal'
   }
+  const soloLectura = cloudEnabled && isReader(me)
+  setSoloLectura(soloLectura)
 
   return (
     <AppCtx.Provider value={{ data: dataView, myId, sessionEmail: session?.user?.email || '', logActivity, supabase, botComms, serviceNoteStore, ...planStore, ...taskStore, ...collectionStores }}>
@@ -9585,7 +9611,7 @@ function AppShell({ session, onLogout }) {
       <div className="app-shell">
         <Sidebar route={route} setRoute={setRoute} collapsed={collapsed} setCollapsed={setCollapsed} mobile={isMobile} open={navOpen} onClose={() => setNavOpen(false)} email={session?.user?.email} onProfile={() => setProfileOpen(true)} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-          <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} mobile={isMobile} onMenu={() => setNavOpen(true)} />
+          <Header theme={theme} setTheme={setTheme} onSettings={() => setSettings(true)} route={route} sync={sync} onLogout={onLogout} mobile={isMobile} onMenu={() => setNavOpen(true)} soloLectura={soloLectura} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <motion.div key={route.view + (route.projectId || '')} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
               style={{ height: '100%', overflow: route.view === 'project' || route.view === 'assistant' || route.view === 'planner' || route.view === 'editor' || route.view === 'carousel' || route.view === 'bot' ? 'hidden' : 'auto' }}>
@@ -9623,6 +9649,7 @@ function AppShell({ session, onLogout }) {
         <Settings open={settings} onClose={() => setSettings(false)} onManageTeam={() => { setSettings(false); setTeamOpen(true) }} />
         <TeamManager open={teamOpen} onClose={() => setTeamOpen(false)} />
         <UserProfile session={session} myId={myId} setMyId={setMyId} onLogout={onLogout} open={profileOpen} onClose={() => setProfileOpen(false)} />
+        {soloLectura && <SoloLecturaAviso />}
         <PmStartupAlert open={!pmAlertSeen && pmProjects.length > 0} projects={pmProjects} clients={clientStore.items} onClose={() => setPmAlertSeen(true)} onOpenProject={openProject} />
       </div>
             )}
@@ -10020,8 +10047,8 @@ function UsuariosView({ onOpenProject }) {
   const reject = (u) => { if (window.confirm(`¿Rechazar y quitar el acceso de ${u.name}?`)) teamStore.remove(u.id) }
   const fmtDur = (ms) => { const m = Math.round((Number(ms) || 0) / 60000); if (m < 1) return '—'; if (m < 60) return `${m} min`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ${m % 60}m`; const d = Math.floor(h / 24); return `${d}d ${h % 24}h` }
   const fmtSeen = (iso) => { if (!iso) return '—'; const diff = Date.now() - new Date(iso).getTime(); const min = Math.floor(diff / 60000); if (min < 1) return 'recién'; if (min < 60) return `hace ${min} min`; const h = Math.floor(min / 60); if (h < 24) return `hace ${h} h`; const d = Math.floor(h / 24); return d === 1 ? 'ayer' : `hace ${d} días` }
-  const isExternal = (u) => u.access === 'project' || u.access === 'collab'
-  const roleLabel = (u) => u.role === 'fundador' ? 'Fundador' : u.access === 'collab' ? 'Colaborador' : u.access === 'project' ? 'Cliente' : (u.role === 'pm' ? 'PM' : u.role === 'dev' ? 'Dev' : (u.role || 'Equipo'))
+  const isExternal = (u) => u.access === 'project' || u.access === 'collab' || u.access === 'read'
+  const roleLabel = (u) => u.role === 'fundador' ? 'Fundador' : u.access === 'collab' ? 'Colaborador' : u.access === 'project' ? 'Cliente' : u.access === 'read' ? 'Lectura' : (u.role === 'pm' ? 'PM' : u.role === 'dev' ? 'Dev' : (u.role || 'Equipo'))
   const projCol = (u) => {
     if (u.access === 'collab') { const ids = collabProjectIds(u); return ids.length ? ids.map(projName).join(', ') : '— sin asignar —' }
     if (u.access === 'project') return u.assignedProjectId ? projName(u.assignedProjectId) : '— sin asignar —'
@@ -10069,6 +10096,7 @@ function UsuariosView({ onOpenProject }) {
                       <select className="input" value={u.access} onChange={(e) => teamStore.patch(u.id, (x) => ({ ...x, access: e.target.value }))} style={{ width: 'auto', minWidth: 160, padding: '6px 9px', fontSize: 13 }} title="Tipo de acceso">
                         <option value="project">Cliente · solo ve el proyecto</option>
                         <option value="collab">Colaborador · dev del proyecto</option>
+                        <option value="read">Lectura · ve todo, no edita</option>
                       </select>
                       {u.access === 'collab' ? (
                         <CollabProjectsCell u={u} projects={projects} patch={teamStore.patch} onOpenProject={onOpenProject} />
