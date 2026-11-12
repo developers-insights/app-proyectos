@@ -1,3 +1,4 @@
+import { bloqueado } from '../lib/soloLectura.js'
 import { PanelNotes } from '../notes/ServiceNotes.jsx'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -899,7 +900,7 @@ export default function InsightsView({ onOpenProject }) {
       // Si la sala no cambió (otra pestaña ya lo movió), el efecto de posición no corre y quedaría donde se soltó.
       requestAnimationFrame(() => requestAnimationFrame(() => { if (m.quick) { m.quick = false; m.back() } }))
     }
-    projectStore.patch(id, (p) => ({ ...p, ...applyStage(p, to) }))
+    if (!projectStore.patch(id, (p) => ({ ...p, ...applyStage(p, to) }))) { reg.current.get(id)?.back(); return }
     if (logActivity) logActivity({ type: 'stage', text: `pasó ${proj.name} a ${stageMeta(to).label}` })
     setToast({ key: `${id}-${Date.now()}`, id, name: proj.name, lane, undo: prev })
   }, [projectById, projectStore, logActivity])
@@ -908,6 +909,7 @@ export default function InsightsView({ onOpenProject }) {
     const proj = projectById.get(id)
     const to = proj && laneDropStage(proj, lane, ctx)
     if (!to) { reg.current.get(id)?.back(); return }
+    if (bloqueado()) { reg.current.get(id)?.back(); return }
     if (stageIsRegression(proj, to)) {
       reg.current.get(id)?.back()
       setAsk({ id, lane, to, name: proj.name })

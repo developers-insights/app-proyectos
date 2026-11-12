@@ -51,6 +51,15 @@ export function collabProjectIds(member) {
   return member.assignedProjectId ? [member.assignedProjectId] : []
 }
 
+/**
+ * Lectura: del equipo interno, ve todo lo que ve un fundador pero no escribe nada
+ * (pedido de Manuel, 2026-11-12, para Mati y Axel). La base lo hace cumplir con
+ * pm_puede_ver() / is_team(); el front frena antes con src/lib/soloLectura.js.
+ */
+export function isReader(member) {
+  return !!member && member.access === 'read'
+}
+
 /** Los no-devs reciben la lista tal cual, sin copiar: los useMemo comparan por identidad. */
 export function visibleProjects(projects, me) {
   const list = Array.isArray(projects) ? projects : []

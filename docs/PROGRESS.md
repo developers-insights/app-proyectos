@@ -1,5 +1,11 @@
 # PROGRESS — app-proyectos
 
+## 2026-11-12 · Acceso de lectura para Mati y Axel (pedido de Manuel)
+- Acceso nuevo `read` en team_members ("Lectura · ve todo, no edita" en Usuarios). Ven lo mismo que un fundador, pueden recorrer, abrir, filtrar y mover la cámara o las salas de la Oficina (eso vive en localStorage), pero ningún cambio de datos se guarda.
+- Base: `pm_puede_ver()` reemplaza a `is_team()` en las 25 políticas SELECT; las de escritura siguen con `is_team()`. La bóveda, las altas y `mvp-sync` siguen exigiendo `full`. Migración en `docs/migrations/2026-11-12-acceso-lectura.sql`, aplicada.
+- Front: `src/lib/soloLectura.js` frena en los stores antes del optimista y en el fetch de Supabase (tablas y storage); `src/ui/SoloLecturaAviso.jsx` muestra el aviso sólo si el intento vino de un click o tecla. Pill "Solo lectura" en el header.
+- Cuentas: Mati y Axel entran con el mismo mail y contraseña que en Speed Funnels (se copió el hash de `rlausjxxgmtapvozrttw` a `yzmtzyuncekspgtsetwk`). Si cambian la clave en Speed Funnels no se sincroniza sola.
+
 ## 2026-11-03 · Oficina con salas móviles, zoom y Nuevo sistema (pedido de Manuel)
 - Cada sala se arrastra como en Miro: mouse a los 5 px, touch apretando 260 ms (si el dedo se desliza antes, es pan). Va pegada al puntero con sus proyectos, un recuadro punteado marca la baldosa libre donde cae (`freeSpot`: entera y con 1 de separación, nunca dos salas encimadas) y Escape la devuelve. Flechas con la sala enfocada también la mueven. La posición va en `localStorage` (`ip.oficina.salas`), por navegador, igual que el lienzo del Recorrido; "Ordenar" vuelve al original.
 - Cámara en `src/insights/useViewport.js`: ruedita y pinch hacen zoom hacia el cursor, el fondo se arrastra, botones Ajustar y 100 %. Todo en motion values: un render de la vista por wheel se nota. El zoom interpola k, x e y con el mismo factor para que el punto bajo el cursor no se corra.
