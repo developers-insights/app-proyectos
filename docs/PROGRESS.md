@@ -424,3 +424,21 @@ Simulacro contra prod (`src/scripts/vincular-dry-run.ts` en bot_fede): 9 víncul
 ## PENDIENTE
 - El hint del panel no se vio en el navegador con sesión real.
 - El panel Bot no replica la regla de etapa pausada ni el contacto anotado: sus días de silencio pueden diferir del aviso.
+
+# 2026-11-13 · Catálogo de la web y portafolio en inglés (call del 13/11)
+
+Pedido de Fede, Juan y Nacho: el número de proyectos tiene que ser el mismo en la web y en el portafolio de Speed Funnels, un proyecto que pasa a producción tiene que aparecer solo en la web, y el portafolio se tiene que poder mostrar en inglés (leads de EE.UU. desde diciembre).
+
+## Qué se hizo acá
+- **`portafolioDe`** suma `web` (va al catálogo de la web: producción, mantenimiento o entregado, salvo `data.portafolio.web = false`) y `en` (la traducción, sólo si su huella coincide con el español vigente: `huellaPortafolio`, FNV-1a de queEs|negocio|resumen). El inglés pasa por el mismo filtro de plata y contactos.
+- **`catalogoWeb(fotos)`**: lo que publica la edge function `catalogo-web` (DESPLEGADA el 13/11): sólo los que van a la web, con nombre, estado, textos es/en, stack, appUrl y tiendasUrl. Nada del cliente ni interno (lo fija `tests/portafolio.test.js`).
+- **Tabla `portafolio_en`** (fuera de `projects` porque la app guarda la fila entera y una clave escrita desde afuera se perdería con el próximo guardado). La escribe `scripts/portafolio-traducir.mjs` (Claude, sólo lo que falta o quedó viejo; `--seco` para ver). La leen `sf-puente` (REDESPLEGADA el 13/11) y `catalogo-web`.
+- **Trigger `catalogo_web_aviso`** en `projects`: si cambia etapa, lifecycle, nombre, kind, portafolio, kickoff, stack, productionUrl, tiendas o el borrado, le avisa a `https://insightsapps.tech/api/catalogo/revalidar`. La web vuelve a pedir el catálogo y revalida sólo si cambió; si el aviso se pierde, se refresca sola cada 24 h.
+- Migración `docs/migrations/2026-11-13-catalogo-web.sql` (APLICADA el 13/11, aditiva).
+
+## Seguridad
+`catalogo-web` pide `x-catalogo-secret` == `catalogo_web_config.secret`. El mismo valor está en la web (`CATALOGO_WEB_SECRET` en Vercel) y en envkit (`CATALOGO_WEB_SECRET`, namespaces `app-proyectos` y `website-insights-apps`). Rotarlo = cambiar los tres.
+
+## Pendiente
+- Un proyecto nuevo en producción entra a la web en español hasta que se corre `scripts/portafolio-traducir.mjs` (la web y el portafolio caen al español mientras tanto). Falta un cron que lo corra solo.
+- No hay botón en la app para sacar un proyecto de la web: hoy es `data.portafolio.web = false` a mano.

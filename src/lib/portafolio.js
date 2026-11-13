@@ -140,12 +140,45 @@ function tiendasUrlDe(p, propio) {
 const STACK_VACIO = /^(por definir|tbd|-|n\/a)$/i
 
 /**
+ * Huella del texto en español que se tradujo. La traducción guardada en
+ * `portafolio_en` vale sólo mientras la huella coincide: si alguien cambia la
+ * descripción, el inglés viejo deja de viajar y la pantalla cae al español
+ * hasta que `scripts/portafolio-traducir.mjs` la vuelva a generar.
+ */
+export function huellaPortafolio({ queEs, negocio, resumen } = {}) {
+  const s = [queEs || '', negocio || '', resumen || ''].join('|')
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}
+
+const EN_MAX = { queEs: 200, negocio: 260, resumen: 1000 }
+
+/** El inglés guardado, sólo si es del texto vigente y pasa el mismo filtro que el español. */
+export function traduccionVigente(t, es, persona) {
+  if (!t || typeof t !== 'object' || t.fuente !== huellaPortafolio(es)) return null
+  const out = {}
+  for (const k of Object.keys(EN_MAX)) {
+    out[k] = es[k] ? textoMostrable(t[k], persona, EN_MAX[k]) || null : null
+  }
+  return out.queEs || out.negocio || out.resumen ? out : null
+}
+
+/** Entra al catálogo de la web: terminado y sin que nadie lo haya sacado (`data.portafolio.web = false`). */
+export const vaALaWeb = (estado, propio) =>
+  (estado === 'produccion' || estado === 'entregado') && !(propio && propio.web === false)
+
+/**
  * @param p       proyecto (data + id)
  * @param cliente fila del cliente (data + id) o {}
  * @param stage   etapa vigente (`journeyEntry(...).stage`)
  * @param pct     avance 0-100 o null
- * @param extra   { plan, desarrollador }: el plan del proyecto (su `lead` es la última fuente de
- *                texto) y el nombre del dev asignado, que va aparte en `interno`.
+ * @param extra   { plan, desarrollador, en }: el plan del proyecto (su `lead` es la última fuente de
+ *                texto), el nombre del dev asignado, que va aparte en `interno`, y la fila de
+ *                `portafolio_en` del proyecto (`{ fuente, queEs, negocio, resumen }`).
  */
 export function portafolioDe(p, cliente, stage, pct, extra = {}) {
   const estado = estadoPortafolio(stage)
@@ -179,9 +212,11 @@ export function portafolioDe(p, cliente, stage, pct, extra = {}) {
   const stack0 = clip(p.stack, 160)
   const stack = stack0 && !STACK_VACIO.test(stack0) ? stack0 : textoMostrable(propio.stack, '', 160)
   const up = upsellState(p)
+  const es = { queEs: queEs || null, negocio: negocio || null, resumen: resumen || null }
 
   return {
     mostrable: true,
+    web: vaALaWeb(estado.key, propio),
     estado: estado.key,
     estadoLabel: estado.label,
     queEs: queEs || null,
@@ -198,7 +233,33 @@ export function portafolioDe(p, cliente, stage, pct, extra = {}) {
     plan: stage === 'plan' || stage === 'anual' || vendida(up.plan),
     tiendas: tiendasDe(p),
     tiendasUrl: tiendasUrlDe(p, propio),
+    en: traduccionVigente(extra.en, es, persona),
     // Interno: Speed Funnels sólo lo devuelve a quien ve lo interno (Manuel), nunca a un closer.
     interno: { desarrollador: clip(extra.desarrollador, 60) || null },
   }
+}
+
+/**
+ * Lo que publica la edge function `catalogo-web` para la web de Insights: los
+ * proyectos terminados que van a la web, con lo mismo que ya ve un prospecto en
+ * el portafolio. Nada de `interno`, tiendas en trámite, fechas ni upsell.
+ */
+export function catalogoWeb(fotos) {
+  return (Array.isArray(fotos) ? fotos : [])
+    .filter((f) => f && f.portafolio && f.portafolio.mostrable && f.portafolio.web)
+    .map((f) => {
+      const pf = f.portafolio
+      return {
+        id: f.id,
+        nombre: f.name,
+        estado: pf.estado,
+        queEs: pf.queEs,
+        negocio: pf.negocio,
+        resumen: pf.resumen,
+        stack: pf.stack,
+        appUrl: pf.appUrl,
+        tiendasUrl: pf.tiendasUrl,
+        en: pf.en,
+      }
+    })
 }

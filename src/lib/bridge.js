@@ -7,7 +7,8 @@
  * es lo único que un closer le muestra a un prospecto (src/lib/portafolio.js).
  *
  * Puro y con `now` inyectable: lo corre la edge function y lo corren los tests.
- * Recibe las filas tal cual salen de las tablas por-fila (`{ id, data }`).
+ * Recibe las filas tal cual salen de las tablas por-fila (`{ id, data }`); las
+ * traducciones salen de `portafolio_en` (`{ project_id, data }`).
  */
 
 import { journeyEntry, laneMeta, offerCandidates, upsellState, upsellStatusMeta, offerLabel } from './journey.js'
@@ -55,11 +56,12 @@ const devDe = (p) => {
   return d && typeof d === 'object' && typeof d.userId === 'string' ? d.userId : null
 }
 
-export function buildBridgeSnapshots({ projects = [], clients = [], plans = [], team = [] } = {}, now = new Date(), opts = {}) {
+export function buildBridgeSnapshots({ projects = [], clients = [], plans = [], team = [], traducciones = [] } = {}, now = new Date(), opts = {}) {
   const appUrl = (opts.appUrl || APP_URL).replace(/\/+$/, '')
   const clientById = new Map(clients.filter(live).map(unrow).filter(Boolean).map((c) => [c.id, c]))
   const planById = new Map(plans.filter(live).map(unrow).filter(Boolean).map((p) => [p.id, p]))
   const nameOf = new Map(team.filter(live).map(unrow).filter(Boolean).map((u) => [u.id, clip(u.name, 60)]))
+  const enOf = new Map(traducciones.filter((t) => t && typeof t.project_id === 'string').map((t) => [t.project_id, t.data]))
 
   const list = projects.filter(live).map(unrow).filter((p) => p && (p.kind || 'cliente') !== 'interno')
   const planOf = (p) => (p.planId ? planById.get(p.planId) || null : null)
@@ -100,7 +102,7 @@ export function buildBridgeSnapshots({ projects = [], clients = [], plans = [], 
       notes: openCloserNotes(p).map((n) => ({ id: n.id, text: n.text, at: n.at, by: n.by ? nameOf.get(n.by) || null : null })),
       url: `${appUrl}/?proyecto=${encodeURIComponent(p.id)}`,
       updatedAt: p.updatedAt || null,
-      portafolio: portafolioDe(p, c, entry.stage, entry.pct, { plan: planOf(p), desarrollador: devDe(p) ? nameOf.get(devDe(p)) || null : null }),
+      portafolio: portafolioDe(p, c, entry.stage, entry.pct, { plan: planOf(p), desarrollador: devDe(p) ? nameOf.get(devDe(p)) || null : null, en: enOf.get(p.id) }),
     }
   })
 }
