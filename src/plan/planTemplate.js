@@ -56,8 +56,11 @@ const ARROW_RIGHT_ICON = '<svg class="ic" viewBox="0 0 24 24"><path d="M9 5l7 7-
 /** El dorado del gate. Constante, INDEPENDIENTE de los hitos (R4/D-C). */
 const GATE_COLOR = '#f0b94d'
 
+/** Logotipo de la marca: «insights» con el punto en acento (manual de marca, ago 2026). */
+const WORDMARK = '<span class="wordmark" aria-label="insights">insights<i>.</i></span>'
+
 /** Si el plan no tiene ningún hito con color válido, el acento cae acá. */
-const ACCENT_FALLBACK = '#3ddc97'
+const ACCENT_FALLBACK = '#C7D7E7'
 
 /** Color de las semanas huérfanas (T6). */
 const NEUTRAL_COLOR = NEUTRAL_HITO.color
@@ -299,21 +302,23 @@ function buildCSS({ hitos, safeIds, accent, mesh, phaseCols, previewRule }) {
   const tabletCols = Math.min(phaseCols, 2)
 
   return `  :root{
-    --bg:#060606;
-    --ink:#f5f4f1;
-    --ink-2:rgba(245,244,241,.58);
-    --ink-3:rgba(245,244,241,.34);
-    --line:rgba(245,244,241,.10);
-    --line-2:rgba(245,244,241,.06);
-    --glass:rgba(255,255,255,.025);
-    --glass-2:rgba(255,255,255,.04);
+    --bg:#0B1116;
+    --ink:#F8FAFC;
+    --ink-2:#B4BFCA;
+    --ink-3:#8A97A4;
+    --line:rgba(199,215,231,.12);
+    --line-2:rgba(199,215,231,.07);
+    --glass:rgba(30,33,38,.55);
+    --glass-2:#2B333B;
+    --brand:#C7D7E7;
+    --on-light:#0B1116;
 ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     --c-gate:${GATE_COLOR};
     --c-accent:${accent};
     --ease:cubic-bezier(.32,.72,0,1);
     --ease-2:cubic-bezier(.16,1,.3,1);
-    --font-display:'Clash Display','Satoshi',system-ui,sans-serif;
-    --font-body:'Satoshi',system-ui,-apple-system,sans-serif;
+    --font-display:-apple-system,'SF Pro Display',BlinkMacSystemFont,'Helvetica Neue',system-ui,sans-serif;
+    --font-body:-apple-system,'SF Pro Text',BlinkMacSystemFont,'Helvetica Neue',system-ui,sans-serif;
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
@@ -323,7 +328,7 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
     overflow-x:hidden;
   }
-  ::selection{background:color-mix(in srgb,var(--c-accent) 25%,transparent);color:#fff}
+  ::selection{background:color-mix(in srgb,var(--brand) 30%,transparent);color:#fff}
 
   /* ambient mesh + grain */
   .mesh{position:fixed;inset:0;z-index:-2;pointer-events:none;
@@ -345,37 +350,39 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     border:1px solid var(--line);border-radius:999px;padding:7px 14px;
     font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-2);
     background:var(--glass);backdrop-filter:blur(12px)}
-  .eyebrow .dot{width:5px;height:5px;border-radius:50%;background:var(--c-accent);box-shadow:0 0 10px var(--c-accent)}
+  .eyebrow .dot{width:5px;height:5px;border-radius:50%;background:var(--brand)}
 
-  h1,h2,h3{font-family:var(--font-display);font-weight:500;letter-spacing:-.02em;line-height:1.02}
+  h1,h2,h3{font-family:var(--font-display);font-weight:600;letter-spacing:-.03em;line-height:1.02}
 
   /* ---------- NAV ---------- */
   nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;justify-content:center;
     padding:18px;transition:transform .5s var(--ease)}
   .nav-pill{display:flex;align-items:center;gap:8px;width:min(960px,100%);
-    background:rgba(12,12,12,.55);backdrop-filter:blur(20px) saturate(140%);
+    background:rgba(11,17,22,.62);backdrop-filter:blur(20px) saturate(140%);
     border:1px solid var(--line);border-radius:999px;padding:10px 12px 10px 20px;
     box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 20px 50px -30px rgba(0,0,0,.9)}
-  .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-display);
-    font-weight:600;font-size:15px;letter-spacing:-.01em;margin-right:auto}
-  .brand .spark{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;
-    background:linear-gradient(135deg,color-mix(in srgb,var(--c-accent) 90%,transparent),color-mix(in srgb,var(--c-accent) 35%,transparent));color:#04140d}
-  .brand .spark svg{width:13px;height:13px;stroke-width:2}
-  .brand small{color:var(--ink-3);font-family:var(--font-body);font-weight:400;font-size:12px;letter-spacing:0}
+  .brand{display:flex;align-items:center;gap:12px;margin-right:auto;min-width:0}
+  /* Logotipo del manual de marca (website-insights-apps/design): siempre en
+     minúscula, SF Pro Bold con tracking −4,5% y el punto como única parte en acento. */
+  .wordmark{font-family:var(--font-display);font-weight:700;font-size:19px;letter-spacing:-.045em;
+    color:var(--ink);line-height:1;white-space:nowrap}
+  .wordmark i{font-style:normal;color:var(--brand)}
+  .brand small{color:var(--ink-3);font-family:var(--font-body);font-weight:500;font-size:12.5px;letter-spacing:0;
+    padding-left:12px;border-left:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .nav-links{display:flex;gap:4px}
   .nav-links a{color:var(--ink-2);text-decoration:none;font-size:13px;padding:8px 14px;border-radius:999px;
     transition:color .4s var(--ease),background .4s var(--ease)}
   .nav-links a:hover{color:var(--ink);background:var(--glass-2)}
   .btn{display:inline-flex;align-items:center;gap:10px;border:none;cursor:pointer;
-    font-family:var(--font-body);font-weight:500;font-size:13px;color:#04140d;
+    font-family:var(--font-body);font-weight:600;font-size:13px;color:var(--on-light);
     background:var(--ink);border-radius:999px;padding:9px 9px 9px 18px;
     transition:transform .5s var(--ease),background .4s var(--ease)}
   .btn:hover{transform:translateY(-1px)}
   .btn:active{transform:scale(.97)}
-  .btn .iconwrap{width:26px;height:26px;border-radius:999px;background:rgba(4,20,13,.12);
+  .btn .iconwrap{width:26px;height:26px;border-radius:999px;background:rgba(11,17,22,.08);
     display:grid;place-items:center;transition:transform .5s var(--ease)}
   .btn:hover .iconwrap{transform:translate(2px,-1px) scale(1.05)}
-  .btn .ic{width:15px;height:15px;stroke:#04140d}
+  .btn .ic{width:15px;height:15px;stroke:var(--on-light)}
 
   /* ---------- HERO ---------- */
   header.hero{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;
@@ -417,39 +424,38 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
   .nc-row{margin:0 0 54px;display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}
   .nc-row-solo{grid-template-columns:minmax(0,420px)}
   .needsclient{min-width:0;background:var(--glass);
-    border:1px solid color-mix(in srgb,#6db3f2 30%,var(--line));border-radius:20px;padding:6px}
-  .nc-core{background:color-mix(in srgb,#6db3f2 7%,rgba(255,255,255,.015));border:1px solid var(--line-2);
+    border:1px solid color-mix(in srgb,var(--brand) 30%,var(--line));border-radius:20px;padding:6px}
+  .nc-core{background:color-mix(in srgb,var(--brand) 7%,rgba(255,255,255,.015));border:1px solid var(--line-2);
     border-radius:15px;padding:18px 20px}
   .nc-head{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:500;
-    font-size:1rem;color:#6db3f2;letter-spacing:-.01em}
-  .nc-dot{width:8px;height:8px;border-radius:50%;background:#6db3f2;box-shadow:0 0 10px #6db3f2;flex:0 0 auto}
+    font-size:1rem;color:var(--brand);letter-spacing:-.01em}
+  .nc-dot{width:8px;height:8px;border-radius:50%;background:var(--brand);flex:0 0 auto}
   .nc-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex:0 0 auto}
-  .nc-count{font-size:12px;font-variant-numeric:tabular-nums;color:#6db3f2;
-    border:1px solid color-mix(in srgb,#6db3f2 40%,transparent);border-radius:999px;padding:2px 9px}
+  .nc-count{font-size:12px;font-variant-numeric:tabular-nums;color:var(--brand);
+    border:1px solid color-mix(in srgb,var(--brand) 40%,transparent);border-radius:999px;padding:2px 9px}
   .nc-list{list-style:none;margin:14px 0 0;display:grid;gap:9px}
   .nc-list li{font-size:.92rem;color:var(--ink);line-height:1.45;padding-left:16px;position:relative}
   .nc-list li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;
-    background:color-mix(in srgb,#6db3f2 70%,transparent)}
-  .nc-list li b{color:#6db3f2;font-weight:500;font-size:12px;letter-spacing:.02em}
+    background:color-mix(in srgb,var(--brand) 70%,transparent)}
+  .nc-list li b{color:var(--brand);font-weight:500;font-size:12px;letter-spacing:.02em}
 
   /* Anillo de avance de TODO el plan: panel propio (doble bisel, igual que la
      tarjeta de al lado) con el anillo centrado adentro. */
   .plan-ring-panel{min-width:0;background:var(--glass);
-    border:1px solid color-mix(in srgb,#3ddc97 26%,var(--line));border-radius:20px;padding:6px}
+    border:1px solid color-mix(in srgb,var(--brand) 26%,var(--line));border-radius:20px;padding:6px}
   .prp-core{position:relative;overflow:hidden;
-    background:color-mix(in srgb,#3ddc97 6%,rgba(255,255,255,.015));
+    background:color-mix(in srgb,var(--brand) 6%,rgba(255,255,255,.015));
     border:1px solid var(--line-2);border-radius:15px;padding:36px 24px 30px;
     display:grid;justify-items:center;gap:24px;
     box-shadow:inset 0 1px 1px rgba(255,255,255,.05)}
   .prp-core::before{content:"";position:absolute;inset:-40% 5% auto;height:150%;pointer-events:none;
-    background:radial-gradient(46% 42% at 50% 42%,color-mix(in srgb,#3ddc97 17%,transparent),transparent 72%)}
+    background:radial-gradient(46% 42% at 50% 42%,color-mix(in srgb,var(--brand) 17%,transparent),transparent 72%)}
   .plan-ring{position:relative;width:clamp(180px,20vw,258px);aspect-ratio:1;display:grid;place-items:center}
   .plan-ring svg{width:100%;height:100%;transform:rotate(-90deg);overflow:visible}
   .plan-ring circle{fill:none;stroke-width:7}
-  .plan-ring-track{stroke:color-mix(in srgb,#3ddc97 13%,transparent)}
+  .plan-ring-track{stroke:color-mix(in srgb,var(--brand) 13%,transparent)}
   .plan-ring-bar{stroke:url(#prg);stroke-linecap:round;
     stroke-dasharray:var(--dash-full);stroke-dashoffset:var(--dash-target);
-    filter:drop-shadow(0 0 9px color-mix(in srgb,#3ddc97 45%,transparent));
     transition:stroke-dashoffset 1.4s var(--ease-2)}
   /* Arranca vacío y se llena cuando la sección entra en pantalla. Sin JS de
      reveal (preview, print) muestra directo el valor final. */
@@ -460,7 +466,7 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
   .plan-ring-pct{font-size:clamp(2.4rem,3.6vw,3.15rem);font-weight:500;font-variant-numeric:tabular-nums}
   .plan-ring-sign{font-size:.42em;font-weight:500;color:var(--ink-3);margin-left:.1em;letter-spacing:0}
   .prp-meta{position:relative;display:grid;justify-items:center;gap:7px;text-align:center}
-  .prp-cap{font-size:10px;text-transform:uppercase;letter-spacing:.22em;color:#3ddc97}
+  .prp-cap{font-size:10px;text-transform:uppercase;letter-spacing:.22em;color:var(--brand)}
   .prp-sub{font-size:.9rem;color:var(--ink-2);font-variant-numeric:tabular-nums}
 
   /* ---------- COMMS BENTO ---------- */
@@ -617,7 +623,7 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
   .ctrl:active{transform:scale(.97)}
   .ctrl:disabled{opacity:.3;cursor:not-allowed;transform:none}
   .ctrl .ic{width:17px;height:17px}
-  .ctrl.next{color:#06120c;background:var(--ink);border-color:var(--ink)}
+  .ctrl.next{color:var(--on-light);background:var(--ink);border-color:var(--ink)}
   .counter{margin:0 auto;font-size:13px;color:var(--ink-3);font-variant-numeric:tabular-nums;letter-spacing:.04em}
   .counter b{color:var(--ink);font-family:var(--font-display);font-weight:600}
 
@@ -1038,7 +1044,7 @@ export function makePlanPdfDoc(plan, JsPDF) {
   doc.setFillColor(accent[0], accent[1], accent[2])
   doc.circle(M + 3, y - 3, 3, 'F')
   font('bold', 8.5, FAINT)
-  doc.text('INSIGHTS APPS      PLAN DE EJECUCION', M + 13, y, { charSpace: 1.5 })
+  doc.text('insights.      PLAN DE EJECUCION', M + 13, y, { charSpace: 1.5 })
 
   y += 36
   var titleLines = wrap(plan.title || 'Plan de ejecucion', 30, 'bold', CW)
@@ -1152,7 +1158,7 @@ export function makePlanPdfDoc(plan, JsPDF) {
     doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.8)
     doc.line(M, FOOT_Y - 11, PW - M, FOOT_Y - 11)
     font('normal', 8.5, FAINT)
-    doc.text('Insights Apps', M, FOOT_Y)
+    doc.text('insights.', M, FOOT_Y)
     doc.text(titleFoot, PW / 2, FOOT_Y, { align: 'center' })
     doc.text(p + ' / ' + total, PW - M, FOOT_Y, { align: 'right' })
   }
@@ -1181,12 +1187,8 @@ export function buildPlanHTML(plan, opts = {}) {
     (firstMilestone && firstMilestone.color) || (hitos[0] && hitos[0].color),
     ACCENT_FALLBACK,
   )
-  // El mesh usa los 3 primeros hitos formales; después los demás; después el acento.
-  const meshPool = [
-    ...hitos.filter((h) => h.isMilestone).map((h) => h.color),
-    ...hitos.filter((h) => !h.isMilestone).map((h) => h.color),
-  ]
-  const mesh = [0, 1, 2].map((i) => meshPool[i] || accent)
+  // Fondo neutro de la marca: el mesh va en azul hielo, no en los colores de los hitos.
+  const mesh = ['#C7D7E7', '#8A97A4', '#C7D7E7']
 
   const phaseCols = Math.max(1, Math.min(hitos.length, 4))
 
@@ -1197,10 +1199,9 @@ export function buildPlanHTML(plan, opts = {}) {
   const css = buildCSS({ hitos, safeIds, accent, mesh, phaseCols, previewRule })
 
   // ── <head> ─────────────────────────────────────────────────────────────────
+  // Isotipo del manual: campo claro y letra oscura; por debajo de 28px queda la «i».
   const favicon =
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='" +
-    encodeURIComponent(accent) +
-    "'/%3E%3Cpath d='M16 8v16M8 16h16' stroke='%2304140d' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23C7D7E7'/%3E%3Ctext x='16' y='23.5' text-anchor='middle' font-family='-apple-system,Helvetica,Arial,sans-serif' font-weight='700' font-size='21' fill='%230B1116'%3Ei%3C/text%3E%3C/svg%3E"
 
   // ── <nav> ──────────────────────────────────────────────────────────────────
   // Los links se derivan de las secciones que existen: no se editan a mano.
@@ -1213,11 +1214,11 @@ export function buildPlanHTML(plan, opts = {}) {
 
   // El tagline del nav reutiliza el nombre del cliente si no se especificó otro.
   const brandTagline = sp.brand.tagline || sp.clientName || sp.title
-  const brandSmall = brandTagline ? `&nbsp;<small>· ${brandTagline}</small>` : ''
+  const brandSmall = brandTagline ? `<small>${brandTagline}</small>` : ''
 
   // ── Hero ───────────────────────────────────────────────────────────────────
   // Subtítulo y eyebrow tienen default fijo: rara vez cambian (campos avanzados).
-  const heroEyebrow = sp.heroEyebrow || 'Insights Apps · Plan de ejecución'
+  const heroEyebrow = (sp.heroEyebrow || 'insights · Plan de ejecución').replace(/insights apps/gi, 'insights')
   const subtitleHtml = `<span class="l2">${sp.subtitle || 'semana a semana.'}</span>`
   const leadHtml = sp.lead ? `\n    <p class="lead reveal in d2">${sp.lead}</p>` : ''
   const scrollCueHtml = sp.scrollCue
@@ -1285,7 +1286,7 @@ ${bentoHtml}
 `
 
   // ── <footer> ───────────────────────────────────────────────────────────────
-  const fBrand = sp.footer.brand || 'Insights Apps'
+  const fBrand = (!sp.footer.brand || /^insights( apps)?\.?$/i.test(sp.footer.brand.trim())) ? WORDMARK : sp.footer.brand
   const fLines = (sp.footer.lines && sp.footer.lines.length) ? sp.footer.lines : [sp.clientName || sp.title].filter(Boolean)
   let footMeta = `<b>${fBrand}</b>`
   if (fLines.length) footMeta += ` · ${fLines[0]}`
@@ -1333,7 +1334,7 @@ ${bentoHtml}
         <div class="plan-ring" style="--dash-full:${prCirc.toFixed(2)};--dash-target:${prTarget.toFixed(2)}">
           <svg viewBox="0 0 120 120" aria-hidden="true">
             <defs><linearGradient id="prg" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#3ddc97"></stop><stop offset="1" stop-color="#9df0c8"></stop>
+              <stop offset="0" stop-color="#C7D7E7"></stop><stop offset="1" stop-color="#F8FAFC"></stop>
             </linearGradient></defs>
             <circle class="plan-ring-track" cx="60" cy="60" r="${prR}"></circle>
             <circle class="plan-ring-bar" cx="60" cy="60" r="${prR}"></circle>
@@ -1396,8 +1397,6 @@ ${bentoHtml}
 <title>${sp.docTitle || (sp.title ? sp.title + ' — Plan de ejecución' : 'Plan de ejecución')}</title>
 <meta name="description" content="${sp.metaDescription || sp.lead || sp.title}" />
 <link rel="icon" href="${favicon}" />
-<link rel="preconnect" href="https://api.fontshare.com" crossorigin />
-<link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,500,700,400&f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
 <style>
 ${css}
 </style>
@@ -1409,8 +1408,7 @@ ${css}
 <nav id="nav">
   <div class="nav-pill">
     <div class="brand">
-      <span class="spark">${BRAND_SPARK_ICON}</span>
-      ${sp.brand.name}${brandSmall}
+      ${(!sp.brand.name || /^insights( apps)?\.?$/i.test(String(sp.brand.name).trim())) ? WORDMARK : `<span class="wordmark">${sp.brand.name}</span>`}${brandSmall}
     </div>
     <div class="nav-links">
 ${navLinks}
