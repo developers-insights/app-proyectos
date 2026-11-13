@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { portafolioDe, textoMostrable, estadoPortafolio, urlMostrable } from '../src/lib/portafolio.js'
+import { portafolioDe, textoMostrable, estadoPortafolio, urlMostrable, huellaPortafolio, catalogoWeb } from '../src/lib/portafolio.js'
 import { buildBridgeSnapshots } from '../src/lib/bridge.js'
 
 const NOW = new Date(2026, 10, 12, 15, 0)
@@ -135,4 +135,39 @@ test('el desarrollador viaja aparte en interno', () => {
   }, NOW)
   assert.deepEqual(out[0].portafolio.interno, { desarrollador: 'Lisandro' })
   assert.equal(JSON.stringify({ ...out[0].portafolio, interno: undefined }).includes('Lisandro'), false)
+})
+
+test('el inglés viaja sólo si es del texto vigente', () => {
+  const p = { id: 'k', name: 'Komos', portafolio: { queEs: 'App de vida nocturna.', negocio: 'Guía de salidas.' } }
+  const fuente = huellaPortafolio({ queEs: 'App de vida nocturna.', negocio: 'Guía de salidas.', resumen: null })
+  const en = { fuente, queEs: 'Nightlife app.', negocio: 'Going-out guide. Write to ana@x.com', resumen: 'Inventado.' }
+  const f = portafolioDe(p, { name: 'Ana' }, 'desarrollo', 10, { en })
+  assert.deepEqual(f.en, { queEs: 'Nightlife app.', negocio: 'Going-out guide.', resumen: null })
+  const vieja = portafolioDe({ ...p, portafolio: { ...p.portafolio, queEs: 'Otra cosa.' } }, {}, 'desarrollo', 10, { en })
+  assert.equal(vieja.en, null)
+})
+
+test('a la web va lo terminado, salvo que lo saquen a mano', () => {
+  assert.equal(portafolioDe({ id: 'a', name: 'A' }, {}, 'free', null).web, true)
+  assert.equal(portafolioDe({ id: 'a', name: 'A' }, {}, 'finalizado', null).web, true)
+  assert.equal(portafolioDe({ id: 'a', name: 'A' }, {}, 'desarrollo', null).web, false)
+  assert.equal(portafolioDe({ id: 'a', name: 'A', portafolio: { web: false } }, {}, 'plan', null).web, false)
+})
+
+test('el catálogo de la web lleva sólo lo terminado y nada interno ni del cliente', () => {
+  const out = catalogoWeb(buildBridgeSnapshots({
+    projects: [
+      { id: 'p1', data: { name: 'Chamber OS', clientId: 'c1', stage: 'free', kickoff: 'Plataforma de membresías.', productionUrl: 'https://app.davischamber.com', assignments: { dev: { userId: 'u2' } }, closerNotes: [{ id: 'n', text: 'cobrar', at: '2026-11-01' }] } },
+      { id: 'p2', data: { name: 'En obra', stage: 'desarrollo' } },
+      { id: 'p3', data: { name: 'Oculto', stage: 'plan', portafolio: { web: false } } },
+    ],
+    clients: [{ id: 'c1', data: { name: 'Amberlee Bauman', company: 'Davis Chamber', email: 'a@d.com', phone: '+1 530 555 0100' } }],
+    team: [{ id: 'u2', data: { name: 'Lisandro' } }],
+  }, NOW))
+  assert.deepEqual(out.map((x) => x.id), ['p1'])
+  assert.equal(out[0].queEs, 'Plataforma de membresías.')
+  const json = JSON.stringify(out)
+  for (const prohibido of ['Amberlee', 'a@d.com', '555', 'Lisandro', 'cobrar', 'Davis Chamber"']) {
+    assert.ok(!json.includes(prohibido), `se coló "${prohibido}"`)
+  }
 })

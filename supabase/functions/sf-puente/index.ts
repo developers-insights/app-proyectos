@@ -73,20 +73,26 @@ Deno.serve(async (req) => {
     cq = cq.in('id', de('clientId').length ? de('clientId') : ['-'])
     plq = plq.in('id', de('planId').length ? de('planId') : ['-'])
   }
-  const [clients, plans, team] = await Promise.all([
+  let tq = db.from('portafolio_en').select('project_id,data')
+  if (ids) tq = tq.in('project_id', ids.length ? ids : ['-'])
+  const [clients, plans, team, traducciones] = await Promise.all([
     cq,
     plq,
     // Del equipo sólo hace falta el nombre (autor de las notas para el closer).
     db.from('team_members').select('id, deleted_at, nombre:data->>name').is('deleted_at', null),
+    tq,
   ])
   const fallo = projects.error || clients.error || plans.error || team.error
   if (fallo) {
     console.error('[sf-puente] lectura:', fallo.message)
     return json({ error: 'no pude leer los proyectos' }, 500)
   }
+  // Sin traducciones la foto sale igual, en español: el inglés es un extra del portafolio.
+  if (traducciones.error) console.warn('[sf-puente] portafolio_en:', traducciones.error.message)
 
   const fotos = buildBridgeSnapshots({
     projects: projects.data ?? [], clients: clients.data ?? [], plans: plans.data ?? [],
+    traducciones: traducciones.error ? [] : traducciones.data ?? [],
     team: (team.data ?? []).map((u: { id: string; deleted_at: string | null; nombre: string | null }) => ({ id: u.id, deleted_at: u.deleted_at, data: { name: u.nombre } })),
   }, new Date())
   const vivos = new Set(fotos.map((f) => f.id))
