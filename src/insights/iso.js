@@ -49,7 +49,7 @@ export const ROOMS = [
 
 export const LINKS = [
   ['onboarding', 'mvp'], ['mvp', 'prueba'], ['prueba', 'plan'],
-  ['mvp', 'fase2'], ['prueba', 'anual'], ['plan', 'partner'], ['fase2', 'standby'], ['fase2', 'nuevo'],
+  ['mvp', 'fase2'], ['prueba', 'anual'], ['plan', 'partner'], ['anual', 'partner'], ['fase2', 'standby'], ['fase2', 'nuevo'],
 ]
 
 /* Camino que recorrió un proyecto hasta su tramo, para la ficha. */
