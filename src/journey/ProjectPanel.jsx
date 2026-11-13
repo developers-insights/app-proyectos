@@ -11,6 +11,7 @@ import { openCloserNotes } from '../lib/closerNotes.js'
 import { fmtDay, toDateInput, fromDateInput } from '../lib/stores.js'
 import { annualInfo, setAnnualStart, normalizePartner, setPartner, PARTNER_NOTE_MAX } from '../lib/agreements.js'
 import { PanelNotes } from '../notes/ServiceNotes.jsx'
+import { OportunidadesSection } from '../oportunidades/Oportunidades.jsx'
 import { ClientMark, dayCell, daysText, plural } from './parts.jsx'
 
 const CSS = `
@@ -371,6 +372,11 @@ function ProjectBody({ item, clientOf, onAnotar, onSaveNote, onSaveAgreement, ca
       <section className="jp-sec">
         <div className="jp-k">Upsell</div>
         <UpsellBox project={p} onAnotar={onAnotar} />
+      </section>
+
+      <section className="jp-sec">
+        <div className="jp-k">Oportunidades <span>lo que la IA ve para ofrecerle</span></div>
+        <OportunidadesSection project={p} compact />
       </section>
 
       {notes.length > 0 && (
