@@ -50,6 +50,11 @@ const upsellOut = (e) => (e ? {
   note: clip(e.note, 300) || null,
 } : null)
 
+const devDe = (p) => {
+  const d = p.assignments && p.assignments.dev
+  return d && typeof d === 'object' && typeof d.userId === 'string' ? d.userId : null
+}
+
 export function buildBridgeSnapshots({ projects = [], clients = [], plans = [], team = [] } = {}, now = new Date(), opts = {}) {
   const appUrl = (opts.appUrl || APP_URL).replace(/\/+$/, '')
   const clientById = new Map(clients.filter(live).map(unrow).filter(Boolean).map((c) => [c.id, c]))
@@ -95,7 +100,7 @@ export function buildBridgeSnapshots({ projects = [], clients = [], plans = [], 
       notes: openCloserNotes(p).map((n) => ({ id: n.id, text: n.text, at: n.at, by: n.by ? nameOf.get(n.by) || null : null })),
       url: `${appUrl}/?proyecto=${encodeURIComponent(p.id)}`,
       updatedAt: p.updatedAt || null,
-      portafolio: portafolioDe(p, c, entry.stage, entry.pct),
+      portafolio: portafolioDe(p, c, entry.stage, entry.pct, { plan: planOf(p), desarrollador: devDe(p) ? nameOf.get(devDe(p)) || null : null }),
     }
   })
 }
