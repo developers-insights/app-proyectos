@@ -7017,7 +7017,7 @@ function LinksMenu({ items }) {
     <span style={{ display: 'inline-block' }}>
       <button ref={btnRef} type="button" className="pd-btn pdh-trig" onClick={toggle}
         aria-haspopup="menu" aria-expanded={open}
-        title={loaded ? `${loaded} de ${items.length} enlaces cargados` : 'Ningún enlace cargado todavía'}>
+        title={loaded ? `${loaded} de ${items.filter((i) => !i.onAction).length} enlaces cargados` : 'Ningún enlace cargado todavía'}>
         <span className="pdh-ico"><I2.link width={14} height={14} /></span>
         Enlaces
         {loaded > 0 && <span className="n">{loaded}</span>}
@@ -7027,6 +7027,13 @@ function LinksMenu({ items }) {
         <MenuSurface pos={pos} onClose={() => setOpen(false)} label="Enlaces del proyecto">
           {items.map((it) => {
             const Ico = it.Ico
+            if (it.onAction) return (
+              <button key={it.label} type="button" className="row-hover pdh-item" role="menuitem"
+                onClick={() => { setOpen(false); it.onAction() }} title={it.title || it.label}>
+                <span className="ic"><Ico width={14} height={14} /></span>
+                <span className="lb">{it.label}</span>
+              </button>
+            )
             return it.url ? (
               <a key={it.label} className="row-hover pdh-item" role="menuitem" href={it.url} target="_blank" rel="noreferrer"
                 onClick={() => setOpen(false)} title={`Abrir ${it.label} en otra pestaña`}>
@@ -7101,6 +7108,7 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
   const [planOpen, setPlanOpen] = useState(false)
   const [planPublishing, setPlanPublishing] = useState(false)
   const [planPublishError, setPlanPublishError] = useState('')
+  const [planCopied, setPlanCopied] = useState(false)
   const [vaultOpen, setVaultOpen] = useState(false)
   const [mvpOpen, setMvpOpen] = useState(false)
   const [upsellOpen, setUpsellOpen] = useState(false)
@@ -7187,6 +7195,21 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
   const planUrl = (linkedPlan && linkedPlan.publishedUrl) || ''
   let planDashUrl = ''
   if (planUrl) { try { const u = new URL(planUrl); planDashUrl = `${u.origin}/dashboard${u.pathname}` } catch (e) { planDashUrl = '' } }
+  // Compartir = el link de la página pública, nunca el PDF (13/11, Nacho). En el
+  // celular abre la hoja nativa de compartir; en la compu lo copia.
+  const copyPlanLink = async () => {
+    if (!planUrl) return
+    const title = linkedPlan?.title || project.name
+    if (navigator.share && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+      try { await navigator.share({ title, url: planUrl }); return } catch (e) { if (e && e.name === 'AbortError') return }
+    }
+    try { await navigator.clipboard.writeText(planUrl) } catch (e) {
+      const ta = document.createElement('textarea'); ta.value = planUrl; document.body.appendChild(ta); ta.select()
+      try { document.execCommand('copy') } catch (e2) { /* sin portapapeles */ }
+      ta.remove()
+    }
+    setPlanCopied(true); setTimeout(() => setPlanCopied(false), 1800)
+  }
   const scopeN = (project.scopeFiles?.length || 0) + (project.salesLinks?.length || 0)
   const linkedMvp = projectMvps(project, data.mvps)[0] || null
   const mvpSuggested = !linkedMvp && suggestMvpsForProject(project, data.mvps || [], data.clients).length > 0
@@ -7226,6 +7249,7 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
               { Ico: I2.github, label: 'Repo de la demo', url: mvpRepoUrl(linkedMvp), onEmpty: () => setMvpOpen(true) },
               { Ico: I2.calendar, label: 'Plan público', url: planUrl, onEmpty: () => setPlanOpen(true) },
               { Ico: I2.gantt, label: 'Progreso', url: planDashUrl, onEmpty: () => setPlanOpen(true) },
+              ...(planUrl ? [{ Ico: I2.copy, label: planCopied ? 'Link copiado' : 'Compartir plan público', onAction: copyPlanLink, title: 'Copia el link del plan para mandarlo por WhatsApp o mail' }] : []),
             ]} />
             <PanelsMenu items={[
               { Ico: I2.lock, label: 'Claves del proyecto', onClick: () => setVaultOpen(true), title: 'Variables de entorno, contraseñas y accesos del proyecto' },
@@ -7463,7 +7487,12 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
                 </Field>
               )}
               {linkedPlan.publishedUrl
-                ? <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-accent" style={{ justifyContent: 'center' }}><I2.ext width={14} height={14} /> Abrir plan</a>
+                ? <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button type="button" className="btn btn-accent" style={{ flex: '1 1 180px', justifyContent: 'center' }} onClick={copyPlanLink} aria-live="polite">
+                      {planCopied ? <I2.check width={14} height={14} /> : <I2.copy width={14} height={14} />} {planCopied ? 'Link copiado' : 'Compartir link'}
+                    </button>
+                    <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn" style={{ flex: '1 1 120px', justifyContent: 'center' }}><I2.ext width={14} height={14} /> Abrir plan</a>
+                  </div>
                 : <>
                     <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Este plan todavía no tiene página pública. Publicalo y el enlace queda cargado acá y en Enlaces, listo para mandarle al cliente.</div>
                     <button className="btn btn-accent" style={{ justifyContent: 'center' }} disabled={planPublishing} onClick={publishLinkedPlan}>
