@@ -1610,6 +1610,7 @@ function useAppData() {
 ============================================================================ */
 const PLAN_SAVE_DEBOUNCE = 500
 const PLAN_PUBLISH_DEBOUNCE = 700   // sync a published_plans (el link público) tras marcar avance
+const PLAN_SITE_BASE = 'https://planes-insights.vercel.app'   // gemela de PlannerView.jsx
 
 /**
  * Sube (o pisa) el plan en published_plans — la tabla que lee el sitio público de
@@ -7098,6 +7099,8 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
   const [shareOpen, setShareOpen] = useState(false)
   const [intakeOpen, setIntakeOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
+  const [planPublishing, setPlanPublishing] = useState(false)
+  const [planPublishError, setPlanPublishError] = useState('')
   const [vaultOpen, setVaultOpen] = useState(false)
   const [mvpOpen, setMvpOpen] = useState(false)
   const [upsellOpen, setUpsellOpen] = useState(false)
@@ -7113,6 +7116,22 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
       : { type: 'plan-unlink', text: `desasoció el plan de ${project.name}` })
   }
   const setPlanUrl = (url) => { if (project.planId) patchPlan(project.planId, (pl) => ({ ...pl, publishedUrl: url })) }
+  // Publicar desde el proyecto: antes el modal sólo mandaba al Planificador y quien
+  // tocaba "Plan público" no tenía cómo dejarlo cargado (13/11, Nacho con Komos).
+  // El upsert va por slug: si otro plan publicado ya usa ese slug, se le pisaría la
+  // página pública a otro cliente, así que en ese caso se usa un slug propio.
+  const publishLinkedPlan = async () => {
+    if (!linkedPlan || planPublishing) return
+    setPlanPublishing(true); setPlanPublishError('')
+    let slug = linkedPlan.slug || linkedPlan.id
+    if ((plans || []).some((pl) => pl.id !== linkedPlan.id && pl.slug === slug && pl.published)) slug = `${slug}-${linkedPlan.id.slice(0, 4)}`
+    const toPublish = { ...linkedPlan, slug, published: true, publishedUrl: `${PLAN_SITE_BASE}/${slug}` }
+    const { error } = await upsertPublishedPlan(toPublish)
+    setPlanPublishing(false)
+    if (error) { setPlanPublishError(error.message || 'No se pudo publicar el plan.'); return }
+    patchPlan(linkedPlan.id, (pl) => ({ ...pl, slug, published: true, publishedUrl: `${PLAN_SITE_BASE}/${slug}` }))
+    if (logActivity) logActivity({ type: 'plan-publish', text: `publicó el plan "${linkedPlan.title}"` })
+  }
   // Guardar el modal MERGEA sobre el proyecto vivo, no lo reemplaza: el draft es un
   // snapshot del momento en que se abrió el modal y mientras tanto el proyecto pudo
   // cambiar por otro lado (otra pestaña, realtime, pasar de fase, marcar el aviso de
@@ -7445,7 +7464,13 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
               )}
               {linkedPlan.publishedUrl
                 ? <a href={linkedPlan.publishedUrl} target="_blank" rel="noreferrer" className="btn btn-accent" style={{ justifyContent: 'center' }}><I2.ext width={14} height={14} /> Abrir plan</a>
-                : <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Este plan todavía no está publicado. Tocá "Publicar" en el Planificador — el enlace va a aparecer acá solo, no hace falta pegarlo a mano.</div>}
+                : <>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Este plan todavía no tiene página pública. Publicalo y el enlace queda cargado acá y en Enlaces, listo para mandarle al cliente.</div>
+                    <button className="btn btn-accent" style={{ justifyContent: 'center' }} disabled={planPublishing} onClick={publishLinkedPlan}>
+                      <I2.rocket width={14} height={14} /> {planPublishing ? 'Publicando…' : 'Publicar plan'}
+                    </button>
+                    {planPublishError && <div role="alert" style={{ fontSize: 12.5, color: 'var(--red)', lineHeight: 1.5 }}>No se pudo publicar: {planPublishError}</div>}
+                  </>}
             </>
           ) : (
             <div style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.55 }}>Asociá un plan del Planificador para abrirlo desde acá. Publicalo con el botón "Publicar" del Planificador y el enlace va a quedar vinculado automáticamente.</div>
