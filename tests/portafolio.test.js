@@ -59,7 +59,7 @@ test('la ficha del portafolio trae lo mostrable y nada interno', () => {
     totalAmount: 8000,
     paidAmount: 4000,
   }
-  const c = { name: 'Marco', company: 'Kintsugi Roadside', email: 'marco@k.com', phone: '+1 305', onboarding: { goals: 'Plataforma estilo Uber para emergencias con tracking GPS. Presupuesto aprobado USD 8.000.', businessDescription: 'Servicio de emergencias automotrices.', approvedBudget: 8000, notes: 'interno' } }
+  const c = { name: 'Marco', company: 'Kintsugi Roadside', email: 'marco@k.com', phone: '+1 305', onboarding: { goals: 'Plataforma estilo Uber para emergencias con tracking GPS. Presupuesto aprobado USD 8.000.', businessDescription: 'Servicio de emergencias automotrices.', approvedBudget: 8000, notes: 'nota privada' } }
   const f = portafolioDe(p, c, 'free', 100)
   assert.equal(f.mostrable, true)
   assert.equal(f.estado, 'produccion')
@@ -74,7 +74,7 @@ test('la ficha del portafolio trae lo mostrable y nada interno', () => {
   assert.equal(f.plan, false)
   assert.deepEqual(f.tiendas, { play: 'publicada', apple: 'tramite' })
   const json = JSON.stringify(f)
-  for (const prohibido of ['8.000', '8000', '4000', 'secreto', 'marco@k.com', 'Marco', 'fácil', 'Faltan las cuentas', 'Paga 5k', 'interno']) {
+  for (const prohibido of ['8.000', '8000', '4000', 'secreto', 'marco@k.com', 'Marco', 'fácil', 'Faltan las cuentas', 'Paga 5k', 'nota privada']) {
     assert.ok(!json.includes(prohibido), `se coló "${prohibido}"`)
   }
 })
@@ -101,4 +101,38 @@ test('la foto del puente lleva el bloque portafolio', () => {
   assert.equal(out[0].portafolio.queEs, 'Plataforma de membresías para una cámara de comercio.')
   assert.equal(out[0].portafolio.appUrl, 'https://app.davischamber.com/')
   assert.deepEqual(out[1].portafolio, { mostrable: false })
+})
+
+test('los plazos se caen como la plata', () => {
+  assert.equal(textoMostrable('App de reservas. Se entrega en 6 semanas. Lanzamos el 18 de diciembre.', ''), 'App de reservas.')
+  assert.equal(textoMostrable('Panel de turnos. Cerramos con 30 días de soporte.', ''), 'Panel de turnos.')
+})
+
+test('la descripción propia manda sobre lo derivado y pasa igual por el filtro', () => {
+  const p = {
+    id: 'k', name: 'Komos', kickoff: 'Kickoff viejo.',
+    portafolio: { queEs: 'App de vida nocturna con mapa y check-in por QR.', negocio: 'Guía de salidas.', resumen: 'Descubrir lugares por música. La paga USD 5.000.', stack: 'Supabase · Google Places', tiendasUrl: { apple: 'https://apps.apple.com/us/app/komos/id1', play: 'https://evil.com/x' } },
+  }
+  const f = portafolioDe(p, { name: 'María', onboarding: { goals: 'Otra cosa.' } }, 'desarrollo', 10)
+  assert.equal(f.queEs, 'App de vida nocturna con mapa y check-in por QR.')
+  assert.equal(f.negocio, 'Guía de salidas.')
+  assert.equal(f.resumen, 'Descubrir lugares por música.')
+  assert.equal(f.stack, 'Supabase · Google Places')
+  assert.deepEqual(f.tiendasUrl, { apple: 'https://apps.apple.com/us/app/komos/id1' })
+})
+
+test('sin nada propio, el lead del plan da el resumen sin hablar del proceso', () => {
+  const plan = { lead: 'Plan de 8 semanas para el CRM. Reúne WhatsApp e Instagram en un inbox con pipeline de ventas. Lo que falta depende de vos. Las fechas son estimadas.' }
+  const f = portafolioDe({ id: 'g', name: 'Go Group' }, {}, 'desarrollo', null, { plan })
+  assert.equal(f.resumen, 'Reúne WhatsApp e Instagram en un inbox con pipeline de ventas.')
+  assert.equal(f.queEs, null, 'el plan no da el qué es')
+})
+
+test('el desarrollador viaja aparte en interno', () => {
+  const out = buildBridgeSnapshots({
+    projects: [{ id: 'p1', data: { name: 'Chamber OS', stage: 'free', assignments: { dev: { userId: 'u2' } } } }],
+    team: [{ id: 'u2', data: { name: 'Lisandro' } }],
+  }, NOW)
+  assert.deepEqual(out[0].portafolio.interno, { desarrollador: 'Lisandro' })
+  assert.equal(JSON.stringify({ ...out[0].portafolio, interno: undefined }).includes('Lisandro'), false)
 })
