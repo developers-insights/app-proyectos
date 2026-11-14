@@ -510,7 +510,7 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
     transition:all .55s var(--ease)}
   .pill .lbl{font-size:10.5px;color:var(--ink-3);letter-spacing:.04em;transition:color .4s var(--ease);white-space:nowrap}
   .pill:hover .node{border-color:var(--col);color:var(--ink)}
-  .pill.active .node{background:var(--col);color:#06120c;border-color:var(--col);
+  .pill.active .node{background:var(--col);color:var(--on-light);border-color:var(--col);
     box-shadow:0 0 0 5px color-mix(in srgb,var(--col) 16%,transparent),0 8px 24px -8px var(--col);
     transform:scale(1.06)}
   .pill.active .lbl{color:var(--ink)}
@@ -536,7 +536,7 @@ ${hitoTokens}    --c-hito-_neutral:${NEUTRAL_COLOR};
   .type-chip{margin-left:auto;display:inline-flex;align-items:center;gap:8px;font-size:12px;
     color:var(--ink-2);border:1px solid var(--line);border-radius:999px;padding:6px 13px;background:var(--glass)}
   .type-chip .ic{width:15px;height:15px}
-  .type-chip.t-formal{color:#06120c;background:var(--col);border-color:var(--col);font-weight:500}
+  .type-chip.t-formal{color:var(--on-light);background:var(--col);border-color:var(--col);font-weight:500}
   .type-chip.t-gate{color:var(--c-gate);border-color:color-mix(in srgb,var(--c-gate) 40%,transparent);
     background:color-mix(in srgb,var(--c-gate) 12%,transparent)}
 

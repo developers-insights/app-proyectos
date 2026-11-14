@@ -1,0 +1,52 @@
+name: Plan público al día
+
+# planes-web (planes-insights.vercel.app) arma el plan público con una copia de
+# src/plan/planTemplate.js y planModel.js. Antes había que copiarlos a mano y
+# el link del cliente quedaba con la versión vieja. Al mergear acá, se copian a
+# planes-web/lib y su push a main lo deploya Vercel.
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/plan/planTemplate.js
+      - src/plan/planModel.js
+      - .github/workflows/sync-plan-publico.yml
+  workflow_dispatch:
+
+concurrency:
+  group: sync-plan-publico
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+
+      - name: Clonar planes-web con su deploy key
+        env:
+          KEY: ${{ secrets.PLANES_WEB_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/planes_web
+          chmod 600 ~/.ssh/planes_web
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/planes_web -o IdentitiesOnly=yes" \
+            git clone --depth 1 git@github.com:developers-insights/planes-web.git web
+
+      - name: Copiar y pushear si cambió
+        working-directory: web
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          cp ../app/src/plan/planTemplate.js lib/planTemplate.js
+          cp ../app/src/plan/planModel.js lib/planModel.js
+          if git diff --quiet; then echo "planes-web ya estaba al día"; exit 0; fi
+          # Autor = noreply del dueño del proyecto en Vercel; con otro mail el deploy queda BLOCKED.
+          git config user.name developers-insights
+          git config user.email 305118073+developers-insights@users.noreply.github.com
+          git add lib/planTemplate.js lib/planModel.js
+          git commit -m "Template del plan desde app-proyectos@${SHA::7}"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/planes_web -o IdentitiesOnly=yes" git push origin HEAD:main
