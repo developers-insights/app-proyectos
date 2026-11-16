@@ -260,3 +260,98 @@ export function deshacerDescarte(op) {
   if (!op || op.estado !== 'descartada') return op
   return { ...op, estado: 'nueva', descartadaAt: null, descartadaPor: null }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * El tablero de la sección "Oportunidades": una fila por cliente con lo que se
+ * le puede ofrecer. Puro, para que la vista sólo dibuje y los tests lo fijen.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/* Un proyecto interno no es un cliente, y a un cancelado no se le ofrece nada. */
+export const esVendible = (project) => {
+  const p = unrow(project) || {}
+  return p.kind !== 'interno' && projectStage(p) !== 'cancelado'
+}
+
+export const ESTADOS_FILA = [
+  { key: 'para_ofrecer', label: 'Para ofrecer' },
+  { key: 'sin_explorar', label: 'Sin explorar' },
+  { key: 'al_dia', label: 'Ya decididas' },
+]
+
+const RANGO = { para_ofrecer: 0, sin_explorar: 1, al_dia: 2 }
+
+export function filaOportunidades(project, items = [], client = null) {
+  const p = unrow(project) || {}
+  const c = unrow(client) || null
+  const mias = (items || []).map(normalizeOpportunity).filter((o) => o.projectId === p.id)
+  const ideas = mias.filter((o) => o.estado === 'nueva').sort((a, b) => a.orden - b.orden)
+  const ofrecidas = mias.filter((o) => o.estado === 'ofrecida')
+  const descartadas = mias.filter((o) => o.estado === 'descartada')
+  const generadaAt = mias.reduce((m, o) => (o.generadaAt && o.generadaAt > (m || '') ? o.generadaAt : m), null)
+  const montoUnico = ideas.filter((o) => o.cobro !== 'mensual').reduce((s, o) => s + (o.montoUsd || 0), 0)
+  const montoMensual = ideas.filter((o) => o.cobro === 'mensual').reduce((s, o) => s + (o.montoUsd || 0), 0)
+  const stage = projectStage(p)
+  return {
+    id: p.id,
+    project: p,
+    client: c,
+    cliente: clip((c && (c.company || c.name)) || '', 80) || 'Sin cliente',
+    proyecto: clip(p.name, 120) || 'Sin nombre',
+    stage,
+    etapa: stageMeta(stage).label,
+    fase: stageMeta(stage).phase || 0,
+    ideas,
+    ofrecidas,
+    descartadas,
+    generadaAt,
+    montoUnico,
+    montoMensual,
+    montoTop: ideas.reduce((m, o) => Math.max(m, o.montoUsd || 0), 0),
+    categorias: [...new Set(ideas.map((o) => o.categoria))],
+    estado: ideas.length ? 'para_ofrecer' : mias.length ? 'al_dia' : 'sin_explorar',
+  }
+}
+
+/** Filas ordenadas (lo que hay para ofrecer primero, por plata) + totales de la cabecera. */
+export function tableroOportunidades(items = [], projects = [], clients = []) {
+  const byClient = new Map((clients || []).map((c) => { const x = unrow(c); return [x && x.id, x] }))
+  const filas = (projects || [])
+    .map(unrow)
+    .filter((p) => p && p.id && esVendible(p))
+    .map((p) => filaOportunidades(p, items, byClient.get(p.clientId) || null))
+    .sort((a, b) => {
+      if (RANGO[a.estado] !== RANGO[b.estado]) return RANGO[a.estado] - RANGO[b.estado]
+      if (a.estado === 'para_ofrecer') {
+        if (b.montoTop !== a.montoTop) return b.montoTop - a.montoTop
+        if (b.ideas.length !== a.ideas.length) return b.ideas.length - a.ideas.length
+      }
+      if (a.estado === 'sin_explorar' && b.fase !== a.fase) return b.fase - a.fase
+      if (a.estado === 'al_dia') {
+        const d = String(b.generadaAt || '').localeCompare(String(a.generadaAt || ''))
+        if (d) return d
+      }
+      return a.cliente.localeCompare(b.cliente, 'es')
+    })
+  const totales = filas.reduce((t, f) => ({
+    proyectos: t.proyectos + 1,
+    conIdeas: t.conIdeas + (f.ideas.length ? 1 : 0),
+    sinExplorar: t.sinExplorar + (f.estado === 'sin_explorar' ? 1 : 0),
+    ideas: t.ideas + f.ideas.length,
+    ofrecidas: t.ofrecidas + f.ofrecidas.length,
+    montoUnico: t.montoUnico + f.montoUnico,
+    montoMensual: t.montoMensual + f.montoMensual,
+  }), { proyectos: 0, conIdeas: 0, sinExplorar: 0, ideas: 0, ofrecidas: 0, montoUnico: 0, montoMensual: 0 })
+  return { filas, totales }
+}
+
+/** Búsqueda por texto, pestaña y categoría. Una fila sin ideas no matchea una categoría. */
+export function filtrarFilas(filas = [], { q = '', estado = 'todas', categoria = 'todas' } = {}) {
+  const t = String(q || '').trim().toLowerCase()
+  return filas.filter((f) => {
+    if (estado !== 'todas' && f.estado !== estado) return false
+    if (categoria !== 'todas' && !f.categorias.includes(categoria)) return false
+    if (!t) return true
+    const heno = [f.cliente, f.proyecto, f.etapa, ...f.ideas.map((o) => `${o.titulo} ${o.porQue} ${o.senal}`)].join(' ').toLowerCase()
+    return heno.includes(t)
+  })
+}

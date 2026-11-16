@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import React, { forwardRef, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useApp } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
@@ -94,6 +94,7 @@ const CSS = `
 .op-seen li .t{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}
 .op-seen li .t small{display:block;margin-top:2px;font-size:11.5px;color:var(--text-faint)}
 .op-seen li.off .t > span{color:var(--text-faint);text-decoration:line-through;text-decoration-color:var(--border-strong)}
+.op-bar{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin:0 0 12px;font-size:12px;color:var(--text-faint)}
 .op-sec.compact .op-grid{grid-template-columns:1fr}
 .op-sec.compact .op-card{padding:13px 13px 12px}
 .op-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -190,7 +191,8 @@ function EstadoTablero({ op, puede, onElegir, onReintentar, candidatos, who }) {
   return <div className="op-st ok"><I2.check width={14} height={14} /><span>{base}.</span></div>
 }
 
-function Tarjeta({ op, puede, onOfrecer, onDescartar, onElegir, candidatos, who, reduce }) {
+/* forwardRef: `AnimatePresence mode="popLayout"` mide el hijo que sale y necesita su nodo. */
+const Tarjeta = forwardRef(function Tarjeta({ op, puede, onOfrecer, onDescartar, onElegir, candidatos, who, reduce }, ref) {
   const cat = categoriaMeta(op.categoria)
   const [copiado, setCopiado] = useState(false)
   const monto = montoTexto(op)
@@ -198,7 +200,7 @@ function Tarjeta({ op, puede, onOfrecer, onDescartar, onElegir, candidatos, who,
     try { await navigator.clipboard.writeText(op.frase); setCopiado(true); setTimeout(() => setCopiado(false), 1600) } catch { /* sin permiso */ }
   }
   return (
-    <motion.article className="op-card" style={{ '--oc': `var(${COLOR[op.categoria] || '--accent'})` }} layout={!reduce}
+    <motion.article ref={ref} className="op-card" style={{ '--oc': `var(${COLOR[op.categoria] || '--accent'})` }} layout={!reduce}
       initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={reduce ? { opacity: 0 } : { opacity: 0, scale: .97 }}
       transition={{ duration: .32, ease: [.22, 1, .36, 1] }}>
       <div className="op-top">
@@ -227,9 +229,9 @@ function Tarjeta({ op, puede, onOfrecer, onDescartar, onElegir, candidatos, who,
         )}
     </motion.article>
   )
-}
+})
 
-export function OportunidadesSection({ project, compact = false }) {
+export function OportunidadesSection({ project, compact = false, embedded = false }) {
   const { data, myId, supabase, opportunityStore } = useApp()
   const reduce = useReducedMotion()
   const id = useId()
@@ -303,7 +305,7 @@ export function OportunidadesSection({ project, compact = false }) {
   return (
     <section className={`op-sec${compact ? ' compact' : ''}`} aria-labelledby={`${id}-t`} aria-busy={pensando}>
       <style>{CSS}</style>
-      {!compact && (
+      {!compact && !embedded && (
         <div className="pd-h">
           <h2 id={`${id}-t`}>Oportunidades</h2>
           <span className="sub">qué más podemos hacer por este cliente</span>
@@ -319,7 +321,18 @@ export function OportunidadesSection({ project, compact = false }) {
           )}
         </div>
       )}
-      {compact && <span id={`${id}-t`} className="op-sr">Oportunidades</span>}
+      {(compact || embedded) && <span id={`${id}-t`} className="op-sr">Oportunidades</span>}
+
+      {embedded && hay && (
+        <div className="op-bar">
+          {v.generadaAt && <span>Pensadas el {fmtDay(v.generadaAt)}{generadaPor ? ` por ${who(generadaPor)}` : ''}</span>}
+          {puede && (
+            <button type="button" className="op-again" onClick={generar} disabled={pensando} aria-busy={pensando}>
+              <I2.refresh width={13} height={13} /> {pensando ? 'Pensando…' : 'Volver a pensar'}
+            </button>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="op-err" role="alert">

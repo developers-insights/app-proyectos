@@ -60,6 +60,7 @@ import { CloserNotesPanel } from './journey/CloserNotes.jsx'
 import ClarityControl from './journey/ClarityControl.jsx'
 import { NotesView, ProjectNotesBlock } from './notes/ServiceNotes.jsx'
 import { OportunidadesSection } from './oportunidades/Oportunidades.jsx'
+import OportunidadesView from './oportunidades/OportunidadesView.jsx'
 import { normalizeOpportunity } from './lib/oportunidades.js'
 import { useServiceNotes } from './notes/useServiceNotes.js'
 import { normalizeMvp, mvpDemoUrl, mvpRepoUrl, unseenMvpCount, suggestMvpsForProject } from './lib/mvps.js'
@@ -8628,6 +8629,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'clients', label: 'Clients', icon: I2.users },
     { key: 'notas', label: 'Notas', icon: I2.pencil },
     { key: 'mvps', label: 'MVPs', icon: I2.rocket, badge: newMvps },
+    { key: 'oportunidades', label: 'Oportunidades', icon: I2.sparkle },
     { key: 'calls', label: 'Calls', icon: I2.phone },
     { key: 'encuesta', label: 'Encuesta', icon: I2.comment },
     { key: 'sops', label: 'SOP', icon: I2.doc },
@@ -9686,6 +9688,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'bot' && <BotView />}
               {route.view === 'usuarios' && <UsuariosView onOpenProject={openProject} />}
               {route.view === 'mvps' && <MvpsView onOpenProject={openProject} />}
+              {route.view === 'oportunidades' && <OportunidadesView onOpenProject={openProject} />}
               {route.view === 'encuesta' && <SurveyAdmin />}
               {route.view === 'notas' && <NotesView initialProjectId={route.projectId || null} onOpenProject={openProject} />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} onOpenNotes={(id) => setRoute({ view: 'notas', projectId: id })} />}

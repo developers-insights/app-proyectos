@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   armarContexto, leerRespuestaIA, pedidoUpsell, vistaOportunidades, normalizeOpportunity,
   marcarDescartada, deshacerDescarte, tipoDeCategoria, ESQUEMA_RESPUESTA, MAX_OPORTUNIDADES,
+  tableroOportunidades, filaOportunidades, filtrarFilas,
 } from '../src/lib/oportunidades.js'
 
 const NOW = new Date(2026, 10, 13, 15, 0)
@@ -164,4 +165,65 @@ test('una fila vieja o rota se normaliza sin romper', () => {
   assert.equal(o.montoUsd, null)
   assert.equal(o.categoria, 'otro')
   assert.equal(o.tipo, 'otro')
+})
+
+/* ── El tablero de la sección "Oportunidades" ─────────────────────────────── */
+
+const tableroProyectos = [
+  { id: 'p1', name: 'Mi cupón', clientId: 'c1', stage: 'plan' },
+  { id: 'p2', name: 'Hiddenwire', clientId: 'c2', stage: 'free' },
+  { id: 'p3', name: 'Komos', clientId: 'c3', stage: 'desarrollo' },
+  { id: 'p4', name: 'Portal interno', kind: 'interno' },
+  { id: 'p5', name: 'Se fue', clientId: 'c5', stage: 'cancelado' },
+  { id: 'p6', name: 'Marex', clientId: 'c6', stage: 'finalizado' },
+]
+const tableroClientes = [
+  { id: 'c1', name: 'Elizabeth', company: 'Mi cupón Arg' },
+  { id: 'c2', name: 'Nelson' },
+  { id: 'c3', name: 'Nacho', company: 'Komos' },
+  { id: 'c6', name: 'José', company: 'Marex' },
+]
+const tableroIdeas = [
+  { id: 'o1', projectId: 'p1', titulo: 'Panel de métricas', estado: 'nueva', orden: 1, categoria: 'mejora', montoUsd: 1800, generadaAt: daysAgo(1) },
+  { id: 'o2', projectId: 'p1', titulo: 'Soporte premium', estado: 'nueva', orden: 0, categoria: 'plan_mensual', montoUsd: 300, cobro: 'mensual', generadaAt: daysAgo(1) },
+  { id: 'o3', projectId: 'p1', titulo: 'Ya ofrecida', estado: 'ofrecida', generadaAt: daysAgo(4) },
+  { id: 'o4', projectId: 'p2', titulo: 'Fase 2 del monitoreo', estado: 'nueva', orden: 0, categoria: 'fase_2', montoUsd: 9000, generadaAt: daysAgo(2) },
+  { id: 'o5', projectId: 'p6', titulo: 'No va', estado: 'descartada', generadaAt: daysAgo(5) },
+]
+
+test('el tablero deja una fila por cliente vendible y ordena por lo que se puede ofrecer', () => {
+  const { filas, totales } = tableroOportunidades(tableroIdeas, tableroProyectos, tableroClientes)
+  // p4 es interno y p5 está cancelado: no son clientes a los que ofrecerles algo
+  assert.deepEqual(filas.map((f) => f.id), ['p2', 'p1', 'p3', 'p6'])
+  assert.equal(filas[0].cliente, 'Nelson')          // sin empresa cae al nombre
+  assert.equal(filas[1].cliente, 'Mi cupón Arg')
+  assert.deepEqual(filas.map((f) => f.estado), ['para_ofrecer', 'para_ofrecer', 'sin_explorar', 'al_dia'])
+  // las ideas de la fila van en su orden, sin las ya decididas
+  assert.deepEqual(filas[1].ideas.map((o) => o.id), ['o2', 'o1'])
+  assert.equal(filas[1].ofrecidas.length, 1)
+  assert.equal(filas[1].montoUnico, 1800)
+  assert.equal(filas[1].montoMensual, 300)
+  assert.equal(filas[1].montoTop, 1800)
+  assert.equal(filas[1].generadaAt, daysAgo(1))
+  assert.equal(filas[3].descartadas.length, 1)
+  assert.deepEqual(totales, { proyectos: 4, conIdeas: 2, sinExplorar: 1, ideas: 3, ofrecidas: 1, montoUnico: 10800, montoMensual: 300 })
+})
+
+test('un proyecto sin ideas queda "sin explorar" y uno con todas decididas "al día"', () => {
+  const f = filaOportunidades({ id: 'p9', name: 'Nuevo', stage: 'onboarding' }, [])
+  assert.equal(f.estado, 'sin_explorar')
+  assert.equal(f.cliente, 'Sin cliente')
+  assert.equal(f.montoTop, 0)
+  const g = filaOportunidades({ id: 'p9', name: 'Nuevo' }, [{ id: 'z', projectId: 'p9', titulo: 'Z', estado: 'ofrecida' }])
+  assert.equal(g.estado, 'al_dia')
+})
+
+test('el filtro cruza pestaña, categoría y texto', () => {
+  const { filas } = tableroOportunidades(tableroIdeas, tableroProyectos, tableroClientes)
+  assert.deepEqual(filtrarFilas(filas, { estado: 'sin_explorar' }).map((f) => f.id), ['p3'])
+  assert.deepEqual(filtrarFilas(filas, { categoria: 'fase_2' }).map((f) => f.id), ['p2'])
+  assert.deepEqual(filtrarFilas(filas, { q: 'MONITOREO' }).map((f) => f.id), ['p2'])   // busca en las ideas
+  assert.deepEqual(filtrarFilas(filas, { q: 'komos' }).map((f) => f.id), ['p3'])       // y en cliente y proyecto
+  assert.deepEqual(filtrarFilas(filas, { q: 'nada de esto' }), [])
+  assert.equal(filtrarFilas(filas, {}).length, 4)
 })
