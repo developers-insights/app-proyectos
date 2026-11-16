@@ -53,11 +53,8 @@ const sql = async (query, ref = REF) => {
 }
 const rest = (p, init = {}) => fetch(`${URL_BASE}${p}`, { ...init, headers: { apikey: SR, authorization: `Bearer ${SR}`, ...(init.headers || {}) } })
 const conProtocolo = (u) => (!u ? null : /^https?:\/\//i.test(u) ? u : `https://${u}`)
-const dominioMail = (e) => {
-  const m = String(e || '').toLowerCase().match(/@([a-z0-9.-]+\.[a-z]{2,})/)
-  if (!m || /gmail|hotmail|yahoo|outlook|icloud|live\.|insightsapps/.test(m[1])) return null
-  return `https://${m[1]}`
-}
+const dominiosMail = (e) => [...new Set([...String(e || '').toLowerCase().matchAll(/@([a-z0-9.-]+\.[a-z]{2,})/g)].map((m) => m[1]))]
+  .filter((d) => !/gmail|hotmail|yahoo|outlook|icloud|live\.|insightsapps/.test(d)).map((d) => `https://${d}`)
 
 /* ---------- fuentes ---------- */
 
@@ -106,6 +103,7 @@ const RUTAS_REPO = [
   /(^|\/)public\/apple-touch-icon\.png$/i,
   /(^|\/)public\/(icon|icons\/icon)[-_]?(512|192)?(x512|x192)?\.png$/i,
   /(^|\/)(public|assets|src\/assets)\/(images\/)?logo[^/]*\.(png|svg|webp)$/i,
+  /(^|\/)public\/brand\/[^/]*(icono|icon)[^/]*\.(png|svg|webp)$/i,
   /(^|\/)assets\/(images\/)?(app[-_]?)?icon\.png$/i,
   /android\/app\/src\/main\/res\/mipmap-xxxhdpi\/ic_launcher\.png$/i,
   /AppIcon\.appiconset\/[^/]*1024[^/]*\.png$/i,
@@ -188,7 +186,7 @@ for (const { id, data: p, cliente } of lista) {
       ...(await deSitio(conProtocolo(p.productionUrl), 'producción')),
       ...(c.production_url && c.production_url !== conProtocolo(p.productionUrl) ? await deSitio(c.production_url, 'producción (Clarity)') : []),
       ...deRepo(p.githubRepo), ...(c.repo && c.repo !== p.githubRepo ? deRepo(c.repo) : []),
-      ...(await deSitio(dominioMail(cliente?.email), 'sitio del cliente')),
+      ...(await Promise.all(dominiosMail(cliente?.email).map((u) => deSitio(u, `sitio del cliente ${u}`)))).flat(),
     ]
     const orden = elegirIcono(cand, { flutter: cand.some((x) => x.flutter) })
     const dir = path.join(SALIDA, id)
