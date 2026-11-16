@@ -7,6 +7,8 @@ test('esEscritura: tablas y storage sí, lecturas, rpc y funciones no', () => {
   assert.equal(esEscritura('https://x.supabase.co/rest/v1/projects', 'POST'), true)
   assert.equal(esEscritura('https://x.supabase.co/storage/v1/object/b/a.png', 'POST'), true)
   assert.equal(esEscritura('https://x.supabase.co/rest/v1/projects', 'GET'), false)
+  assert.equal(esEscritura('https://x.supabase.co/storage/v1/object/sign/project-logos', 'POST'), false)
+  assert.equal(esEscritura('https://x.supabase.co/storage/v1/object/sign/wa-media/a/b.jpg', 'POST'), false)
   assert.equal(esEscritura('https://x.supabase.co/rest/v1/rpc/portal_projects', 'POST'), false)
   assert.equal(esEscritura('https://x.supabase.co/functions/v1/boveda', 'POST'), false)
   assert.equal(esEscritura('https://x.supabase.co/auth/v1/token', 'POST'), false)

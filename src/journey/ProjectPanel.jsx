@@ -410,7 +410,7 @@ function F2Body({ items, clientOf, onPick, now }) {
         return (
           <button key={x.project.id} type="button" style={{ '--lc': `var(${lm.colorVar})` }} onClick={(e) => onPick(x.project.id, e.currentTarget)}
             aria-label={`${x.project.name}. Está en ${lm.label}. Fase 2 ofrecida ${when}. Ver detalle`}>
-            <ClientMark text={c?.company || x.project.name} size={30} />
+            <ClientMark project={x.project} text={c?.company || x.project.name} size={30} />
             <span className="tx">
               <div className="nm">{x.project.name}{c?.company && <span style={{ fontWeight: 500, color: 'var(--text-faint)' }}> · {c.company}</span>}</div>
               <div className="mt">{lm.label} · ofrecida {when}{x.entry.note ? ` · ${x.entry.note}` : ''}</div>
@@ -468,7 +468,7 @@ export default function ProjectPanel({ target, itemOf, clientOf, f2, onClose, on
                 </div>
               ) : (
                 <div className="jp-h" style={{ '--lc': lm ? `var(${lm.colorVar})` : 'var(--text-faint)' }}>
-                  <ClientMark text={c?.company || p.name} level={alertLevel(item.entry.alerts)} size={38} />
+                  <ClientMark project={p} text={c?.company || p.name} level={alertLevel(item.entry.alerts)} size={38} />
                   <div className="tx">
                     {target.from === 'f2' && (
                       <button type="button" className="jp-back" onClick={onBackToF2}><I2.arrowRight width={12} height={12} />Fase 2 ofrecida</button>

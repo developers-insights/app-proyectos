@@ -15,6 +15,7 @@ import { projectProgress } from '../lib/progress.js'
 import { initials, dayCell, daysText, plural } from '../journey/parts.jsx'
 import { ROOMS, ROOM, WALL, U, LINKS, LANE_PATH, SLOTS_PER_ROOM, CORRIDOR, iso, unIso, pts, corridor, footprint, isoBox, slotPos, sceneBounds, roomAt, layoutRooms, freeSpot } from './iso.js'
 import { useViewport } from './useViewport.js'
+import ProyectoAvatar from '../ui/ProyectoAvatar.jsx'
 
 const ROOMS_KEY = 'ip.oficina.salas'
 const LIFT = 14
@@ -480,7 +481,7 @@ function Token({ item, pos, order, booted, reduce, state, onOpen, label, reg, gr
       <span className="io-beam" />
       <span className="io-bob">
         <motion.span className="io-tilt" style={{ rotate: tilt }}>
-          <span className="io-av">{item.more ? `+${item.more}` : item.mark}{!item.more && lv && <i className="io-al" data-lv={lv} />}</span>
+          {item.more ? <span className="io-av">{`+${item.more}`}</span> : <ProyectoAvatar project={p} ini={item.mark} className="io-av">{lv && <i className="io-al" data-lv={lv} />}</ProyectoAvatar>}
         </motion.span>
       </span>
       {!item.more && <span className="io-nm">{p.name}</span>}
@@ -563,7 +564,7 @@ function ProjectSheet({ item, client, team, list, onNav, onBack, onOpenFull, red
           <button type="button" className="io-ib" data-close="" onClick={() => onNav(0)} aria-label="Cerrar ficha"><I2.x width={15} height={15} /></button>
         </div>
         <div className="io-id">
-          <span className="io-av">{initials(client?.company || p.name)}</span>
+          <ProyectoAvatar project={p} texto={client?.company || p.name} className="io-av" lazy={false} />
           <div style={{ minWidth: 0 }}>
             <h2>{p.name}</h2>
             <div className="cl">{client ? [client.company, client.name].filter(Boolean).join(' · ') : 'Sin cliente cargado'}</div>
@@ -706,7 +707,7 @@ function RoomSheet({ lane, items, onPick, onClose }) {
               const cell = dayCell(it.entry)
               return (
                 <button key={it.project.id} type="button" className="io-row" onClick={() => onPick(it.project.id)}>
-                  <span className="io-av">{it.mark}{it.level && <i className="io-al" data-lv={it.level} />}</span>
+                  <ProyectoAvatar project={it.project} ini={it.mark} className="io-av">{it.level && <i className="io-al" data-lv={it.level} />}</ProyectoAvatar>
                   <span className="t"><b>{it.project.name}</b><span>{it.client?.company || 'Sin cliente'}</span></span>
                   <span className="n" data-lv={cell.lv || undefined}>{cell.n} <small style={{ fontSize: 10.5, fontWeight: 500 }}>{cell.cap}</small></span>
                 </button>

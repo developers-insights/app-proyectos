@@ -6,6 +6,7 @@ import { esSoloLectura } from '../lib/soloLectura.js'
 import { stageMeta } from '../lib/stages.js'
 import { CATEGORIAS, categoriaMeta, tableroOportunidades, filtrarFilas, ESTADOS_FILA } from '../lib/oportunidades.js'
 import { OportunidadesSection } from './Oportunidades.jsx'
+import ProyectoAvatar from '../ui/ProyectoAvatar.jsx'
 
 /*
  * Sección "Oportunidades": el mismo motor que ya vive en el detalle del proyecto, pero
@@ -129,7 +130,6 @@ const CSS = `
 }
 `
 
-const iniciales = (s) => String(s || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || '—'
 const usd = (n) => 'USD ' + Math.round(n).toLocaleString('es-AR')
 
 function Kpi({ k, v, h, color }) {
@@ -150,7 +150,7 @@ function Fila({ f, on, onClick, reduce }) {
       initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: .26, ease: [.22, 1, .36, 1] }}>
       {on && <span className="rail" aria-hidden="true" />}
-      <span className="ov-ini" aria-hidden="true">{iniciales(f.cliente)}</span>
+      <ProyectoAvatar project={f.project} texto={f.cliente} className="ov-ini" />
       <span className="ov-tx">
         <b>{f.cliente}</b>
         <span>{f.proyecto} · {f.etapa}{cat ? ` · ${cat.label}` : ''}</span>

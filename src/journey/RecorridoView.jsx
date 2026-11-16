@@ -67,10 +67,10 @@ button.jr-kpi:active{transform:scale(.97)}
   font-size:10px;font-weight:700;letter-spacing:.02em;color:var(--lc);
   background:color-mix(in srgb,var(--lc) 13%,var(--card));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lc) 30%,transparent);
   transition:transform .18s var(--e)}
-.jr-mk[data-lv]::after{content:"";position:absolute;right:-2px;top:-2px;width:9px;height:9px;border-radius:50%;
+.jr-mk-lv{position:absolute;right:-2px;top:-2px;z-index:1;width:9px;height:9px;border-radius:50%;
   box-shadow:0 0 0 2px var(--card)}
-.jr-mk[data-lv="crit"]::after{background:var(--red)}
-.jr-mk[data-lv="warn"]::after{background:var(--yellow)}
+.jr-mk-lv[data-lv="crit"]{background:var(--red)}
+.jr-mk-lv[data-lv="warn"]{background:var(--yellow)}
 .jr-pt .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .jr-pt .nm{display:flex;align-items:center;gap:5px;min-width:0;font-size:12px;font-weight:600;letter-spacing:-.012em}
 .jr-pt .nm .t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -605,7 +605,7 @@ function Recorrido({ onOpenProject, onSetStage, projects, loading }) {
                   return (
                     <div key={o.projectId} className="jr-li" data-off={o.declined ? '1' : '0'} style={{ '--lc': `var(${lm.colorVar})` }}>
                       <button className="go" onClick={(e) => openPanel(o.projectId, e.currentTarget)} aria-label={`Ver el detalle de ${o.name}`}>
-                        <ClientMark text={c?.company || o.name} size={32} />
+                        <ClientMark project={(data.projects || []).find((p) => p.id === o.projectId)} text={c?.company || o.name} size={32} />
                         <span className="tx">
                           <div className="nm">{o.name}{c?.company && <span style={{ fontWeight: 500, color: 'var(--text-faint)' }}> · {c.company}</span>}</div>
                           <div className="rs">{o.reason}. Ofrecer {o.offers.map((k) => (k === 'plan' ? 'el plan mensual' : 'la Fase 2')).join(' o ')}.</div>

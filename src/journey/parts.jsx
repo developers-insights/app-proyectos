@@ -1,12 +1,10 @@
 import React from 'react'
 import { partnerLine } from '../lib/agreements.js'
 import { alertLevel, laneMeta, upsellState, upsellLine, upsellBadges } from '../lib/journey.js'
+import { iniciales } from '../lib/logos.js'
+import ProyectoAvatar from '../ui/ProyectoAvatar.jsx'
 
-export const initials = (s) => {
-  const w = String(s || '').replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean)
-  if (!w.length) return '·'
-  return (w.length === 1 ? w[0].slice(0, 2) : w[0][0] + w[1][0]).toUpperCase()
-}
+export const initials = iniciales
 
 export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
@@ -40,11 +38,11 @@ export function daysText(entry) {
   return entry.days != null ? `${plural(entry.days, 'día', 'días')} en este tramo` : 'sin fecha de entrada'
 }
 
-export function ClientMark({ text, level, size = 30 }) {
+export function ClientMark({ project, text, level, size = 30 }) {
   return (
-    <span className="jr-mk" data-lv={level || undefined} style={size !== 30 ? { width: size, height: size } : undefined} aria-hidden="true">
-      {initials(text)}
-    </span>
+    <ProyectoAvatar project={project} texto={text} className="jr-mk" style={size !== 30 ? { width: size, height: size } : undefined}>
+      {level && <i className="jr-mk-lv" data-lv={level} />}
+    </ProyectoAvatar>
   )
 }
 
@@ -72,7 +70,7 @@ export function Point({ item, client, onOpen, active, dim, drag, className = '' 
     <button type="button" className={`jr-pt ${className}`} data-active={active ? '1' : undefined} data-dim={dim ? '1' : undefined}
       onClick={(e) => onOpen(p.id, e.currentTarget)} aria-label={`${label}. Ver detalle`} aria-current={active ? 'true' : undefined} title={label}
       data-pid={p.id} {...drag}>
-      <ClientMark text={company || p.name} level={lv} />
+      <ClientMark project={p} text={company || p.name} level={lv} />
       <span className="tx">
         <span className="nm">
           <span className="t">{p.name}</span>

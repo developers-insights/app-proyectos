@@ -14,6 +14,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { I, useApp, Modal, stagger, rise } from '../ui.jsx'
+import ProyectoAvatar from '../ui/ProyectoAvatar.jsx'
+import { logoDe } from '../lib/logos.js'
 
 /* ----------------------------------------------------------------------------
    Helpers de tiempo (es-AR, relativo cuando es reciente)
@@ -129,14 +131,16 @@ const Css = () => <style>{BOT_CSS}</style>
 ---------------------------------------------------------------------------- */
 
 /* avatar cuadrado-redondeado con tinte estable por jid */
-function GAvatar({ name, jid, size = 38, radius, style }) {
+function GAvatar({ name, jid, size = 38, radius, style, projectId }) {
   const c = senderColor(jid || name)
+  const { data } = useApp() || {}
+  const p = projectId ? (data?.projects || []).find((x) => x.id === projectId) : null
   return (
-    <div style={{
+    <ProyectoAvatar as="div" logo={logoDe(p)} ini={initialsOf(name)} style={{
       width: size, height: size, borderRadius: radius ?? Math.round(size * 0.3), flexShrink: 0,
       display: 'grid', placeItems: 'center', background: c + '1C', border: '1px solid ' + c + '2E',
       color: c, fontSize: Math.round(size * 0.34), fontWeight: 700, letterSpacing: '.02em', userSelect: 'none', ...style,
-    }}>{initialsOf(name)}</div>
+    }} />
   )
 }
 
@@ -523,7 +527,7 @@ function Resumen({ loading, st, status, hb, groups, alerts, recent, todayCount, 
           return (
             <div key={m.id || i} className="bw-item click" onClick={() => onOpenChat(m.group_jid)}
               style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 16px', borderBottom: i < Math.min(recent.length, 8) - 1 ? '1px solid var(--border)' : 'none' }}>
-              <GAvatar name={title} jid={m.group_jid} size={36} />
+              <GAvatar name={title} jid={m.group_jid} size={36} projectId={g?.project_id} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
                   <span style={{ fontSize: 13, fontWeight: 650, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
@@ -601,7 +605,7 @@ function Conversaciones({ isMobile, groups, lastByGroup, groupTitle, overdueDays
                 return (
                   <div key={g.group_jid} className="bw-item click" onClick={() => onSelect(g.group_jid)}
                     style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 11px', borderRadius: 13, background: active ? 'var(--accent-soft)' : 'transparent', border: '1px solid', borderColor: active ? 'var(--accent-line)' : 'transparent', marginBottom: 2 }}>
-                    <GAvatar name={title} jid={g.group_jid} size={40} />
+                    <GAvatar name={title} jid={g.group_jid} size={40} projectId={g.project_id} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 13.5, fontWeight: 650, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: active ? 'var(--accent)' : 'var(--text)' }}>{title}</span>
@@ -677,7 +681,7 @@ function ChatPane({ group, title, msgs, loading, isMobile, onBack, supabase, url
             <I.chevR width={16} height={16} style={{ transform: 'rotate(180deg)' }} />
           </button>
         )}
-        <GAvatar name={title} jid={group?.group_jid} size={36} />
+        <GAvatar name={title} jid={group?.group_jid} size={36} projectId={group?.project_id} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontFamily: "-apple-system,'SF Pro Display','SF Pro Text',BlinkMacSystemFont,Inter,'Helvetica Neue',system-ui,sans-serif", fontWeight: 700, fontSize: 15.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
           {group?.group_name && group.group_name !== title && <div style={{ fontSize: 11.5, color: 'var(--text-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{group.group_name}</div>}
@@ -857,7 +861,7 @@ function Grupos({ isMobile, groups, projects, clients, now, loading, groupTitle,
             {sorted.map((g) => (
               <div key={g.group_jid} className="surface" style={{ padding: 14, opacity: g.active ? 1 : 0.72 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
-                  <GAvatar name={g.group_name || groupTitle(g)} jid={g.group_jid} size={36} />
+                  <GAvatar name={g.group_name || groupTitle(g)} jid={g.group_jid} size={36} projectId={g.project_id} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 650, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.group_name || groupTitle(g)}</div>
                     <div style={{ fontSize: 11.5, color: overdueDays(g) ? 'var(--red)' : 'var(--text-faint)', marginTop: 1 }}>{lastActivity(g)}</div>
@@ -887,7 +891,7 @@ function Grupos({ isMobile, groups, projects, clients, now, loading, groupTitle,
                   <tr key={g.group_jid} className="row-hover" style={{ borderBottom: '1px solid var(--border)', opacity: g.active ? 1 : 0.62, transition: 'opacity .2s' }}>
                     <td style={{ padding: '11px 16px', maxWidth: 280 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                        <GAvatar name={g.group_name || groupTitle(g)} jid={g.group_jid} size={34} />
+                        <GAvatar name={g.group_name || groupTitle(g)} jid={g.group_jid} size={34} projectId={g.project_id} />
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 13.5, fontWeight: 650, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.group_name || '(sin nombre)'}</div>
                           <div className="mono" style={{ fontSize: 10, color: 'var(--text-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.group_jid}</div>

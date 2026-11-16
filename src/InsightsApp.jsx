@@ -39,6 +39,7 @@ import { StoreIcon } from './ui/storeLogos.jsx'
 import { buildMaintenanceNotice } from './emails/maintenanceNotice.js'
 import { isDev, isCollab, isExternalMember, isReader, visibleProjects, collabProjectIds } from './lib/visibility.js'
 import { bloqueado, setSoloLectura, avisarSoloLectura, fetchConCandado, ERROR_SOLO_LECTURA } from './lib/soloLectura.js'
+import LogoEditable from './ui/LogoEditable.jsx'
 import SoloLecturaAviso from './ui/SoloLecturaAviso.jsx'
 import {
   taskText, taskDone, weekProgress,
@@ -7230,7 +7231,9 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
         {/* IDENTIDAD — nombre, quién es el cliente, estado y la única acción
             destacada del encabezado. */}
         <div style={{ marginTop: 14, display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', alignItems: 'center', gap: 14 }}>
+            <LogoEditable project={project} texto={client?.company || project.name} patch={patch} />
+            <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <h1 className="pd-title">{project.name}</h1>
               <PriorityMenu value={project.priority} onChange={(v) => patch((p) => ({ ...p, priority: v }))} size={18} />
@@ -7238,6 +7241,7 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
             <div className="pd-meta">
               {project.kind === 'interno' ? '◆ Interno · Insights' : (client?.company || 'Sin cliente')}
               {client?.name && <><i>·</i>{client.name}</>}
+            </div>
             </div>
           </div>
           {/* CONSOLA — cuatro controles, un solo renglón: lo que sale de la app,

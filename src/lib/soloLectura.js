@@ -46,12 +46,13 @@ export const ERROR_SOLO_LECTURA = Object.freeze({ code: 'solo_lectura', message:
 
 const ESCRIBE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
-/** ¿Este request escribe datos? Las RPC y las edge functions quedan afuera: las validan la base y cada función. */
+/** ¿Este request escribe datos? Las RPC y las edge functions quedan afuera: las validan la base y cada función. Firmar una URL es un POST que sólo lee (un lector tiene que ver los logos). */
 export function esEscritura(url, method) {
   const m = String(method || 'GET').toUpperCase()
   if (!ESCRIBE.has(m)) return false
   const u = String(url || '')
   if (u.includes('/rest/v1/rpc/')) return false
+  if (u.includes('/storage/v1/object/sign/')) return false
   return u.includes('/rest/v1/') || u.includes('/storage/v1/object')
 }
 
