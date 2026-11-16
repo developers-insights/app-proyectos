@@ -48,7 +48,7 @@ test('la foto trae lo que el closer necesita y nada interno', () => {
   assert.equal(s.client.email, 'leo@irowing.app')
   assert.equal(s.lane, 'prueba')
   assert.equal(s.stageLabel, 'Free Maint.')
-  assert.equal(s.pct, 100)
+  assert.equal(s.pct, 50)
   assert.equal(s.milestone.week, 2)
   assert.equal(s.milestone.deliver, 'Checkout andando')
   assert.equal(s.milestone.date, '2026-10-30')

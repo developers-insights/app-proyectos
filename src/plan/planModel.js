@@ -325,6 +325,17 @@ export function setTaskEstado(task, estado) {
 }
 
 /**
+ * % entero de tareas hechas. Math.round solo daba 100% con 199/200 y 0% con
+ * 1/300: 100 queda reservado a "todas hechas" y 0 a "ninguna".
+ */
+export function taskPct(done, total) {
+  if (!total) return 0
+  if (done >= total) return 100
+  if (done <= 0) return 0
+  return Math.min(99, Math.max(1, Math.round((done / total) * 100)))
+}
+
+/**
  * Resumen del tablero para el encabezado (pronóstico + control).
  * → { total, done, curso, bloqueada, pendiente, riesgoAlto, bloqueos[], nextFecha, pctInsights }
  */
@@ -349,7 +360,7 @@ export function planBoardSummary(plan) {
   }
   return {
     total, done, curso, bloqueada, pendiente, riesgoAlto, bloqueos, nextFecha,
-    pctInsights: total ? Math.round((done / total) * 100) : 0,
+    pctInsights: taskPct(done, total),
   }
 }
 
@@ -380,7 +391,7 @@ export function weekProgress(week) {
   const ts = Array.isArray(week && week.tasks) ? week.tasks : []
   const total = ts.length
   const done = ts.filter(taskDone).length
-  return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
+  return { done, total, pct: taskPct(done, total) }
 }
 
 /** Avance de todo el plan: suma de weekProgress() de cada semana. */
@@ -388,7 +399,7 @@ export function planProgress(plan) {
   const weeks = Array.isArray(plan && plan.weeks) ? plan.weeks : []
   let done = 0, total = 0
   for (const w of weeks) { const p = weekProgress(w); done += p.done; total += p.total }
-  return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
+  return { done, total, pct: taskPct(done, total) }
 }
 
 /**

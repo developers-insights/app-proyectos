@@ -43,12 +43,13 @@ function allTasks(plan) {
  * se lee como "no se hizo nada", que es peor que mostrar el número viejo.
  */
 export function projectProgress(project, plan) {
-  // Si el desarrollo ya terminó (pasó a mantenimiento o quedó finalizado), el
-  // avance es 100% por definición: la construcción se completó.
-  if (isDevelopmentDone(projectStage(project))) return 100
+  // Con tareas en el plan, el % sale SOLO de las tareas, aunque la etapa diga
+  // que el desarrollo terminó: forzar 100 por etapa mostró "100%" en Cyberfalu
+  // con 33 tareas abiertas (2026-11-16). La etapa solo decide sin plan.
   const summary = planBoardSummary(plan)
-  if (!plan || summary.total === 0) return clampPct(project && project.progress)
-  return clampPct(summary.pctInsights)
+  if (plan && summary.total > 0) return clampPct(summary.pctInsights)
+  if (isDevelopmentDone(projectStage(project))) return 100
+  return clampPct(project && project.progress)
 }
 
 /**
