@@ -76,6 +76,7 @@ const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || 'https://yzmtzyuncekspgtse
 const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '' // ← pegá acá tu publishable key (sb_publishable_…) y el login funciona sin tocar Render
 const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY, { global: { fetch: fetchConCandado() } }) : null
 const FALSO_LOOM_URL = import.meta.env.VITE_FALSO_LOOM_URL || 'https://videos.insightsapps.tech'
+const MANADA_URL = import.meta.env.VITE_MANADA_URL || 'https://manada.insightsapps.tech'
 const cloudEnabled = !!supabase
 /* versión de la app — bumpeá esto en cada release para que se vea en el botón "Actualizar" */
 const APP_VERSION = '1.1.0'
@@ -8645,12 +8646,14 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
   const tools = meCollab ? [
     { key: 'planner', label: 'Planificador', icon: I2.calendar },
     { key: 'falso-loom', label: 'Falso Loom', icon: I2.rec, external: true, href: FALSO_LOOM_URL, sso: true },
+    { key: 'manada', label: 'Bots QA', icon: I2.pulse, external: true, href: MANADA_URL, sso: true },
   ] : [
     { key: 'planner', label: 'Planificador', icon: I2.calendar },
     { key: 'bot', label: 'Bot', icon: I2.whatsapp },
     { key: 'editor', label: 'Editor', icon: I2.film },
     { key: 'carousel', label: 'Carrusel', icon: I2.layers },
     { key: 'falso-loom', label: 'Falso Loom', icon: I2.rec, external: true, href: FALSO_LOOM_URL, sso: true },
+    { key: 'manada', label: 'Bots QA', icon: I2.pulse, external: true, href: MANADA_URL, sso: true },
   ]
   const toolsActive = tools.some((t) => route.view === t.key)
   const [hovered, setHovered] = useState(false)
