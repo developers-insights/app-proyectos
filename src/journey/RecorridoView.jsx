@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useApp, Modal, stagger, rise } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
@@ -79,6 +79,7 @@ button.jr-kpi:active{transform:scale(.97)}
 .jr-chip[data-o="fase2"]{--cc:var(--violet)}
 .jr-chip[data-o="nuevo"]{--cc:var(--pink)}
 .jr-chip[data-o="plan"]{--cc:var(--green)}
+.jr-chip[data-o="marketing"]{--cc:var(--yellow)}
 .jr-chip[data-s="acepta"]{background:color-mix(in srgb,var(--cc) 20%,transparent)}
 .jr-pt .jr-sub{font-size:10.5px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jr-pt .jr-sub[data-lv="crit"]{color:var(--red)}
@@ -746,9 +747,7 @@ export function UpsellModal({ open, project, onClose }) {
     <Modal open={open} onClose={onClose} title="Upsell" sub={[project.name, client?.company].filter(Boolean).join(' · ')} width={620}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         <div className="up-states">
-          <StateCard k="plan" />
-          <StateCard k="fase2" />
-          <StateCard k="nuevo" />
+          {UPSELL_OFFERS.map((o) => <StateCard key={o.key} k={o.key} />)}
         </div>
 
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -857,7 +856,7 @@ export function UpsellPanel({ project, onOpen }) {
     <div className="up-panel">
       <style>{JR_CSS}</style>
       <span className="pd-eyebrow">Upsell</span>
-      <div className="its">{item('plan')}{item('fase2')}{item('nuevo')}</div>
+      <div className="its">{UPSELL_OFFERS.map((o) => <Fragment key={o.key}>{item(o.key)}</Fragment>)}</div>
       <button className="jr-act" onClick={onOpen}><I2.pencil width={13} height={13} /> {st.entries.length ? 'Ver y anotar' : 'Anotar oferta'}</button>
       {(lastNote || st.objections) && (
         <div className="ob">

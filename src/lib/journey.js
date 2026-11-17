@@ -184,6 +184,7 @@ export const UPSELL_OFFERS = [
   { key: 'plan', label: 'Plan mensual' },
   { key: 'fase2', label: 'Fase 2' },
   { key: 'nuevo', label: 'Nuevo sistema' },
+  { key: 'marketing', label: 'Marketing' },
 ]
 
 export const UPSELL_STATUS = [
@@ -231,7 +232,7 @@ export function normalizeUpsell(project) {
 export function upsellState(project) {
   const u = normalizeUpsell(project)
   const latest = (k) => u.entries.find((e) => e.offer === k) || null
-  return { plan: latest('plan'), fase2: latest('fase2'), nuevo: latest('nuevo'), objections: u.objections, entries: u.entries }
+  return { plan: latest('plan'), fase2: latest('fase2'), nuevo: latest('nuevo'), marketing: latest('marketing'), objections: u.objections, entries: u.entries }
 }
 
 const newId = () => `up-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
@@ -352,12 +353,13 @@ const BADGE = {
   fase2: { offered: 'F2 ofrecida', closed: 'F2 aceptada' },
   nuevo: { offered: 'Sistema ofrecido', closed: 'Sistema aceptado' },
   plan: { offered: 'Plan ofrecido', closed: 'Plan aceptado' },
+  marketing: { offered: 'Marketing ofrecido', closed: 'Marketing aceptado' },
 }
 
 export function upsellBadges(project, lane) {
   const up = upsellState(project)
   const out = []
-  for (const k of ['fase2', 'nuevo', 'plan']) {
+  for (const k of ['fase2', 'nuevo', 'plan', 'marketing']) {
     const e = up[k]
     if (!e || lane === k) continue
     if (e.status === 'ofrecido') out.push({ offer: k, status: 'ofrecido', label: BADGE[k].offered, entry: e })

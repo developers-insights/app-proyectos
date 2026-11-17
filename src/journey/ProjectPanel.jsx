@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { Fragment, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useApp } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
 import {
-  JOURNEY_LANES, laneMeta, upsellState, upsellStatusMeta, offerLabel, standbyNote, STANDBY_NOTE_MAX, alertLevel,
+  JOURNEY_LANES, laneMeta, upsellState, upsellStatusMeta, offerLabel, UPSELL_OFFERS, standbyNote, STANDBY_NOTE_MAX, alertLevel,
 } from '../lib/journey.js'
 import { normalizeLifecycle, daysBetween } from '../lib/lifecycle.js'
 import { openCloserNotes } from '../lib/closerNotes.js'
@@ -264,7 +264,7 @@ function UpsellBox({ project, onAnotar }) {
   }
   return (
     <>
-      <div className="jp-up">{card('plan')}{card('fase2')}{card('nuevo')}</div>
+      <div className="jp-up">{UPSELL_OFFERS.map((o) => <Fragment key={o.key}>{card(o.key)}</Fragment>)}</div>
       {lastNote && <div className="jp-q"><q>{lastNote.note}</q></div>}
       {st.objections && <div className="jp-q">Objeción del onboarding: <q>{st.objections}</q></div>}
       <button type="button" className="jp-act" onClick={() => onAnotar(project.id)}>

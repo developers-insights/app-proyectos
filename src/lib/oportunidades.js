@@ -158,7 +158,7 @@ export function armarContexto({ project, client, plan, tasks = [], notes = [], p
       .slice(0, 15).map((n) => `- ${noteType(n.type).label}: ${clip(n.body, 1200)}`)),
     seccion('Para el closer', openCloserNotes(p).slice(0, 6).map((n) => `- ${clip(n.text, 300)}`)),
     seccion('Ya ofrecido o descartado', [
-      ...['plan', 'fase2', 'nuevo'].map((k) => up[k] && `- ${offerLabel(k)}: ${upsellStatusMeta(up[k].status).label}${up[k].note ? ` (${clip(up[k].note, 200)})` : ''}`),
+      ...['plan', 'fase2', 'nuevo', 'marketing'].map((k) => up[k] && `- ${offerLabel(k)}: ${upsellStatusMeta(up[k].status).label}${up[k].note ? ` (${clip(up[k].note, 200)})` : ''}`),
       up.objections && `- Objeciones que dio: ${clip(up.objections, 400)}`,
       ...previas.filter((o) => o && o.titulo).slice(0, 20).map((o) => `- ${clip(o.titulo, 120)}: ${o.estado === 'descartada' ? 'el equipo dijo que no va' : 'ya se le ofreció'}`),
     ]),
