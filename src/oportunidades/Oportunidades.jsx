@@ -4,7 +4,7 @@ import { useApp } from '../ui.jsx'
 import { I2 } from '../ui/icons2.jsx'
 import { fmtDay } from '../lib/stores.js'
 import { esSoloLectura } from '../lib/soloLectura.js'
-import { vistaOportunidades, categoriaMeta, marcarDescartada, deshacerDescarte, normalizeOpportunity } from '../lib/oportunidades.js'
+import { vistaOportunidades, categoriaMeta, marcarDescartada, deshacerDescarte, marcarPropuesta, normalizeOpportunity } from '../lib/oportunidades.js'
 
 /*
  * "Oportunidades" del proyecto (call del 13/11): la IA lee el proyecto y propone qué más
@@ -97,11 +97,25 @@ const CSS = `
 .op-bar{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin:0 0 12px;font-size:12px;color:var(--text-faint)}
 .op-sec.compact .op-grid{grid-template-columns:1fr}
 .op-sec.compact .op-card{padding:13px 13px 12px}
+.op-card.prop{box-shadow:inset 0 0 0 1px var(--accent-line)}
+.op-prop{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:auto;padding-top:4px;font-size:12.5px;font-weight:600;color:var(--text-dim)}
+.op-prop > span{flex:1 1 auto;min-width:0}
+.op-prop small{display:block;margin-top:1px;font-size:11.5px;font-weight:500;color:var(--text-faint)}
+.op-seg{display:inline-flex;padding:3px;gap:2px;border-radius:10px;background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border)}
+.op-seg button{height:28px;min-width:44px;padding:0 12px;border:0;border-radius:8px;cursor:pointer;background:transparent;
+  font-size:12.5px;font-weight:650;color:var(--text-dim);transition:background .2s var(--e),color .2s var(--e),transform .16s var(--e)}
+.op-seg button:hover{color:var(--text)}
+.op-seg button:active{transform:scale(.96)}
+.op-seg button[aria-pressed="true"].si{color:var(--accent-contrast);background:var(--accent)}
+.op-seg button[aria-pressed="true"].no{color:var(--text);background:var(--card);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.op-pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent)}
+.op-prop + .op-act{margin-top:0}
 .op-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (prefers-reduced-motion:reduce){.op-think i,.op-again[aria-busy="true"] svg{animation:none}}
 @media (max-width:640px){
   .op-grid{grid-template-columns:1fr}
   .op-btn{height:44px}
+  .op-seg button{height:36px;min-width:56px}
   .op-go{width:100%;justify-content:center;height:44px}
   .op-sec .pd-h .op-meta{margin-left:0;width:100%}
 }
@@ -192,7 +206,7 @@ function EstadoTablero({ op, puede, onElegir, onReintentar, candidatos, who }) {
 }
 
 /* forwardRef: `AnimatePresence mode="popLayout"` mide el hijo que sale y necesita su nodo. */
-const Tarjeta = forwardRef(function Tarjeta({ op, puede, onOfrecer, onDescartar, onElegir, candidatos, who, reduce }, ref) {
+const Tarjeta = forwardRef(function Tarjeta({ op, puede, onOfrecer, onDescartar, onPropuesta, onElegir, candidatos, who, reduce }, ref) {
   const cat = categoriaMeta(op.categoria)
   const [copiado, setCopiado] = useState(false)
   const monto = montoTexto(op)
@@ -200,7 +214,7 @@ const Tarjeta = forwardRef(function Tarjeta({ op, puede, onOfrecer, onDescartar,
     try { await navigator.clipboard.writeText(op.frase); setCopiado(true); setTimeout(() => setCopiado(false), 1600) } catch { /* sin permiso */ }
   }
   return (
-    <motion.article ref={ref} className="op-card" style={{ '--oc': `var(${COLOR[op.categoria] || '--accent'})` }} layout={!reduce}
+    <motion.article ref={ref} className={`op-card${op.enPropuesta === true && op.estado === 'nueva' ? ' prop' : ''}`} style={{ '--oc': `var(${COLOR[op.categoria] || '--accent'})` }} layout={!reduce}
       initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={reduce ? { opacity: 0 } : { opacity: 0, scale: .97 }}
       transition={{ duration: .32, ease: [.22, 1, .36, 1] }}>
       <div className="op-top">
@@ -221,11 +235,22 @@ const Tarjeta = forwardRef(function Tarjeta({ op, puede, onOfrecer, onDescartar,
       )}
       {op.estado === 'ofrecida'
         ? <EstadoTablero op={op} puede={puede} candidatos={candidatos} who={who} onElegir={onElegir} onReintentar={(fc) => onOfrecer(op, fc)} />
-        : puede && (
+        : puede ? (
+          <>
+          <div className="op-prop" role="group" aria-label={`Agregar ${op.titulo} a la propuesta`}>
+            <span>Agregar a la propuesta{op.enPropuesta === true && <small>Queda aunque vuelvan a pensar</small>}</span>
+            <div className="op-seg">
+              <button type="button" className="si" aria-pressed={op.enPropuesta === true} onClick={() => onPropuesta(op, true)}>Sí</button>
+              <button type="button" className="no" aria-pressed={op.enPropuesta === false} onClick={() => onPropuesta(op, false)}>No</button>
+            </div>
+          </div>
           <div className="op-act">
             <button type="button" className="op-btn yes" onClick={() => onOfrecer(op, null)}><I2.check width={14} height={14} /> La ofrecí</button>
             <button type="button" className="op-btn no" onClick={() => onDescartar(op)}>No va</button>
           </div>
+          </>
+        ) : op.enPropuesta === true && (
+          <p className="op-pill" style={{ marginTop: 'auto' }}><I2.check width={13} height={13} /> En la propuesta</p>
         )}
     </motion.article>
   )
@@ -252,7 +277,7 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
   const items = useMemo(() => {
     const byId = new Map((opportunityStore?.items || []).map((o) => [o.id, o]))
     if (recien && recien.projectId === project.id) {
-      for (const o of byId.values()) if (o.projectId === project.id && o.estado === 'nueva' && !recien.ids.has(o.id)) byId.delete(o.id)
+      for (const o of byId.values()) if (o.projectId === project.id && o.estado === 'nueva' && o.enPropuesta !== true && !recien.ids.has(o.id)) byId.delete(o.id)
       for (const o of recien.filas) if (!byId.has(o.id)) byId.set(o.id, o)
     }
     for (const [k, v] of Object.entries(local)) {
@@ -295,6 +320,13 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
   const descartar = (op) => {
     if (!puede || !opportunityStore) return
     opportunityStore.patch(op.id, (x) => marcarDescartada(x, myId || null))
+  }
+  const proponer = (op, si) => {
+    if (!puede || !opportunityStore) return
+    setLocal((m) => { if (!m[op.id]) return m; const n = { ...m }; delete n[op.id]; return n })
+    const hecho = opportunityStore.patch(op.id, (x) => marcarPropuesta(x, si, myId || null))
+    // Recién pensada: puede no haber llegado todavía por realtime al store.
+    if (!hecho && opportunityStore.upsert) opportunityStore.upsert(marcarPropuesta(op, si, myId || null))
   }
   const deshacer = (op) => {
     if (!puede || !opportunityStore) return
@@ -371,7 +403,7 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
           <AnimatePresence initial={false} mode="popLayout">
             {v.nuevas.map((op) => (
               <Tarjeta key={op.id} op={op} puede={puede} who={who} reduce={reduce} candidatos={candidatos[op.id]}
-                onOfrecer={ofrecer} onDescartar={descartar} onElegir={() => elegirCliente(op)} />
+                onOfrecer={ofrecer} onDescartar={descartar} onPropuesta={proponer} onElegir={() => elegirCliente(op)} />
             ))}
           </AnimatePresence>
         </div>

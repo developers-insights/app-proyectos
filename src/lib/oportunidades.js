@@ -160,7 +160,7 @@ export function armarContexto({ project, client, plan, tasks = [], notes = [], p
     seccion('Ya ofrecido o descartado', [
       ...['plan', 'fase2', 'nuevo', 'marketing'].map((k) => up[k] && `- ${offerLabel(k)}: ${upsellStatusMeta(up[k].status).label}${up[k].note ? ` (${clip(up[k].note, 200)})` : ''}`),
       up.objections && `- Objeciones que dio: ${clip(up.objections, 400)}`,
-      ...previas.filter((o) => o && o.titulo).slice(0, 20).map((o) => `- ${clip(o.titulo, 120)}: ${o.estado === 'descartada' ? 'el equipo dijo que no va' : 'ya se le ofreció'}`),
+      ...previas.filter((o) => o && o.titulo).slice(0, 20).map((o) => `- ${clip(o.titulo, 120)}: ${o.estado === 'descartada' ? 'el equipo dijo que no va' : o.estado === 'nueva' ? 'ya está en la propuesta' : 'ya se le ofreció'}`),
     ]),
   ].filter(Boolean)
 
@@ -189,6 +189,9 @@ export function normalizeOpportunity(o) {
     ofrecidaPor: x.ofrecidaPor || null,
     descartadaAt: x.descartadaAt || null,
     descartadaPor: x.descartadaPor || null,
+    enPropuesta: typeof x.enPropuesta === 'boolean' ? x.enPropuesta : null,
+    propuestaAt: x.propuestaAt || null,
+    propuestaPor: x.propuestaPor || null,
     sf: x.sf && typeof x.sf === 'object' ? x.sf : null,
   }
 }
@@ -244,7 +247,8 @@ export function pedidoUpsell(op, responsable, finClientId = null) {
 
 export function vistaOportunidades(items, projectId) {
   const mias = (items || []).map(normalizeOpportunity).filter((o) => o.projectId === projectId)
-  const nuevas = mias.filter((o) => o.estado === 'nueva').sort((a, b) => a.orden - b.orden)
+  const nuevas = mias.filter((o) => o.estado === 'nueva')
+    .sort((a, b) => (b.enPropuesta === true) - (a.enPropuesta === true) || a.orden - b.orden)
   const cuando = (o) => o.ofrecidaAt || o.descartadaAt || o.generadaAt || ''
   const vistas = mias.filter((o) => o.estado !== 'nueva').sort((a, b) => String(cuando(b)).localeCompare(String(cuando(a))))
   const generadaAt = mias.reduce((m, o) => (o.generadaAt && o.generadaAt > (m || '') ? o.generadaAt : m), null)
@@ -255,6 +259,15 @@ export function marcarDescartada(op, by, now = new Date()) {
   if (!op || op.estado !== 'nueva') return op
   return { ...op, estado: 'descartada', descartadaAt: now.toISOString(), descartadaPor: by || null }
 }
+
+/* "Agregar a la propuesta" (Nacho, 17/11): las que quedan en sí sobreviven a "Volver a pensar";
+ * oportunidades_reemplazar en la base aplica la misma regla que quedaAlRepensar. */
+export function marcarPropuesta(op, si, by, now = new Date()) {
+  if (!op || op.estado !== 'nueva') return op
+  return { ...op, enPropuesta: !!si, propuestaAt: now.toISOString(), propuestaPor: by || null }
+}
+
+export const quedaAlRepensar = (o) => !!o && (o.estado !== 'nueva' || o.enPropuesta === true)
 
 export function deshacerDescarte(op) {
   if (!op || op.estado !== 'descartada') return op

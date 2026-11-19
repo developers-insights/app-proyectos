@@ -22,7 +22,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@1.7.0'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
-  armarContexto, leerRespuestaIA, pedidoUpsell, normalizeOpportunity,
+  armarContexto, leerRespuestaIA, pedidoUpsell, normalizeOpportunity, quedaAlRepensar,
   ESQUEMA_RESPUESTA, SISTEMA, MODELO,
 } from '../../../src/lib/oportunidades.js'
 
@@ -116,7 +116,7 @@ async function generar(proyecto: string, yo: Yo): Promise<Response> {
   const contexto = armarContexto({
     project: p, client: cli.data, plan: plan.data, tasks: tareas.data ?? [],
     notes: (notas.data ?? []).map((n) => ({ type: n.type, body: n.body, notedAt: n.noted_at })),
-    previas: filasPrevias.filter((o) => o.estado !== 'nueva'),
+    previas: filasPrevias.filter(quedaAlRepensar),
     now: new Date(),
   })
 

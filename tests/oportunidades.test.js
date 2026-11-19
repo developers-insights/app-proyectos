@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  armarContexto, leerRespuestaIA, pedidoUpsell, vistaOportunidades, normalizeOpportunity,
+  armarContexto, leerRespuestaIA, pedidoUpsell, vistaOportunidades, normalizeOpportunity, marcarPropuesta, quedaAlRepensar,
   marcarDescartada, deshacerDescarte, tipoDeCategoria, ESQUEMA_RESPUESTA, MAX_OPORTUNIDADES,
   tableroOportunidades, filaOportunidades, filtrarFilas,
 } from '../src/lib/oportunidades.js'
@@ -226,4 +226,38 @@ test('el filtro cruza pestaña, categoría y texto', () => {
   assert.deepEqual(filtrarFilas(filas, { q: 'komos' }).map((f) => f.id), ['p3'])       // y en cliente y proyecto
   assert.deepEqual(filtrarFilas(filas, { q: 'nada de esto' }), [])
   assert.equal(filtrarFilas(filas, {}).length, 4)
+})
+
+/* ── "Agregar a la propuesta" (pedido de Nacho, 17/11) ─────────────────────── */
+
+test('"Agregar a la propuesta" marca sí o no y sólo en las que falta decidir', () => {
+  const op = normalizeOpportunity({ id: 'a', projectId: 'p1', titulo: 'A', estado: 'nueva' })
+  assert.equal(op.enPropuesta, null)
+  const si = marcarPropuesta(op, true, 'u1', NOW)
+  assert.equal(si.enPropuesta, true)
+  assert.equal(si.propuestaPor, 'u1')
+  assert.equal(marcarPropuesta(si, false, 'u1', NOW).enPropuesta, false)
+  const ofrecida = { ...op, estado: 'ofrecida' }
+  assert.equal(marcarPropuesta(ofrecida, true, 'u1', NOW), ofrecida)
+  assert.equal(normalizeOpportunity({ enPropuesta: 'si' }).enPropuesta, null)
+})
+
+test('al volver a pensar quedan las que están en la propuesta', () => {
+  assert.equal(quedaAlRepensar({ estado: 'nueva', enPropuesta: true }), true)
+  assert.equal(quedaAlRepensar({ estado: 'nueva', enPropuesta: false }), false)
+  assert.equal(quedaAlRepensar({ estado: 'nueva' }), false)
+  assert.equal(quedaAlRepensar({ estado: 'ofrecida' }), true)
+})
+
+test('la vista pone primero las que están en la propuesta', () => {
+  const rows = [
+    { id: 'a', projectId: 'p1', titulo: 'A', estado: 'nueva', orden: 0 },
+    { id: 'b', projectId: 'p1', titulo: 'B', estado: 'nueva', orden: 3, enPropuesta: true },
+  ]
+  assert.deepEqual(vistaOportunidades(rows, 'p1').nuevas.map((x) => x.id), ['b', 'a'])
+})
+
+test('la IA sabe qué ya está en la propuesta para no repetirlo', () => {
+  const c = armarContexto({ ...base(), previas: [{ titulo: 'Plan anual de soporte', estado: 'nueva', enPropuesta: true }] })
+  assert.ok(c.includes('Plan anual de soporte: ya está en la propuesta'))
 })
