@@ -47,6 +47,26 @@ const CSS = `
 .f2-more[aria-expanded="true"] svg{transform:rotate(90deg)}
 .f2-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (prefers-reduced-motion:reduce){.f2-think i,.f2-again[aria-busy="true"] svg{animation:none}}
+.f2-sum,.f2-say{padding:12px 14px;border-radius:12px;background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border)}
+.f2-say{box-shadow:inset 3px 0 0 var(--accent),inset 0 0 0 1px var(--border)}
+.f2-sum p:last-child,.f2-say p:last-child{margin:0;font-size:13.5px;line-height:1.65;color:var(--text);max-width:80ch}
+.f2-grp{--gc:var(--accent);min-width:0}
+.f2-sh{display:flex;align-items:center;gap:8px;margin:0 0 2px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim)}
+.f2-sh i{width:8px;height:8px;border-radius:50%;background:var(--gc);flex:none}
+.f2-sh span{display:inline-grid;place-items:center;min-width:20px;height:18px;padding:0 6px;border-radius:999px;font-size:11px;letter-spacing:0;color:var(--text);background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border)}
+.f2-rows{margin:0;padding:0;list-style:none}
+.f2-row{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;padding:11px 0;border-top:1px solid var(--border)}
+.f2-row:first-child{border-top:0}
+.f2-row .tx{flex:1;min-width:0}
+.f2-row .t{margin:0;font-size:13.5px;line-height:1.5;font-weight:550;color:var(--text);overflow-wrap:anywhere}
+.f2-row .s{margin:3px 0 0;font-size:12.5px;line-height:1.5;color:var(--text-dim);overflow-wrap:anywhere}
+.f2-row .q{margin:7px 0 0;padding:1px 0 1px 10px;border-left:2px solid var(--gc);font-size:12.5px;line-height:1.5;font-style:italic;color:var(--text-dim);overflow-wrap:anywhere}
+.f2-row .q::before{content:'\\201C'}
+.f2-row .q::after{content:'\\201D'}
+.f2-ya{display:inline-flex;align-items:center;gap:5px;flex:none;padding-top:6px;font-size:12px;font-weight:600;color:var(--green)}
+.f2-mas{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;padding-top:4px}
+.f2-when{margin:0;font-size:13px;line-height:1.55;color:var(--text-dim)}
+.f2-when b{color:var(--text)}
 .f2-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px}
 .f2-bar .input{flex:1 1 260px;min-width:0;height:38px}
 .f2-lead{margin:0 0 12px;font-size:12.5px;color:var(--text-dim);line-height:1.5;max-width:68ch}
@@ -54,22 +74,15 @@ const CSS = `
 .f2-box textarea{width:100%;min-height:120px;resize:vertical}
 .f2-box .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .f2-box .row small{margin-right:auto;font-size:11.5px;color:var(--text-faint)}
-.f2-plan{--oc:var(--violet);position:relative;display:flex;flex-direction:column;gap:12px;margin:0 0 16px;padding:16px 17px;border-radius:16px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border);overflow:hidden}
+.f2-plan{--oc:var(--violet);position:relative;display:flex;flex-direction:column;gap:18px;margin:0 0 16px;padding:16px 17px;border-radius:16px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border);overflow:hidden}
 .f2-plan::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:var(--oc);opacity:.85}
 .f2-plan h3{margin:0;font-size:15px;letter-spacing:-.018em;color:var(--text)}
 .f2-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-faint)}
 .f2-meta .sp{margin-left:auto}
 .f2-k{margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-faint)}
-.f2-p{margin:0;font-size:13px;line-height:1.55;color:var(--text)}
-.f2-ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
-.f2-ul li{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;font-size:13px;line-height:1.5;color:var(--text)}
-.f2-ul li > span{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}
-.f2-ul li small{display:block;margin-top:2px;font-size:11.5px;color:var(--text-faint)}
-.f2-ul li q{display:block;margin-top:2px;font-size:12px;color:var(--text-dim);quotes:'«' '»'}
 .f2-stale{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 11px;border-radius:11px;font-size:12.5px;color:var(--text);background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--yellow)}
 .f2-stale > span{flex:1 1 180px;min-width:0}
-.f2-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.f2-call{display:flex;flex-direction:column;gap:12px;padding:15px 16px;border-radius:16px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border);min-width:0}
+.f2-call{display:flex;flex-direction:column;gap:18px;padding:15px 16px;border-radius:16px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border);min-width:0}
 .f2-call h3{margin:0;font-size:14.5px;letter-spacing:-.015em;overflow-wrap:anywhere}
 .f2-tag{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11px;font-weight:650;color:var(--text);background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border)}
 .f2-tag.err{box-shadow:inset 0 0 0 1px var(--red)}
@@ -81,8 +94,7 @@ const CSS = `
 .f2-link{background:none;border:0;padding:0;color:var(--accent);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
 .f2-link:disabled{opacity:.5;cursor:default}
 .f2-raw{margin:0;max-height:260px;overflow:auto;padding:10px 12px;border-radius:12px;background:var(--bg-elevated);box-shadow:inset 0 0 0 1px var(--border);font-size:12px;line-height:1.5;white-space:pre-wrap;color:var(--text-dim)}
-.f2-sec.compact .f2-cols{grid-template-columns:1fr}
-@media (max-width:760px){.f2-cols{grid-template-columns:1fr}.f2-bar .f2-go{width:100%;justify-content:center;height:44px}}
+@media (max-width:760px){.f2-row{flex-direction:column;gap:8px}.f2-bar .f2-go{width:100%;justify-content:center;height:44px}}
 `
 
 async function llamarFase2(supabase, body) {
@@ -102,24 +114,47 @@ async function llamarFase2(supabase, body) {
 }
 
 const ESTADO_TXT = { bajando: 'Bajando la call de Fathom…', analizando: 'Analizando la call…' }
+const TIPO_SENAL = { presupuesto: 'Presupuesto', urgencia: 'Urgencia', decisor: 'Quién decide', fecha: 'Fecha', otra: 'Otra señal' }
 
-function Items({ titulo, items, onOportunidad, puede, lista, entrada }) {
-  if (!items || !items.length) return null
+/* Una lista de filas: el texto, debajo lo que dijo el cliente (si hay) y, a la derecha, la acción. */
+function Filas({ filas }) {
   return (
-    <div>
-      <p className="f2-k">{titulo}</p>
-      <ul className="f2-ul">
-        {items.map((it, i) => (
-          <li key={`${lista}-${i}`}>
-            <span>{it.texto}{it.cita && <q>{it.cita}</q>}</span>
-            {onOportunidad && (it.oportunidadId
-              ? <small>Ya es oportunidad</small>
-              : puede && <button type="button" className="f2-again" onClick={() => onOportunidad(entrada, lista, i)}>Pasar a oportunidad</button>)}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ul className="f2-rows">
+      {filas.map((f, i) => (
+        <li key={i} className="f2-row">
+          <div className="tx">
+            <p className="t">{f.texto}</p>
+            {f.sub && <p className="s">{f.sub}</p>}
+            {f.cita && <blockquote className="q">{f.cita}</blockquote>}
+          </div>
+          {f.accion || null}
+        </li>
+      ))}
+    </ul>
   )
+}
+
+function Grupo({ titulo, tono, cantidad, children }) {
+  return (
+    <section className="f2-grp" style={{ '--gc': `var(${tono})` }}>
+      <h4 className="f2-sh"><i aria-hidden="true" />{titulo}<span>{cantidad}</span></h4>
+      {children}
+    </section>
+  )
+}
+
+const YaEsOportunidad = () => <span className="f2-ya"><I2.check width={12} height={12} /> Ya es oportunidad</span>
+
+function Items({ titulo, tono, items, onOportunidad, puede, lista, entrada }) {
+  if (!items || !items.length) return null
+  const filas = items.map((it, i) => ({
+    texto: it.texto,
+    cita: it.cita,
+    accion: onOportunidad && (it.oportunidadId
+      ? <YaEsOportunidad />
+      : puede && <button type="button" className="f2-again" onClick={() => onOportunidad(entrada, lista, i)}>Pasar a oportunidad</button>),
+  }))
+  return <Grupo titulo={titulo} tono={tono} cantidad={items.length}><Filas filas={filas} /></Grupo>
 }
 
 function Llamada({ e, ahora, puede, puedeIA, onReintentar, onBorrar, onOportunidad }) {
@@ -127,6 +162,7 @@ function Llamada({ e, ahora, puede, puedeIA, onReintentar, onBorrar, onOportunid
   const a = e.analisis
   const trabada = llamadaTrabada(e, ahora)
   const enCurso = (e.estado === 'bajando' || e.estado === 'analizando') && !trabada
+  const hayMas = !!a && (a.objeciones.length > 0 || a.senales.length > 0 || a.pendientes.length > 0)
   return (
     <article className="f2-call" aria-busy={enCurso}>
       <div className="f2-meta">
@@ -147,29 +183,29 @@ function Llamada({ e, ahora, puede, puedeIA, onReintentar, onBorrar, onOportunid
       )}
       {e.estado === 'error' && (
         <div className="f2-stale" role="alert">
-          <I2.alert width={14} height={14} /><span style={{ flex: 1, minWidth: 0 }}>{e.error || 'Algo falló.'}</span>
+          <I2.alert width={14} height={14} /><span>{e.error || 'Algo falló.'}</span>
           {puedeIA && <button type="button" className="f2-again" onClick={() => onReintentar(e)}>Probar de nuevo</button>}
         </div>
       )}
       {a && (
         <>
-          {a.resumen && <p className="f2-p">{a.resumen}</p>}
-          <div className="f2-cols">
-            <Items titulo="Cargar" items={a.cargar} lista="cargar" entrada={e} puede={puede} />
-            <Items titulo="Mejorar" items={a.mejorar} lista="mejorar" entrada={e} puede={puede} onOportunidad={onOportunidad} />
-            <Items titulo="Implementar" items={a.implementar} lista="implementar" entrada={e} puede={puede} onOportunidad={onOportunidad} />
-          </div>
-          <Items titulo="Objeciones" items={a.objeciones} lista="objeciones" entrada={e} puede={puede} />
-          {a.senales.length > 0 && (
-            <div>
-              <p className="f2-k">Señales de compra</p>
-              <ul className="f2-ul">{a.senales.map((s, i) => <li key={i}><span>{s.texto}<small>{s.tipo}</small>{s.cita && <q>{s.cita}</q>}</span></li>)}</ul>
-            </div>
-          )}
-          {a.pendientes.length > 0 && (
-            <div>
-              <p className="f2-k">Pendientes</p>
-              <ul className="f2-ul">{a.pendientes.map((p, i) => <li key={i}><span>{p.texto}{p.quien && <small>{p.quien}</small>}</span></li>)}</ul>
+          {a.resumen && <div className="f2-sum"><p className="f2-k">Resumen</p><p>{a.resumen}</p></div>}
+          <Items titulo="Implementar" tono="--accent" items={a.implementar} lista="implementar" entrada={e} puede={puede} onOportunidad={onOportunidad} />
+          <Items titulo="Mejorar" tono="--violet" items={a.mejorar} lista="mejorar" entrada={e} puede={puede} onOportunidad={onOportunidad} />
+          <Items titulo="Cargar" tono="--green" items={a.cargar} lista="cargar" entrada={e} puede={puede} />
+          {hayMas && (
+            <div className="f2-mas">
+              <Items titulo="Objeciones" tono="--yellow" items={a.objeciones} lista="objeciones" entrada={e} puede={puede} />
+              {a.senales.length > 0 && (
+                <Grupo titulo="Señales de compra" tono="--blue" cantidad={a.senales.length}>
+                  <Filas filas={a.senales.map((s) => ({ texto: s.texto, sub: TIPO_SENAL[s.tipo] || s.tipo, cita: s.cita }))} />
+                </Grupo>
+              )}
+              {a.pendientes.length > 0 && (
+                <Grupo titulo="Pendientes" tono="--text-dim" cantidad={a.pendientes.length}>
+                  <Filas filas={a.pendientes.map((p) => ({ texto: p.texto, sub: p.quien }))} />
+                </Grupo>
+              )}
             </div>
           )}
         </>
@@ -190,6 +226,7 @@ function Llamada({ e, ahora, puede, puedeIA, onReintentar, onBorrar, onOportunid
 }
 
 function Plan({ plan, desactualizado, puede, puedeIA, armando, onArmar, onOportunidad }) {
+  const simples = (arr) => arr.map((t) => ({ texto: t }))
   return (
     <section className="f2-plan" aria-label="Cómo llevarlo a Fase 2">
       <div className="f2-meta">
@@ -202,36 +239,36 @@ function Plan({ plan, desactualizado, puede, puedeIA, armando, onArmar, onOportu
         )}
       </div>
       {desactualizado && <div className="f2-stale"><I2.alert width={14} height={14} /><span>Hay calls o notas nuevas desde que se armó este plan.{puedeIA ? ' Conviene rehacerlo.' : ''}</span></div>}
-      {plan.porQueAhora && <div><p className="f2-k">Por qué ahora</p><p className="f2-p">{plan.porQueAhora}</p></div>}
+      {plan.porQueAhora && <div className="f2-sum"><p className="f2-k">Por qué ahora</p><p>{plan.porQueAhora}</p></div>}
       {plan.queOfrecerPrimero.length > 0 && (
-        <div>
-          <p className="f2-k">Qué ofrecer primero</p>
-          <ul className="f2-ul">
-            {plan.queOfrecerPrimero.map((it, i) => (
-              <li key={i}>
-                <span>{it.titulo}{it.razon && <small>{it.razon}</small>}</span>
-                {it.oportunidadId
-                  ? <small>Ya es oportunidad</small>
-                  : puede && <button type="button" className="f2-again" onClick={() => onOportunidad(plan, 'queOfrecerPrimero', i)}>Pasar a oportunidad</button>}
-              </li>
-            ))}
-          </ul>
+        <Grupo titulo="Qué ofrecer primero" tono="--accent" cantidad={plan.queOfrecerPrimero.length}>
+          <Filas filas={plan.queOfrecerPrimero.map((it, i) => ({
+            texto: it.titulo,
+            sub: it.razon,
+            accion: it.oportunidadId
+              ? <YaEsOportunidad />
+              : puede && <button type="button" className="f2-again" onClick={() => onOportunidad(plan, 'queOfrecerPrimero', i)}>Pasar a oportunidad</button>,
+          }))}
+          />
+        </Grupo>
+      )}
+      {plan.comoAbrirLaCharla && <div className="f2-say"><p className="f2-k">Cómo abrir la charla</p><p>{plan.comoAbrirLaCharla}</p></div>}
+      {(plan.objecionesEsperadas.length > 0 || plan.antesDeOfrecer.length > 0 || plan.riesgos.length > 0) && (
+        <div className="f2-mas">
+          {plan.objecionesEsperadas.length > 0 && (
+            <Grupo titulo="Objeciones que esperamos" tono="--yellow" cantidad={plan.objecionesEsperadas.length}>
+              <Filas filas={plan.objecionesEsperadas.map((o) => ({ texto: o.objecion, sub: o.respuesta }))} />
+            </Grupo>
+          )}
+          {plan.antesDeOfrecer.length > 0 && (
+            <Grupo titulo="Antes de ofrecer" tono="--green" cantidad={plan.antesDeOfrecer.length}><Filas filas={simples(plan.antesDeOfrecer)} /></Grupo>
+          )}
+          {plan.riesgos.length > 0 && (
+            <Grupo titulo="Riesgos" tono="--red" cantidad={plan.riesgos.length}><Filas filas={simples(plan.riesgos)} /></Grupo>
+          )}
         </div>
       )}
-      {plan.comoAbrirLaCharla && <div><p className="f2-k">Cómo abrir la charla</p><p className="f2-p">{plan.comoAbrirLaCharla}</p></div>}
-      {plan.objecionesEsperadas.length > 0 && (
-        <div>
-          <p className="f2-k">Objeciones que esperamos</p>
-          <ul className="f2-ul">{plan.objecionesEsperadas.map((o, i) => <li key={i}><span>{o.objecion}{o.respuesta && <small>{o.respuesta}</small>}</span></li>)}</ul>
-        </div>
-      )}
-      {plan.antesDeOfrecer.length > 0 && (
-        <div><p className="f2-k">Antes de ofrecer</p><ul className="f2-ul">{plan.antesDeOfrecer.map((t, i) => <li key={i}><span>{t}</span></li>)}</ul></div>
-      )}
-      {plan.momento && <div><p className="f2-k">Cuándo</p><p className="f2-p">{plan.momento}</p></div>}
-      {plan.riesgos.length > 0 && (
-        <div><p className="f2-k">Riesgos</p><ul className="f2-ul">{plan.riesgos.map((t, i) => <li key={i}><span>{t}</span></li>)}</ul></div>
-      )}
+      {plan.momento && <p className="f2-when"><b>Cuándo:</b> {plan.momento}</p>}
     </section>
   )
 }
