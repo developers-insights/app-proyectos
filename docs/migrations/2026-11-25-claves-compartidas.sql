@@ -11,6 +11,10 @@ create table if not exists public.vault_shares (
   primary key (para_email, nombre, de_email)
 );
 
+-- copia_id + nueva: "Deshacer" borra sólo esa copia y sólo si el compartir la creó (no si pisó una suya).
+alter table public.vault_shares add column if not exists copia_id text;
+alter table public.vault_shares add column if not exists nueva boolean not null default false;
+
 alter table public.vault_shares enable row level security;
 revoke all on public.vault_shares from anon, authenticated;
 grant select, insert, update, delete on public.vault_shares to service_role;
