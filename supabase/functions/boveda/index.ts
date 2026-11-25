@@ -25,9 +25,14 @@ const CLARITY = 'https://claritybusiness.app/api/boveda'
 const ACCIONES = new Set(['listar', 'ver', 'guardar', 'borrar', 'ver_todos', 'pedir', 'link', 'revocar', 'destinatarios', 'compartir', 'descompartir'])
 const COMPARTIR = new Set(['destinatarios', 'compartir', 'descompartir'])
 const CAMPOS = ['tipo', 'nombre', 'etiqueta', 'categoria', 'uso', 'valor', 'usuario', 'clave', 'url', 'notas'] as const
-// Manuel, Fede, Juan y Nacho. No hay un flag de admin en team_members y el rol no los distingue
-// (Manuel figura como dev), así que la lista va por id del miembro.
-const ADMINS = new Set(['u3', 'u1', 'u5', 'u7'])
+// Manuel, Fede, Juan y Nacho, por id y mail. El mail va fijo acá y no se lee de team_members: cualquier
+// miembro full puede editar la fila de otro (is_team), y con eso se haría pasar por Fede y recibiría lo suyo.
+const ADMINS: Record<string, string> = {
+  u3: 'manuelnavarro@insightsapps.tech',
+  u1: 'federicog@insightsapps.tech',
+  u5: 'juanp@insightsapps.tech',
+  u7: 'nachocachaza@insightsapps.tech',
+}
 
 type Miembro = { id?: string; name?: string; email?: string; status?: string; access?: string }
 type Item = { id: string; nombre: string; etiqueta?: string | null; tipo: string; categoria?: string; uso?: string; estado: string; cargado_at?: string }
@@ -71,10 +76,17 @@ Deno.serve(async (req) => {
 
     if (COMPARTIR.has(accion)) {
       if (!personal) return json({ error: 'sólo se comparte desde Mis claves' })
-      const esAdmin = (m: Miembro) => ADMINS.has(String(m.id)) && m.status === 'approved' && m.access === 'full' && !!m.email
-      const otros = equipo.filter((m) => esAdmin(m) && String(m.email).toLowerCase() !== email)
-      if (accion === 'destinatarios') return json({ destinatarios: esAdmin(yo) ? otros.map((m) => ({ id: m.id, nombre: m.name || m.email })) : [] })
-      if (!esAdmin(yo)) return json({ error: 'forbidden' })
+      const soyAdmin = Object.values(ADMINS).includes(email)
+      const otros: Miembro[] = Object.entries(ADMINS)
+        .filter(([, mail]) => mail !== email)
+        .map(([id, mail]) => {
+          const fila = equipo.find((m) => m.id === id)
+          return { id, email: mail, name: fila?.name || mail.split('@')[0], status: fila?.status }
+        })
+        .filter((m) => m.status === 'approved')
+      if (accion === 'destinatarios') return json({ destinatarios: soyAdmin ? otros.map((m) => ({ id: m.id, nombre: m.name })) : [] })
+      if (!soyAdmin) return json({ error: 'forbidden' })
+      yo.email = email
       try { return json(await compartir(admin, accion, yo, otros, b)) } catch (e) { return json({ error: mensaje(e) }) }
     }
 
@@ -133,15 +145,18 @@ async function compartir(admin: SupabaseClient, accion: string, yo: Miembro, otr
   const de = mio.quien
 
   if (accion === 'descompartir') {
-    // Sólo se borra lo que esta persona compartió (queda registrado acá), nunca una clave propia del otro.
+    // Sólo se borra la copia exacta que creó este compartir: si pisó una clave que el otro ya tenía, o si
+    // el otro la volvió a cargar después, no se toca. Nunca se borra una clave propia del otro.
     const resultados = []
     for (const m of destinos) {
       const para = String(m.email).toLowerCase()
-      const { data: reg } = await admin.from('vault_shares').select('nombre').eq('para_email', para).eq('nombre', it.nombre).eq('de_email', de).maybeSingle()
-      if (!reg) { resultados.push({ id: m.id, estado: 'no_compartida' }); continue }
+      const { data: reg } = await admin.from('vault_shares').select('copia_id, nueva, created_at').eq('para_email', para).eq('nombre', it.nombre).eq('de_email', de).maybeSingle()
+      if (!reg?.copia_id || !reg.nueva) { resultados.push({ id: m.id, estado: 'no_compartida' }); continue }
       try {
         const suyo = await clarity({ accion: 'listar', ...personalDe(m) })
-        const copia = ((suyo.items || []) as Item[]).find((i) => i.nombre === it.nombre)
+        const copia = ((suyo.items || []) as Item[]).find((i) => i.id === reg.copia_id)
+        const tocada = copia?.cargado_at && Date.parse(copia.cargado_at) > Date.parse(reg.created_at) + 120_000
+        if (tocada) { resultados.push({ id: m.id, estado: 'no_compartida' }); continue }
         if (copia) await clarity({ accion: 'borrar', ...personalDe(m), item: copia.id })
         await admin.from('vault_shares').delete().eq('para_email', para).eq('nombre', it.nombre).eq('de_email', de)
         resultados.push({ id: m.id, estado: 'quitada' })
@@ -167,8 +182,8 @@ async function compartir(admin: SupabaseClient, accion: string, yo: Miembro, otr
       const actual = await clarity({ accion: 'listar', ...suyo })
       const ya = ((actual.items || []) as Item[]).find((i) => i.nombre === it.nombre && i.estado === 'cargado')
       if (ya && !pisar) { resultados.push({ id: m.id, estado: 'ya_tiene' }); continue }
-      await clarity({ accion: 'guardar', ...suyo, ...campos })
-      await admin.from('vault_shares').upsert({ de_email: de, para_email: suyo.quien, nombre: it.nombre, created_at: new Date().toISOString() })
+      const g = await clarity({ accion: 'guardar', ...suyo, ...campos })
+      await admin.from('vault_shares').upsert({ de_email: de, para_email: suyo.quien, nombre: it.nombre, copia_id: String(g?.id || ''), nueva: !ya, created_at: new Date().toISOString() })
       resultados.push({ id: m.id, estado: ya ? 'reemplazada' : 'compartida' })
     } catch (e) { resultados.push({ id: m.id, estado: 'error', error: mensaje(e) }) }
   }
