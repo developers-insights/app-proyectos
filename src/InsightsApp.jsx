@@ -219,6 +219,25 @@ a{color:inherit;text-decoration:none}
 .btn-ghost{background:transparent;border-color:transparent}
 .btn-ghost:hover{background:var(--card-hover);border-color:var(--border)}
 .btn-sm{padding:5px 9px;font-size:12px;border-radius:8px}
+.vault-share:hover{color:var(--accent)!important}
+.vault-send:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.vault-pick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font-size:14px;color:var(--text);
+  padding:9px 12px;border-radius:12px;border:1px solid transparent;background:transparent;cursor:pointer;
+  transition:background .16s,border-color .16s,transform .16s cubic-bezier(.22,1,.36,1)}
+.vault-pick:hover{background:var(--card-hover)}
+.vault-pick:active{transform:scale(.985)}
+.vault-pick:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
+.vault-pick[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 9%,transparent);border-color:color-mix(in srgb,var(--accent) 38%,transparent)}
+.vault-pick-stack{display:flex;padding-left:6px}
+.vault-pick-stack > *{margin-left:-8px}
+.vault-check{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;flex-shrink:0;color:transparent;
+  border:1.5px solid var(--border-strong);transition:background .16s,border-color .16s,color .16s,transform .2s cubic-bezier(.34,1.56,.64,1)}
+.vault-check[data-on="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast);transform:scale(1.06)}
+.vault-toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));z-index:90;display:flex;align-items:center;gap:12px;
+  padding:8px 8px 8px 16px;border-radius:999px;background:var(--text);color:var(--bg);font-size:13.5px;font-weight:550;
+  box-shadow:0 18px 40px -18px rgba(0,0,0,.55);max-width:calc(100vw - 32px)}
+.vault-toast button{height:34px;padding:0 14px;border-radius:999px;font-weight:700;font-size:13px;background:var(--bg);color:var(--text);border:0;cursor:pointer}
+@media (prefers-reduced-motion:reduce){.vault-pick,.vault-check{transition:none}.vault-check[data-on="true"]{transform:none}}
 .input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);
   background:var(--bg-elevated);font-size:14px;transition:border-color .16s;outline:none}
 .input:focus{border-color:var(--accent-line)}
@@ -4678,7 +4697,7 @@ const aNombre = (v) => v.normalize('NFD').replace(/\p{M}/gu, '').toUpperCase().r
 const textoDeValor = (v) => (v?.tipo === 'credencial' ? v.clave || v.usuario : v?.tipo === 'imagen' ? '' : v?.valor) || ''
 
 /* Un dato del baúl: la lista trae nombre y estado; los valores se piden al abrirlo o copiarlo. */
-function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved }) {
+function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved, onShare }) {
   const [valor, setValor] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -4719,7 +4738,7 @@ function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved }) {
     catch (e) { setErr('No se pudo eliminar: ' + e.message); setBusy(false) }
   }
 
-  const quien = it.cargado_por === 'cliente' ? (personal ? ' · lo cargó quien lo recibió' : ' · lo cargó el cliente') : ''
+  const quien = it.compartida_por ? ` · te la compartió ${it.compartida_por}` : it.cargado_por === 'cliente' ? (personal ? ' · lo cargó quien lo recibió' : ' · lo cargó el cliente') : ''
   const color = recien ? 'var(--green)' : cargado ? m.color : 'var(--amber, #F5B94A)'
 
   return (
@@ -4741,6 +4760,7 @@ function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved }) {
             : <CopyRemoteBtn label="Copiar" obtener={async () => textoDeValor(await leer())} />
           : link && <CopyRemoteBtn label="Copiar link" obtener={async () => (await boveda({ ...scope, accion: 'link', link: link.id })).url} />}
         {cargado && it.tipo === 'credencial' && <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => (valor ? setValor(null) : abrir())} title={valor ? 'Cerrar' : 'Usuario, enlace y notas'} style={{ padding: 5, color: 'var(--text-faint)' }}><I2.chevD width={14} height={14} style={{ transform: valor ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} /></button>}
+        {onShare && cargado && !esImagen && <button className="btn btn-sm btn-ghost vault-share" disabled={busy} onClick={() => onShare(it)} title="Compartir" aria-label={`Compartir ${titulo}`} style={{ padding: 5, color: 'var(--text-faint)' }}><I2.share width={14} height={14} /></button>}
         {!esImagen && <button className="btn btn-sm btn-ghost" disabled={busy} onClick={editar} title={cargado ? 'Editar' : 'Cargarlo yo'} style={{ padding: 5, color: 'var(--text-faint)' }}><I2.pencil width={14} height={14} /></button>}
         <button className="btn btn-sm btn-ghost" disabled={busy} onClick={borrar} title="Eliminar" style={{ padding: 5, color: 'var(--text-faint)' }}><I2.trash width={14} height={14} /></button>
       </div>
@@ -4838,6 +4858,105 @@ function useVaultLive(rt, canal, onEvento) {
   }, [rt?.url, rt?.key, canal])
 }
 
+const listaDeNombres = (xs) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}`)
+const primerNombre = (n) => String(n || '').split(/\s+/)[0]
+
+/* Compartir una clave propia con otros admins: se copia con el mismo valor a sus Mis claves. */
+function ShareVaultModal({ item, destinatarios, onClose, onShared }) {
+  const { data } = useApp()
+  const [sel, setSel] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [yaTienen, setYaTienen] = useState([])
+  useEffect(() => { setSel([]); setErr(''); setYaTienen([]); setBusy(false) }, [item?.id])
+  const gente = destinatarios.map((d) => ({ ...d, user: data.team.find((u) => u.id === d.id) || { id: d.id, name: d.nombre, initials: autoInitials(d.nombre), color: '#64748B' } }))
+  const todos = gente.length > 0 && sel.length === gente.length
+  const toggle = (id) => { setYaTienen([]); setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id])) }
+  const nombreDe = (id) => primerNombre(gente.find((g) => g.id === id)?.nombre)
+
+  const enviar = async (destinos, pisar = false) => {
+    setBusy(true); setErr('')
+    try {
+      const r = await boveda({ personal: true, accion: 'compartir', item: item.id, destinos, pisar })
+      const por = (e) => r.resultados.filter((x) => x.estado === e).map((x) => x.id)
+      const nuevos = por('compartida'), pisados = por('reemplazada'), tienen = por('ya_tiene')
+      const fallas = r.resultados.filter((x) => x.estado === 'error')
+      if (nuevos.length || pisados.length) onShared({ item, nuevos, llegaron: [...nuevos, ...pisados].map(nombreDe) })
+      if (fallas.length) setErr(`No le llegó a ${listaDeNombres(fallas.map((f) => nombreDe(f.id)))}: ${fallas[0].error}`)
+      setYaTienen(tienen)
+      setSel(tienen)
+      if (!tienen.length && !fallas.length) onClose()
+    } catch (e) { setErr('No se compartió: ' + e.message) }
+    setBusy(false)
+  }
+
+  return (
+    <Modal open={!!item} onClose={onClose} title="Compartir clave" sub={item ? item.etiqueta || item.nombre : ''} width={460}>
+      {item && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.5 }}>Le aparece en sus claves con el mismo valor.</div>
+          {gente.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text-faint)' }}>No hay a quién compartírsela.</div>
+          ) : (
+            <div role="group" aria-label="Con quién" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <button type="button" className="vault-pick" aria-pressed={todos} onClick={() => { setYaTienen([]); setSel(todos ? [] : gente.map((g) => g.id)) }}>
+                <span className="vault-pick-stack" aria-hidden="true">{gente.slice(0, 3).map((g) => <Avatar key={g.id} user={g.user} size={24} ring="var(--card)" />)}</span>
+                <span style={{ flex: 1, fontWeight: 600 }}>Todos</span>
+                <span className="vault-check" data-on={todos}><I2.check width={12} height={12} /></span>
+              </button>
+              <div style={{ height: 1, background: 'var(--border)', margin: '4px 2px' }} />
+              {gente.map((g) => {
+                const on = sel.includes(g.id)
+                return (
+                  <button key={g.id} type="button" className="vault-pick" aria-pressed={on} onClick={() => toggle(g.id)}>
+                    <Avatar user={g.user} size={30} ring="var(--card)" />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontWeight: 600 }}>{g.nombre}</span>
+                      {yaTienen.includes(g.id) && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--amber, #F5B94A)', fontWeight: 500 }}>Ya tiene una con este nombre</span>}
+                    </span>
+                    <span className="vault-check" data-on={on}><I2.check width={12} height={12} /></span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn" onClick={onClose}>Cancelar</button>
+            {yaTienen.length > 0 && sel.length > 0
+              ? <button className="btn btn-accent" disabled={busy} onClick={() => enviar(sel, true)}>{busy ? 'Reemplazando…' : `Reemplazársela a ${listaDeNombres(sel.map(nombreDe))}`}</button>
+              : <button className="btn btn-accent vault-send" disabled={busy || !sel.length} onClick={() => enviar(sel)}><I2.share width={14} height={14} /> {busy ? 'Compartiendo…' : sel.length ? `Compartir con ${todos && sel.length > 1 ? 'todos' : listaDeNombres(sel.map(nombreDe))}` : 'Compartir'}</button>}
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+/* Toast con Deshacer: queda ~7 s. Lo que deshace se hace en el server, así que no hay "borrado diferido". */
+function VaultToast({ toast, onUndo, onDone }) {
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(onDone, 7000)
+    return () => clearTimeout(t)
+  }, [toast, onDone])
+  return createPortal(
+    <div aria-live="polite">
+      <AnimatePresence>
+        {toast && (
+          <motion.div key={toast.key} className="vault-toast" style={{ x: '-50%' }}
+            initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8, transition: { duration: 0.14 } }}
+            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}>
+            <span>{toast.text}</span>
+            {toast.puedeDeshacer && <button type="button" onClick={onUndo}>Deshacer</button>}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>,
+    document.body,
+  )
+}
+
 function VaultPanel({ scope, personal = false, active = true }) {
   const [editing, setEditing] = useState(null)  // null | item (nuevo o en edición)
   const [asking, setAsking] = useState(false)
@@ -4847,6 +4966,31 @@ function VaultPanel({ scope, personal = false, active = true }) {
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
   const scopeKey = JSON.stringify(scope)
+  const [destinatarios, setDestinatarios] = useState([])
+  const [compartiendo, setCompartiendo] = useState(null)
+  const [toast, setToast] = useState(null)
+  const cerrarToast = useCallback(() => setToast(null), [])
+
+  useEffect(() => {
+    if (!personal || !active) return
+    let vivo = true
+    boveda({ personal: true, accion: 'destinatarios' }).then((r) => { if (vivo) setDestinatarios(r.destinatarios || []) }).catch(() => {})
+    return () => { vivo = false }
+  }, [personal, active])
+
+  const compartida = ({ item, nuevos, llegaron }) => {
+    setToast({ key: Date.now(), text: `${item.etiqueta || item.nombre} ya le llegó a ${listaDeNombres(llegaron)}`, puedeDeshacer: nuevos.length > 0, item, nuevos })
+  }
+  // Deshacer sólo quita las copias nuevas: si alguien ya tenía una y se la reemplazó, su valor viejo no vuelve.
+  const deshacerCompartir = async () => {
+    const t = toast
+    setToast(null)
+    if (!t?.nuevos?.length) return
+    try {
+      const r = await boveda({ personal: true, accion: 'descompartir', item: t.item.id, destinos: t.nuevos })
+      if (r.resultados?.some((x) => x.estado === 'error')) setErr('No se pudo deshacer del todo: ' + r.resultados.find((x) => x.estado === 'error').error)
+    } catch (e) { setErr('No se pudo deshacer: ' + e.message) }
+  }
 
   const cargar = useCallback(async () => {
     try { setRes(await boveda({ ...JSON.parse(scopeKey), accion: 'listar' })); setErr('') }
@@ -4898,7 +5042,7 @@ function VaultPanel({ scope, personal = false, active = true }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.55, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
         <I2.lock width={15} height={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
         <span>{personal
-          ? 'Tus claves, cifradas. Sólo las ves vos, acá y en Clarity. Pedile una a alguien con un link y aparece acá cuando la carga.'
+          ? `Tus claves, cifradas. Sólo las ves vos, acá y en Clarity. Pedile una a alguien con un link y aparece acá cuando la carga.${destinatarios.length ? ' Con el botón de compartir le pasás una al resto del equipo.' : ''}`
           : 'Accesos y claves del cliente, cifrados. Es la misma bóveda que la de Clarity: lo que cargues acá aparece allá y al revés. Solo lo ve el equipo.'}</span>
       </div>
       {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
@@ -4967,7 +5111,8 @@ function VaultPanel({ scope, personal = false, active = true }) {
             )}
             {items?.map((it) => (
               <VaultItem key={it.id} it={it} scope={scope} personal={personal} link={linkDe(it.id)} recien={recien.includes(it.id)}
-                onEdit={(e) => { setPwShow(false); setEditing(e) }} onRemoved={(id) => setRes((x) => ({ ...x, items: (x?.items || []).filter((y) => y.id !== id) }))} />
+                onEdit={(e) => { setPwShow(false); setEditing(e) }} onRemoved={(id) => setRes((x) => ({ ...x, items: (x?.items || []).filter((y) => y.id !== id) }))}
+                onShare={personal && destinatarios.length ? setCompartiendo : null} />
             ))}
           </div>
 
@@ -5016,6 +5161,8 @@ function VaultPanel({ scope, personal = false, active = true }) {
           </div>
         </>
       )}
+      {personal && <ShareVaultModal item={compartiendo} destinatarios={destinatarios} onClose={() => setCompartiendo(null)} onShared={compartida} />}
+      {personal && <VaultToast toast={toast} onUndo={deshacerCompartir} onDone={cerrarToast} />}
     </div>
   )
 }

@@ -5,11 +5,12 @@
 // verifica que quien pide es del equipo y le pasa el pedido a https://claritybusiness.app/api/boveda
 // con CLARITY_PUENTE_SECRET. Lo que se carga acá aparece en la pestaña Bóveda de Clarity y al revés.
 //
-// POST { accion, proyecto?: '<id del proyecto>', personal?: true, item?, link?, items?, ...campos }
+// POST { accion, proyecto?: '<id del proyecto>', personal?: true, item?, link?, items?, destinos?, pisar?, ...campos }
 //   accion: listar | ver | guardar | borrar | ver_todos | pedir | link | revocar
+//           destinatarios | compartir | descompartir (sólo personal y sólo entre admins)
 //   personal: Mis claves de quien llama (las ve sólo esa persona, acá y en Clarity). La identidad es su mail.
 // ============================================================================
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -21,8 +22,33 @@ const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' } })
 
 const CLARITY = 'https://claritybusiness.app/api/boveda'
-const ACCIONES = new Set(['listar', 'ver', 'guardar', 'borrar', 'ver_todos', 'pedir', 'link', 'revocar'])
+const ACCIONES = new Set(['listar', 'ver', 'guardar', 'borrar', 'ver_todos', 'pedir', 'link', 'revocar', 'destinatarios', 'compartir', 'descompartir'])
+const COMPARTIR = new Set(['destinatarios', 'compartir', 'descompartir'])
 const CAMPOS = ['tipo', 'nombre', 'etiqueta', 'categoria', 'uso', 'valor', 'usuario', 'clave', 'url', 'notas'] as const
+// Manuel, Fede, Juan y Nacho. No hay un flag de admin en team_members y el rol no los distingue
+// (Manuel figura como dev), así que la lista va por id del miembro.
+const ADMINS = new Set(['u3', 'u1', 'u5', 'u7'])
+
+type Miembro = { id?: string; name?: string; email?: string; status?: string; access?: string }
+type Item = { id: string; nombre: string; etiqueta?: string | null; tipo: string; categoria?: string; uso?: string; estado: string; cargado_at?: string }
+
+async function clarity(cuerpo: Record<string, unknown>) {
+  const secreto = Deno.env.get('CLARITY_PUENTE_SECRET') || ''
+  if (!secreto) throw new Error('falta CLARITY_PUENTE_SECRET')
+  const r = await fetch(CLARITY, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-puente-secret': secreto },
+    body: JSON.stringify(cuerpo),
+    signal: AbortSignal.timeout(15_000),
+  })
+  const data = await r.json().catch(() => ({ error: `Clarity respondió ${r.status}` }))
+  if (!r.ok || data?.error) throw new Error(data?.error || `Clarity respondió ${r.status}`)
+  return data
+}
+
+const nombreCorto = (m: Miembro) => String(m.name || m.email || '').split(/\s+/)[0]
+const personalDe = (m: Miembro) => ({ personal: true, quien: String(m.email).toLowerCase(), titulo: nombreCorto(m) })
+const mensaje = (e: unknown) => String((e as Error)?.message || e).slice(0, 200)
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -32,20 +58,31 @@ Deno.serve(async (req) => {
     const { data: caller } = await admin.auth.getUser(token)
     const email = String(caller?.user?.email || '').toLowerCase()
     if (!email || !caller?.user?.email_confirmed_at) return json({ error: 'unauthorized' })
-    const { data: rows, error: tErr } = await admin.from('team_members').select('data').is('deleted_at', null)
+    const { data: rows, error: tErr } = await admin.from('team_members').select('id, data').is('deleted_at', null)
     if (tErr) return json({ error: tErr.message })
-    const yo = (rows || []).map((r) => r.data || {}).find((m) => String(m.email || '').toLowerCase() === email)
+    const equipo: Miembro[] = (rows || []).map((r) => ({ ...(r.data || {}), id: r.id }))
+    const yo = equipo.find((m) => String(m.email || '').toLowerCase() === email)
     if (!yo || yo.status !== 'approved') return json({ error: 'forbidden' })
 
     const b = await req.json().catch(() => ({}))
     const accion = String(b.accion || '')
     if (!ACCIONES.has(accion)) return json({ error: 'acción desconocida' })
     const personal = b.personal === true
+
+    if (COMPARTIR.has(accion)) {
+      if (!personal) return json({ error: 'sólo se comparte desde Mis claves' })
+      const esAdmin = (m: Miembro) => ADMINS.has(String(m.id)) && m.status === 'approved' && m.access === 'full' && !!m.email
+      const otros = equipo.filter((m) => esAdmin(m) && String(m.email).toLowerCase() !== email)
+      if (accion === 'destinatarios') return json({ destinatarios: esAdmin(yo) ? otros.map((m) => ({ id: m.id, nombre: m.name || m.email })) : [] })
+      if (!esAdmin(yo)) return json({ error: 'forbidden' })
+      try { return json(await compartir(admin, accion, yo, otros, b)) } catch (e) { return json({ error: mensaje(e) }) }
+    }
+
     let cuerpo: Record<string, unknown>
     if (personal) {
       // Lo propio lo tiene cualquiera del equipo aprobado, colaboradores incluidos; un cliente del portal no.
       if (yo.access === 'project') return json({ error: 'forbidden' })
-      cuerpo = { accion, personal: true, quien: email, titulo: String(yo.name || email).split(/\s+/)[0] }
+      cuerpo = { accion, ...personalDe(yo) }
     } else {
       // Misma regla que is_team(): aprobado y full. Un colaborador no ve el baúl de un proyecto.
       if (yo.access !== 'full') return json({ error: 'forbidden' })
@@ -61,17 +98,79 @@ Deno.serve(async (req) => {
     if (Array.isArray(b.items)) cuerpo.items = b.items.slice(0, 30).map((i: { nombre?: unknown; ayuda?: unknown; tipo?: unknown }) => ({ nombre: String(i?.nombre || ''), ayuda: String(i?.ayuda || ''), tipo: i?.tipo === 'imagen' ? 'imagen' : 'env' }))
     for (const k of CAMPOS) if (b[k] !== undefined) cuerpo[k] = String(b[k])
 
-    const secreto = Deno.env.get('CLARITY_PUENTE_SECRET') || ''
-    if (!secreto) return json({ error: 'falta CLARITY_PUENTE_SECRET' })
-    const r = await fetch(CLARITY, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-puente-secret': secreto },
-      body: JSON.stringify(cuerpo),
-      signal: AbortSignal.timeout(15_000),
-    })
-    const data = await r.json().catch(() => ({ error: `Clarity respondió ${r.status}` }))
-    return json(r.ok ? data : { error: data?.error || `Clarity respondió ${r.status}` })
+    let data
+    try { data = await clarity(cuerpo) } catch (e) { return json({ error: mensaje(e) }) }
+    if (personal && accion === 'listar') data = await conQuienCompartio(admin, equipo, email, data)
+    return json(data)
   } catch (e) {
     return json({ error: String(e).slice(0, 200) })
   }
 })
+
+// Le suma `compartida_por` a lo que otro admin le pasó y nadie volvió a cargar después.
+async function conQuienCompartio(admin: SupabaseClient, equipo: Miembro[], email: string, data: { items?: Item[] }) {
+  if (!data?.items?.length) return data
+  const { data: filas } = await admin.from('vault_shares').select('de_email, nombre, created_at').eq('para_email', email)
+  if (!filas?.length) return data
+  const items = data.items.map((it) => {
+    const f = filas.filter((x) => x.nombre === it.nombre).sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+    // 2 min de margen: Clarity pone cargado_at un instante antes de que se registre acá.
+    if (!f || (it.cargado_at && Date.parse(it.cargado_at) > Date.parse(f.created_at) + 120_000)) return it
+    const de = equipo.find((m) => String(m.email || '').toLowerCase() === f.de_email)
+    return { ...it, compartida_por: de ? nombreCorto(de) : f.de_email.split('@')[0] }
+  })
+  return { ...data, items }
+}
+
+async function compartir(admin: SupabaseClient, accion: string, yo: Miembro, otros: Miembro[], b: Record<string, unknown>) {
+  const ids = new Set((Array.isArray(b.destinos) ? b.destinos : []).map(String))
+  const destinos = otros.filter((m) => ids.has(String(m.id)))
+  if (!destinos.length) return { error: 'Elegí a quién se la compartís.' }
+  const mio = personalDe(yo)
+  const lista = await clarity({ accion: 'listar', ...mio })
+  const it = ((lista.items || []) as Item[]).find((i) => i.id === String(b.item || ''))
+  if (!it) return { error: 'Esa clave ya no está en tu bóveda.' }
+  const de = mio.quien
+
+  if (accion === 'descompartir') {
+    // Sólo se borra lo que esta persona compartió (queda registrado acá), nunca una clave propia del otro.
+    const resultados = []
+    for (const m of destinos) {
+      const para = String(m.email).toLowerCase()
+      const { data: reg } = await admin.from('vault_shares').select('nombre').eq('para_email', para).eq('nombre', it.nombre).eq('de_email', de).maybeSingle()
+      if (!reg) { resultados.push({ id: m.id, estado: 'no_compartida' }); continue }
+      try {
+        const suyo = await clarity({ accion: 'listar', ...personalDe(m) })
+        const copia = ((suyo.items || []) as Item[]).find((i) => i.nombre === it.nombre)
+        if (copia) await clarity({ accion: 'borrar', ...personalDe(m), item: copia.id })
+        await admin.from('vault_shares').delete().eq('para_email', para).eq('nombre', it.nombre).eq('de_email', de)
+        resultados.push({ id: m.id, estado: 'quitada' })
+      } catch (e) { resultados.push({ id: m.id, estado: 'error', error: mensaje(e) }) }
+    }
+    return { resultados }
+  }
+
+  if (it.estado !== 'cargado') return { error: 'Esa clave todavía no tiene valor.' }
+  if (it.tipo === 'imagen') return { error: 'Las imágenes no se pueden compartir todavía.' }
+  const { valor } = await clarity({ accion: 'ver', ...mio, item: it.id })
+  const campos: Record<string, string> = { tipo: it.tipo, nombre: it.nombre, categoria: it.categoria || 'other' }
+  if (it.uso) campos.uso = it.uso
+  if (it.etiqueta) campos.etiqueta = it.etiqueta
+  if (valor?.tipo === 'credencial') Object.assign(campos, { usuario: valor.usuario || '', clave: valor.clave || '', url: valor.url || '', notas: valor.notas || '' })
+  else campos.valor = String(valor?.valor ?? '')
+
+  const pisar = b.pisar === true
+  const resultados = []
+  for (const m of destinos) {
+    const suyo = personalDe(m)
+    try {
+      const actual = await clarity({ accion: 'listar', ...suyo })
+      const ya = ((actual.items || []) as Item[]).find((i) => i.nombre === it.nombre && i.estado === 'cargado')
+      if (ya && !pisar) { resultados.push({ id: m.id, estado: 'ya_tiene' }); continue }
+      await clarity({ accion: 'guardar', ...suyo, ...campos })
+      await admin.from('vault_shares').upsert({ de_email: de, para_email: suyo.quien, nombre: it.nombre, created_at: new Date().toISOString() })
+      resultados.push({ id: m.id, estado: ya ? 'reemplazada' : 'compartida' })
+    } catch (e) { resultados.push({ id: m.id, estado: 'error', error: mensaje(e) }) }
+  }
+  return { nombre: it.nombre, resultados }
+}
