@@ -1,14 +1,14 @@
 // ============================================================================
 // boveda — Supabase Edge Function (Deno)
 // Baúl de datos del cliente por proyecto. Los valores NO viven en esta base: la bóveda es la de
-// Clarity (cb_vault_items, cifrada con una clave que sólo tiene el server de Clarity). Esta función
-// verifica que quien pide es del equipo y le pasa el pedido a https://claritybusiness.app/api/boveda
-// con CLARITY_PUENTE_SECRET. Lo que se carga acá aparece en la pestaña Bóveda de Clarity y al revés.
+// AutoDev (cb_vault_items, cifrada con una clave que sólo tiene el server de AutoDev). Esta función
+// verifica que quien pide es del equipo y le pasa el pedido a https://autodev.tech/api/boveda
+// con CLARITY_PUENTE_SECRET. Lo que se carga acá aparece en la pestaña Bóveda de AutoDev y al revés.
 //
 // POST { accion, proyecto?: '<id del proyecto>', personal?: true, item?, link?, items?, destinos?, pisar?, ...campos }
 //   accion: listar | ver | guardar | borrar | ver_todos | pedir | link | revocar
 //           destinatarios | compartir | descompartir (sólo personal y sólo entre admins)
-//   personal: Mis claves de quien llama (las ve sólo esa persona, acá y en Clarity). La identidad es su mail.
+//   personal: Mis claves de quien llama (las ve sólo esa persona, acá y en AutoDev). La identidad es su mail.
 // ============================================================================
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -21,7 +21,7 @@ const cors = {
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' } })
 
-const CLARITY = 'https://claritybusiness.app/api/boveda'
+const CLARITY = 'https://autodev.tech/api/boveda'
 const ACCIONES = new Set(['listar', 'ver', 'guardar', 'borrar', 'ver_todos', 'pedir', 'link', 'revocar', 'destinatarios', 'compartir', 'descompartir'])
 const COMPARTIR = new Set(['destinatarios', 'compartir', 'descompartir'])
 const CAMPOS = ['tipo', 'nombre', 'etiqueta', 'categoria', 'uso', 'valor', 'usuario', 'clave', 'url', 'notas'] as const
@@ -46,8 +46,8 @@ async function clarity(cuerpo: Record<string, unknown>) {
     body: JSON.stringify(cuerpo),
     signal: AbortSignal.timeout(15_000),
   })
-  const data = await r.json().catch(() => ({ error: `Clarity respondió ${r.status}` }))
-  if (!r.ok || data?.error) throw new Error(data?.error || `Clarity respondió ${r.status}`)
+  const data = await r.json().catch(() => ({ error: `AutoDev respondió ${r.status}` }))
+  if (!r.ok || data?.error) throw new Error(data?.error || `AutoDev respondió ${r.status}`)
   return data
 }
 
@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
       if (yo.access !== 'full') return json({ error: 'forbidden' })
       const proyecto = String(b.proyecto || '')
       if (!/^[A-Za-z0-9_-]{1,64}$/.test(proyecto)) return json({ error: 'falta el proyecto' })
-      // Sólo proyectos vivos de esta app: la bóveda de Clarity confía en el id que llega acá.
+      // Sólo proyectos vivos de esta app: la bóveda de AutoDev confía en el id que llega acá.
       const { data: existe } = await admin.from('projects').select('id, data').eq('id', proyecto).is('deleted_at', null).maybeSingle()
       if (!existe) return json({ error: 'no existe el proyecto' })
       cuerpo = { accion, fuente: proyecto, quien: email, titulo: String(existe.data?.name || '').slice(0, 120) }
@@ -126,7 +126,7 @@ async function conQuienCompartio(admin: SupabaseClient, equipo: Miembro[], email
   if (!filas?.length) return data
   const items = data.items.map((it) => {
     const f = filas.filter((x) => x.nombre === it.nombre).sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
-    // 2 min de margen: Clarity pone cargado_at un instante antes de que se registre acá.
+    // 2 min de margen: AutoDev pone cargado_at un instante antes de que se registre acá.
     if (!f || (it.cargado_at && Date.parse(it.cargado_at) > Date.parse(f.created_at) + 120_000)) return it
     const de = equipo.find((m) => String(m.email || '').toLowerCase() === f.de_email)
     return { ...it, compartida_por: de ? nombreCorto(de) : f.de_email.split('@')[0] }
