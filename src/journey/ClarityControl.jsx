@@ -89,15 +89,15 @@ function ClarityBody({ project, patch }) {
   const inst = instanciaDe(grupo?.clarity_instancia)
   const sinEfecto = !on && claritySinEfecto(project)
   const desc = on
-    ? (claritySinEfecto(project) ? 'Está marcado, pero en esta etapa Clarity no lo toma.' : 'Está en Clarity. Espera tu OK en el panel para arrancar.')
-    : sinEfecto ? 'En esta etapa Clarity no lo toma, aunque lo prendas.'
-    : 'Prendelo para sumarlo a Clarity. Queda esperando tu OK en el panel.'
+    ? (claritySinEfecto(project) ? 'Está marcado, pero en esta etapa AutoDev no lo toma.' : 'Está en AutoDev. Espera tu OK en el panel para arrancar.')
+    : sinEfecto ? 'En esta etapa AutoDev no lo toma, aunque lo prendas.'
+    : 'Prendelo para sumarlo a AutoDev. Queda esperando tu OK en el panel.'
 
   return (
     <div className="ck">
       <style>{CSS}</style>
       <div className="ck-blk">
-        <span className="pd-eyebrow">Clarity</span>
+        <span className="pd-eyebrow">AutoDev</span>
         <div className="ck-row">
           <button type="button" role="switch" aria-checked={on} aria-labelledby="ck-t" aria-describedby="ck-d" className="ck-sw"
             onClick={toggle} disabled={busy} />
@@ -109,7 +109,7 @@ function ClarityBody({ project, patch }) {
         <span className="pd-eyebrow" id="ck-cd">Contesta desde</span>
         {!listo && !grupo ? <span className="ck-seg-sk" aria-hidden="true" /> : (
           <div className="ck-seg" role="radiogroup" aria-labelledby="ck-cd">
-            {[[INSTANCIA_BOT, 'Bot de Clarity'], [INSTANCIA_MANUEL, 'Mi número']].map(([v, label]) => (
+            {[[INSTANCIA_BOT, 'Bot de AutoDev'], [INSTANCIA_MANUEL, 'Mi número']].map(([v, label]) => (
               <button key={String(v)} type="button" role="radio" aria-checked={!!grupo && inst === v}
                 disabled={!grupo || igBusy} onClick={() => setInst(v)}>{label}</button>
             ))}

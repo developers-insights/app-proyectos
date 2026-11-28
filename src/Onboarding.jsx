@@ -215,7 +215,7 @@ function Presentacion() {
 const WA_URL = 'https://wa.me/16187090987?text=' + encodeURIComponent('Hola Nacho, ya termine el proceso de onboarding y agende mi llamada.')
 function Gracias() {
   /* Las tres cuentas y a quién se le da acceso salen de `lib/accesos.js`, espejo de la lista de
-     Clarity (speed-funnels, `_shared/cb-accesos.ts`): el texto de esta página no puede depender de
+     AutoDev (speed-funnels, `_shared/cb-accesos.ts`): el texto de esta página no puede depender de
      que el video de arriba esté al día. */
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 90 }}>

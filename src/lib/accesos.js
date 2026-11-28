@@ -1,12 +1,12 @@
 // Las cuentas que el cliente crea al arrancar un proyecto, y a quién le da acceso en cada una.
 //
 // Esto es el ESPEJO de la única lista de verdad, que vive en speed-funnels
-// (`supabase/functions/_shared/cb-accesos.ts`): de ahí salen los mensajes que Clarity le manda al
+// (`supabase/functions/_shared/cb-accesos.ts`): de ahí salen los mensajes que AutoDev le manda al
 // grupo del proyecto y el diagnóstico de los accesos. Los dos repos tienen que decir lo mismo; acá
 // lo fija `tests/accesos.test.js`, y si cambia uno se cambia el otro en el mismo día.
 //
 // Por qué existe (4/11/2026): la página pedía dos cuentas (Supabase y GitHub) y el mensaje
-// automático de Clarity pedía otra cosa (sólo developers-insights, sin nombrar Vercel). Elizabeth
+// automático de AutoDev pedía otra cosa (sólo developers-insights, sin nombrar Vercel). Elizabeth
 // (Mi cupón) compartió sólo developers-insights porque era exactamente lo que le habíamos pedido.
 // El texto no puede depender de que el video esté al día: el video se cambia en la tabla `videos`,
 // esta lista no.

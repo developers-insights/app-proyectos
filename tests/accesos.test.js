@@ -24,7 +24,7 @@ test('los dos colaboradores de GitHub, con guion, y el mail de Supabase', () => 
   assert.match(MAIL_SUPABASE, /^[^@\s]+@[^@\s]+$/)
 })
 
-// El bug del 4/11: la página listaba dos cuentas y el mensaje de Clarity pedía otra cosa. Que la
+// El bug del 4/11: la página listaba dos cuentas y el mensaje de AutoDev pedía otra cosa. Que la
 // página dibuje la lista, y no su propia copia, es lo que no deja que vuelvan a separarse.
 test('la página de gracias dibuja la lista, no una copia propia', () => {
   assert.ok(pagina.includes("from './lib/accesos'"), 'Onboarding.jsx no lee lib/accesos')

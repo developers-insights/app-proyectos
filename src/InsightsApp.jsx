@@ -4585,10 +4585,10 @@ function AccountsPanel({ project, patch }) {
 
 /* ============================================================================
    BAÚL DE DATOS DEL CLIENTE — credenciales y accesos sensibles por proyecto.
-   Los valores no viven en esta base: es la bóveda de Clarity (cifrada, con una clave que sólo
-   tiene su server), compartida con la pestaña Bóveda de claritybusiness.app. Se lee y escribe
+   Los valores no viven en esta base: es la bóveda de AutoDev (cifrada, con una clave que sólo
+   tiene su server), compartida con la pestaña Bóveda de autodev.tech. Se lee y escribe
    por la edge function `boveda`, que sólo deja pasar al equipo. La lista trae nombres y
-   estado; cada valor se descifra al pedirlo y queda registrado en Clarity.
+   estado; cada valor se descifra al pedirlo y queda registrado en AutoDev.
 ============================================================================ */
 const VAULT_TYPES = [
   { key: 'email', label: 'Correo', Ico: I2.mail, color: '#38BDF8' },
@@ -4732,7 +4732,7 @@ function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved, onSha
     setBusy(false)
   }
   const borrar = async () => {
-    if (!window.confirm(`¿Eliminar ${titulo}? Se borra también en Clarity y no se puede deshacer.`)) return
+    if (!window.confirm(`¿Eliminar ${titulo}? Se borra también en AutoDev y no se puede deshacer.`)) return
     setBusy(true)
     try { await boveda({ ...scope, accion: 'borrar', item: it.id }); onRemoved(it.id) }
     catch (e) { setErr('No se pudo eliminar: ' + e.message); setBusy(false) }
@@ -4790,7 +4790,7 @@ function VaultItem({ it, scope, personal, link, recien, onEdit, onRemoved, onSha
   )
 }
 
-/* Pedir datos por link: se escriben los nombres, Clarity arma el link y queda en "Links activos"
+/* Pedir datos por link: se escriben los nombres, AutoDev arma el link y queda en "Links activos"
    para volver a copiarlo. Quien lo recibe sólo puede cargar, nunca ver. */
 function VaultAsk({ scope, personal, pedidos, onDone, onCancel }) {
   const [filas, setFilas] = useState(pedidos.length ? pedidos.map((p) => ({ nombre: p.nombre, ayuda: p.ayuda || '' })) : [{ nombre: '', ayuda: '' }])
@@ -4843,7 +4843,7 @@ function VaultAsk({ scope, personal, pedidos, onDone, onCancel }) {
   )
 }
 
-/* Aviso en vivo desde la base de Clarity: broadcast en un topic secreto por bóveda que sólo trae
+/* Aviso en vivo desde la base de AutoDev: broadcast en un topic secreto por bóveda que sólo trae
    id y estado (nunca valores). El nombre del topic lo da `listar`, que ya pasó por la edge function. */
 function useVaultLive(rt, canal, onEvento) {
   const cb = useRef(onEvento)
@@ -5042,8 +5042,8 @@ function VaultPanel({ scope, personal = false, active = true }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-faint)', lineHeight: 1.55, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
         <I2.lock width={15} height={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
         <span>{personal
-          ? `Tus claves, cifradas. Sólo las ves vos, acá y en Clarity. Pedile una a alguien con un link y aparece acá cuando la carga.${destinatarios.length ? ' Con el botón de compartir le pasás una al resto del equipo.' : ''}`
-          : 'Accesos y claves del cliente, cifrados. Es la misma bóveda que la de Clarity: lo que cargues acá aparece allá y al revés. Solo lo ve el equipo.'}</span>
+          ? `Tus claves, cifradas. Sólo las ves vos, acá y en AutoDev. Pedile una a alguien con un link y aparece acá cuando la carga.${destinatarios.length ? ' Con el botón de compartir le pasás una al resto del equipo.' : ''}`
+          : 'Accesos y claves del cliente, cifrados. Es la misma bóveda que la de AutoDev: lo que cargues acá aparece allá y al revés. Solo lo ve el equipo.'}</span>
       </div>
       {err && <div style={{ fontSize: 12.5, color: 'var(--red, #ff7a5c)' }}>{err}</div>}
 
@@ -5176,7 +5176,7 @@ function VaultModal({ open, project, onClose }) {
   )
 }
 
-/* MIS CLAVES — bóveda propia de cada usuario, la misma que "Mis claves" en Clarity. */
+/* MIS CLAVES — bóveda propia de cada usuario, la misma que "Mis claves" en AutoDev. */
 function MisClavesView() {
   return (
     <div className="view" style={{ padding: '28px 34px 60px', maxWidth: 820 }}>
