@@ -167,6 +167,14 @@ export function traduccionVigente(t, es, persona) {
   return out.queEs || out.negocio || out.resumen ? out : null
 }
 
+/** El `portafolio` del proyecto con la web prendida o apagada. Prendida es la ausencia del flag. */
+export function conWeb(portafolio, mostrar) {
+  const base = portafolio && typeof portafolio === 'object' && !Array.isArray(portafolio) ? { ...portafolio } : {}
+  if (mostrar) delete base.web
+  else base.web = false
+  return Object.keys(base).length ? base : undefined
+}
+
 /** Entra al catálogo de la web: terminado y sin que nadie lo haya sacado (`data.portafolio.web = false`). */
 export const vaALaWeb = (estado, propio) =>
   (estado === 'produccion' || estado === 'entregado') && !(propio && propio.web === false)
