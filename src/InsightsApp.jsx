@@ -1097,8 +1097,8 @@ const REMOVED_MEMBER_IDS = ['u4']   // Nicolas Arditi
 /* email de login (Supabase) por miembro — para auto-vincular al iniciar sesión sin duplicar */
 const SEED_EMAILS = { u1: 'federicog@insightsapps.tech', u2: 'lisandropiva@insightsapps.tech', u3: 'manuelnavarro@insightsapps.tech', u5: 'juanp@insightsapps.tech', u7: 'nachocachaza@insightsapps.tech', u8: 'agustinromero@insightsapps.tech' }
 /* rango de cada miembro: 'pm' | 'dev' | '' (vacío = Otro, ej. CEO o Closer) — determina en qué filtro de Proyectos aparece */
-const SEED_ROLES = { u1: 'fundador', u2: 'dev', u3: 'dev', u5: 'fundador', u6: 'dev', u7: 'pm' }
-const TEAM_ROLES = [{ key: '', label: 'Otro' }, { key: 'fundador', label: 'Fundador' }, { key: 'pm', label: 'PM' }, { key: 'dev', label: 'Dev' }]
+const SEED_ROLES = { u1: 'fundador', u2: 'dev', u3: 'admin', u5: 'fundador', u6: 'dev', u7: 'pm' }
+const TEAM_ROLES = [{ key: '', label: 'Otro' }, { key: 'fundador', label: 'Fundador' }, { key: 'admin', label: 'Admin' }, { key: 'pm', label: 'PM' }, { key: 'dev', label: 'Dev' }]
 /* Fundadores: únicos con permiso para borrar usuarios. Se reconocen por id o email
    (no dependemos solo del campo role, que se puede editar a mano). */
 const FOUNDER_IDS = ['u1', 'u5']
@@ -10303,7 +10303,7 @@ function UsuariosView({ onOpenProject }) {
   const fmtDur = (ms) => { const m = Math.round((Number(ms) || 0) / 60000); if (m < 1) return '—'; if (m < 60) return `${m} min`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ${m % 60}m`; const d = Math.floor(h / 24); return `${d}d ${h % 24}h` }
   const fmtSeen = (iso) => { if (!iso) return '—'; const diff = Date.now() - new Date(iso).getTime(); const min = Math.floor(diff / 60000); if (min < 1) return 'recién'; if (min < 60) return `hace ${min} min`; const h = Math.floor(min / 60); if (h < 24) return `hace ${h} h`; const d = Math.floor(h / 24); return d === 1 ? 'ayer' : `hace ${d} días` }
   const isExternal = (u) => u.access === 'project' || u.access === 'collab' || u.access === 'read'
-  const roleLabel = (u) => u.role === 'fundador' ? 'Fundador' : u.access === 'collab' ? 'Colaborador' : u.access === 'project' ? 'Cliente' : u.access === 'read' ? 'Lectura' : (u.role === 'pm' ? 'PM' : u.role === 'dev' ? 'Dev' : (u.role || 'Equipo'))
+  const roleLabel = (u) => u.role === 'fundador' ? 'Fundador' : u.access === 'collab' ? 'Colaborador' : u.access === 'project' ? 'Cliente' : u.access === 'read' ? 'Lectura' : (u.role === 'admin' ? 'Admin' : u.role === 'pm' ? 'PM' : u.role === 'dev' ? 'Dev' : (u.role || 'Equipo'))
   const projCol = (u) => {
     if (u.access === 'collab') { const ids = collabProjectIds(u); return ids.length ? ids.map(projName).join(', ') : '— sin asignar —' }
     if (u.access === 'project') return u.assignedProjectId ? projName(u.assignedProjectId) : '— sin asignar —'
