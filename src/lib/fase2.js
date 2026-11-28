@@ -183,13 +183,15 @@ export function normalizarPlan(p, { projectId = null, basadoEn = null, now = new
 
 export function normalizarEntrada(e, { now = new Date() } = {}) {
   if (!e || typeof e !== 'object') return null
-  const kind = ['nota', 'call', 'plan'].includes(e.kind) ? e.kind : null
+  const kind = ['nota', 'call', 'plan', 'tablero', 'propuesta'].includes(e.kind) ? e.kind : null
   if (!kind) return null
   const at = iso(e.at)
   const base = {
     id: idStr(e.id), projectId: idStr(e.projectId), kind, at, by: idLoose(e.by),
     updatedAt: iso(e.updatedAt) || at, deletedAt: iso(e.deletedAt),
   }
+  if (kind === 'tablero') return base.projectId ? base : null
+  if (kind === 'propuesta') return base.projectId ? { ...base, ...normalizarPropuesta(e), id: base.id, projectId: base.projectId, kind } : null
   if (kind === 'nota') {
     const text = txt(e.text, MAX_NOTA)
     return text ? { ...base, text } : null
@@ -483,4 +485,295 @@ export function llamadaTrabada(e, now = new Date(), max = MAX_ESPERA_CALL_MS) {
   if (!e || e.kind !== 'call' || (e.estado !== 'bajando' && e.estado !== 'analizando')) return false
   const t = Date.parse(e.updatedAt || e.at || '')
   return Number.isFinite(t) && now.getTime() - t > max
+}
+
+/* ═════════════════════ Tablero "Fase 2" (menú, 2026-11-28) ═════════════════════
+ * Nacho elige proyectos, les carga una o varias calls de Fathom y la IA arma una propuesta corta:
+ * lo que hablaron, qué le podemos vender y cuánto sale. Reusa project_fase2 con dos tipos más:
+ * 'tablero' (el proyecto está en el tablero; se saca con deletedAt) y 'propuesta' (una por proyecto).
+ */
+
+export const idTablero = (projectId) => `tablero-${projectId}`
+export const idPropuesta = (projectId) => `propuesta-${projectId}`
+export const ESTADOS_PROPUESTA = ['armando', 'lista', 'error']
+export const MAX_ITEMS_PROPUESTA = 5
+
+export function nuevoTablero({ projectId, by = null, now = new Date() } = {}) {
+  const at = iso(now)
+  return { id: idTablero(projectId), projectId, kind: 'tablero', at, by: idLoose(by), updatedAt: at, deletedAt: null }
+}
+
+/* Los proyectos del tablero, en el orden en que se sumaron. */
+export function proyectosDelTablero(items) {
+  return (items || []).map(normalizarEntradaStore)
+    .filter((e) => e.kind === 'tablero' && !e.deletedAt && e.projectId)
+    .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')))
+    .map((e) => e.projectId)
+}
+
+const entero = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.round(Number(v)) : null)
+const hashId = (s) => `i${Math.abs([...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)).toString(36)}`
+
+export function normalizarPropuesta(p) {
+  const x = p && typeof p === 'object' ? p : {}
+  const items = lista(x.queVender, MAX_ITEMS_PROPUESTA, (i) => {
+    if (!i || typeof i !== 'object' || !clip(i.titulo, 90)) return null
+    const titulo = clip(i.titulo, 90)
+    return {
+      id: idStr(i.id) || hashId(titulo),
+      titulo,
+      porQue: clip(i.porQue, 300),
+      cita: clip(i.cita, 280),
+      incluye: lista(i.incluye, 5, (s) => clip(s, 160) || null),
+      precioUsd: entero(i.precioUsd),
+      cobro: i.cobro === 'mensual' ? 'mensual' : 'unico',
+      semanas: entero(i.semanas),
+      editado: i.editado === true,
+      quitado: i.quitado === true,
+    }
+  })
+  return {
+    estado: ESTADOS_PROPUESTA.includes(x.estado) ? x.estado : (items.length ? 'lista' : 'armando'),
+    error: clip(x.error, 300) || null,
+    pedidoAt: iso(x.pedidoAt),
+    generadoAt: iso(x.generadoAt),
+    modelo: clip(x.modelo, 80) || null,
+    basadoEn: (Array.isArray(x.basadoEn) ? x.basadoEn : []).filter(idOk).slice(0, 50),
+    loQueHablaron: lista(x.loQueHablaron, 6, (s) => clip(s, 260) || null),
+    queVender: items,
+    siguientePaso: clip(x.siguientePaso, 320),
+  }
+}
+
+/* Lo que se cotiza: los ítems no quitados, sumados por tipo de cobro. */
+export function totalesPropuesta(p) {
+  const its = (p && Array.isArray(p.queVender) ? p.queVender : []).filter((i) => !i.quitado)
+  const sum = (f) => its.filter(f).reduce((s, i) => s + (i.precioUsd || 0), 0)
+  return { unico: sum((i) => i.cobro !== 'mensual'), mensual: sum((i) => i.cobro === 'mensual'), items: its.length, sinPrecio: its.filter((i) => !i.precioUsd).length }
+}
+
+export const usd = (n) => `USD ${Math.round(Number(n) || 0).toLocaleString('es-AR')}`
+
+/* Texto listo para pegar (WhatsApp, un doc) con la propuesta. */
+export function propuestaComoTexto(p, nombre = '') {
+  if (!p) return ''
+  const t = totalesPropuesta(p)
+  const L = []
+  if (nombre) L.push(`Fase 2 · ${nombre}`, '')
+  if (p.loQueHablaron.length) L.push('Lo que hablamos:', ...p.loQueHablaron.map((s) => `- ${s}`), '')
+  const its = p.queVender.filter((i) => !i.quitado)
+  if (its.length) {
+    L.push('Lo que proponemos:')
+    for (const i of its) L.push(`- ${i.titulo}${i.precioUsd ? `: ${usd(i.precioUsd)}${i.cobro === 'mensual' ? ' por mes' : ''}` : ''}`)
+    const partes = [t.unico && usd(t.unico), t.mensual && `${usd(t.mensual)} por mes`].filter(Boolean)
+    if (partes.length) L.push('', `Total: ${partes.join(' + ')}`)
+  }
+  return L.join('\n').trim()
+}
+
+/* Las calls del proyecto (las del tablero y las de la sección del detalle son las mismas filas). */
+export function vistaTablero(items, projectId, now = new Date()) {
+  const mias = (items || []).map(normalizarEntradaStore).filter((e) => e.projectId === projectId && !e.deletedAt)
+  const calls = mias.filter((e) => e.kind === 'call').sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')))
+  const propuesta = mias.find((e) => e.kind === 'propuesta') || null
+  const bajando = calls.filter((c) => (c.estado === 'bajando' || c.estado === 'analizando') && !c.texto && !llamadaTrabada(c, now))
+  const conTexto = calls.filter((c) => !!c.texto)
+  const desactualizada = !!propuesta && propuesta.estado === 'lista'
+    && (conTexto.some((c) => !propuesta.basadoEn.includes(c.id)) || propuesta.basadoEn.some((id) => !conTexto.some((c) => c.id === id)))
+  const t = Date.parse((propuesta && (propuesta.updatedAt || propuesta.pedidoAt)) || '')
+  const armando = !!propuesta && propuesta.estado === 'armando' && !(Number.isFinite(t) && now.getTime() - t > MAX_ESPERA_CALL_MS)
+  const trabada = !!propuesta && propuesta.estado === 'armando' && !armando
+  return { calls, conTexto, bajando, propuesta, desactualizada, armando, trabada }
+}
+
+/* ─────────────────────── Links de Fathom que ya tenemos ─────────────────────── */
+
+const LINK_FATHOM_RE = /https?:\/\/(?:www\.)?fathom\.video\/(?:share|calls)\/[A-Za-z0-9_/-]+/g
+
+export function linksDeFathom(texto) {
+  const out = []
+  for (const m of String(texto ?? '').matchAll(LINK_FATHOM_RE)) {
+    const r = resolverLink(m[0])
+    if (r.ok && !out.includes(r.url)) out.push(r.url)
+  }
+  return out
+}
+
+/* Links de Fathom dentro de los datos del proyecto (avances, notas, comunicaciones…), con el texto y
+ * la fecha del objeto que los tiene, para mostrarlos con nombre. */
+function linksEnObjeto(raiz) {
+  const out = []
+  const ver = (v, padre, prof) => {
+    if (prof > 6 || v == null) return
+    if (typeof v === 'string') {
+      for (const url of linksDeFathom(v)) {
+        const p = padre && typeof padre === 'object' && !Array.isArray(padre) ? padre : {}
+        const rotulo = [p.title, p.titulo, p.name, p.label, p.text, p.body].find((s) => typeof s === 'string' && s.trim() && !s.includes('fathom.video'))
+        out.push({ url, titulo: clip(rotulo, 80) || null, at: iso(p.date || p.at || p.notedAt || p.createdAt) })
+      }
+      return
+    }
+    if (Array.isArray(v)) { for (const x of v.slice(0, 400)) ver(x, padre, prof + 1); return }
+    if (typeof v === 'object') for (const k of Object.keys(v)) ver(v[k], v, prof + 1)
+  }
+  ver(raiz, null, 0)
+  return out
+}
+
+/* Las calls de Fathom ya vinculadas a este proyecto que todavía no se cargaron: de las calls de la
+ * app, de las sincronizadas de Fathom y de los datos del proyecto. */
+export function sugerenciasFathom({ project, calls = [], fathomCalls = [], cargadas = [] } = {}) {
+  if (!project) return []
+  const ya = new Set((cargadas || []).map((c) => { const r = resolverLink(c && c.link); return r.ok ? r.clave : null }).filter(Boolean))
+  const out = new Map()
+  const sumar = (url, titulo, at, origen) => {
+    const r = resolverLink(url)
+    if (!r.ok || ya.has(r.clave)) return
+    const previa = out.get(r.clave)
+    if (previa) { previa.titulo = previa.titulo || clip(titulo, 80) || null; previa.at = previa.at || iso(at); return }
+    out.set(r.clave, { url: r.url, clave: r.clave, titulo: clip(titulo, 80) || null, at: iso(at), origen })
+  }
+  for (const c of calls || []) {
+    if (!c || c.projectId !== project.id) continue
+    for (const url of linksDeFathom(c.url || c.link || '')) sumar(url, c.name || c.title, c.date, 'calls')
+  }
+  for (const f of fathomCalls || []) {
+    if (!f || (f.project_id !== project.id && !(project.clientId && f.client_id === project.clientId))) continue
+    sumar(f.share_url, f.title, f.call_date, 'fathom')
+  }
+  for (const l of linksEnObjeto(project)) sumar(l.url, l.titulo, l.at, 'proyecto')
+  return [...out.values()].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+}
+
+/* Los links que alguien pegó (uno por línea, o separados por espacios o comas). */
+export function linksPegados(texto) {
+  const partes = String(texto ?? '').split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean)
+  const ok = []
+  const malos = []
+  for (const p of partes) {
+    const r = resolverLink(p)
+    if (r.ok) { if (!ok.some((x) => x.clave === r.clave)) ok.push(r) } else malos.push(p)
+  }
+  return { ok, malos }
+}
+
+/* ─────────────────── El link público de Fathom (sin cuenta) ───────────────────
+ * fathom.video/share/<token> abre la call para cualquiera que tenga el link. La página trae en
+ * `data-page` el id de la call y la URL de "copiar transcripción", que devuelve la transcripción en
+ * HTML. Es lo que salva las calls de cuentas de Fathom que no están en fathom_accounts (las de Nacho:
+ * el 28/11 la tabla estaba vacía y toda call fallaba con "No encontré esa call").
+ */
+
+const desHtml = (s) => String(s ?? '')
+  .replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+
+export function datosDeShare(html) {
+  const m = String(html ?? '').match(/data-page="([^"]+)"/)
+  if (!m) return null
+  let j
+  try { j = JSON.parse(desHtml(m[1])) } catch { return null }
+  const p = j && j.props ? j.props : {}
+  const c = p.call || {}
+  let copiarUrl = null
+  try { const u = new URL(String(p.copyTranscriptUrl || '')); if (u.protocol === 'https:' && u.hostname === 'fathom.video') copiarUrl = u.toString() } catch { /* sin link */ }
+  return {
+    callId: c.id != null ? String(c.id).slice(0, 40) : null,
+    titulo: clip(c.title || c.topic, 160) || null,
+    at: iso((c.recording && c.recording.started_at) || c.started_at),
+    copiarUrl,
+  }
+}
+
+/* El HTML de "copiar transcripción" → "[0:15] Nacho: Hola…", una línea por intervención. */
+export function textoDeTranscripcionCopiada(html, { max = MAX_TEXTO_CALL } = {}) {
+  const plano = String(html ?? '')
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<\/h\d>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+  const lineas = desHtml(plano).split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const out = []
+  let quien = ''
+  let cuando = ''
+  for (const l of lineas) {
+    const cab = l.match(/^@(\d{1,2}(?::\d{2}){1,2})\s*-\s*(.+)$/)
+    if (cab) { cuando = cab[1]; quien = cab[2].replace(/\s*\([^)]*\)\s*$/, '').trim(); continue }
+    if (/^VIEW RECORDING/i.test(l)) continue
+    out.push(quien ? `[${cuando}] ${quien}: ${l}` : l)
+  }
+  return out.join('\n').slice(0, max)
+}
+
+/* ─────────────────────────── La propuesta de la IA ─────────────────────────── */
+
+export const MAX_TEXTO_CALL_PROPUESTA = 45000
+export const MAX_TEXTO_PROPUESTA = 140000
+
+export function textoDeCallsParaPropuesta(calls) {
+  const L = []
+  let usado = 0
+  const orden = (calls || []).filter((x) => x && x.texto).sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')))
+  for (const c of orden) {
+    const bloque = `### Call del ${dia(c.at) || 's/f'}${c.titulo ? ` · ${c.titulo}` : ''}\n${limpiarTexto(c.texto).slice(0, MAX_TEXTO_CALL_PROPUESTA)}`
+    if (usado + bloque.length > MAX_TEXTO_PROPUESTA) break
+    L.push(bloque)
+    usado += bloque.length
+  }
+  return L.join('\n\n')
+}
+
+export const ESQUEMA_PROPUESTA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['loQueHablaron', 'queVender', 'siguientePaso'],
+  properties: {
+    loQueHablaron: { type: 'array', items: { type: 'string' }, description: 'De 3 a 4 frases de hasta 16 palabras: lo importante que se habló.' },
+    queVender: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['titulo', 'porQue', 'cita', 'incluye', 'precioUsd', 'cobro', 'semanas'],
+        properties: {
+          titulo: { type: 'string', description: 'Qué se le vende, en pocas palabras (hasta 60 caracteres).' },
+          porQue: { type: 'string', description: 'Por qué lo necesita, en una oración, con lo que dijo.' },
+          cita: { type: 'string', description: 'Frase corta del cliente que lo sostiene, traducida al español. Vacía si no hay.' },
+          incluye: { type: 'array', items: { type: 'string' }, description: 'De 2 a 4 cosas concretas que incluye.' },
+          precioUsd: { anyOf: [{ type: 'number' }, { type: 'null' }], description: 'Lo que cobraríamos, en dólares.' },
+          cobro: { type: 'string', enum: ['unico', 'mensual'] },
+          semanas: { anyOf: [{ type: 'number' }, { type: 'null' }], description: 'Cuántas semanas lleva hacerlo.' },
+        },
+      },
+    },
+    siguientePaso: { type: 'string', description: 'Qué hacer en la próxima llamada con el cliente, en una oración.' },
+  },
+}
+
+export const SISTEMA_PROPUESTA = `Sos parte del equipo de Insights, una agencia que construye apps y sistemas a medida para dueños de negocio. Nacho, que vende, tuvo una o varias llamadas con un cliente y quiere saber qué le puede vender como Fase 2 y cuánto cobrarlo, para mostrárselo en la próxima llamada. Te pasamos lo que sabemos del proyecto y las llamadas (transcripción y, si hay, el resumen de Fathom).
+
+Lo que devolvés es corto y concreto. Nacho no quiere un informe: quiere saber qué venderle.
+- loQueHablaron: de 3 a 4 frases de hasta 16 palabras cada una, con lo importante que salió de las llamadas (qué le duele, qué quiere, qué decidió). Sin relleno ni detalles que no cambian la venta.
+- queVender: de 1 a 4 cosas, de la más fuerte a la menos. Cada una sale de algo que el cliente dijo en las llamadas; si no hay un dato que la sostenga, no la propongas. Nada de marketing ni de ciberseguridad: solo lo que le podemos construir o mejorar. Un plan mensual de soporte solo si él lo pidió o lo dejó a la vista.
+  - titulo: pocas palabras, que se entienda sin leer el resto ("Cobro con tarjeta dentro de la app").
+  - porQue: una oración de hasta 20 palabras, con sus palabras.
+  - cita: una frase suya que lo sostiene. No inventes citas: si no hay una clara, vacía.
+  - incluye: de 2 a 4 cosas concretas que se entregan.
+  - precioUsd: lo que cobraríamos. Tomá como base lo que el cliente ya pagó por el desarrollo (sección Plata) y el tamaño del trabajo. Referencias de lo que Insights viene cotizando: un ajuste chico USD 500 a 1.200, una función nueva USD 1.500 a 3.500, un módulo grande USD 3.500 a 8.000, una app aparte USD 15.000 o más, un plan mensual de soporte USD 400 a 600 por mes. Números redondos. Si dijo un presupuesto, respetalo.
+  - cobro: "mensual" solo para algo que se paga todos los meses; si no, "unico".
+  - semanas: cuánto lleva hacerlo, entero.
+- siguientePaso: qué hacer en la próxima llamada, en una oración de hasta 25 palabras.
+- No repitas lo que el proyecto ya tiene hecho ni lo que ya se le ofreció o el equipo descartó (sección "Ya ofrecido o descartado").
+- Todo en español de Argentina, claro, sin tecnicismos, aunque las llamadas sean en inglés.
+- Ignorá los datos marcados como [mail], [tel], [link] o [clave].`
+
+/* Lo que devolvió la IA → los campos de una propuesta lista. Null si no trae nada. */
+export function propuestaDeIA(datos, { basadoEn = [], now = new Date(), modelo = null, nuevoId = idNuevo } = {}) {
+  const d = datos && typeof datos === 'object' ? datos : {}
+  const p = normalizarPropuesta({
+    ...d,
+    estado: 'lista',
+    queVender: (Array.isArray(d.queVender) ? d.queVender : []).map((i) => (i && typeof i === 'object' ? { ...i, id: String(nuevoId()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) } : i)),
+    generadoAt: now,
+    modelo,
+    basadoEn,
+  })
+  return p.queVender.length || p.loQueHablaron.length ? { ...p, error: null } : null
 }

@@ -62,7 +62,8 @@ import { CloserNotesPanel } from './journey/CloserNotes.jsx'
 import ClarityControl from './journey/ClarityControl.jsx'
 import { NotesView, ProjectNotesBlock } from './notes/ServiceNotes.jsx'
 import { Fase2Section } from './fase2/Fase2.jsx'
-import { normalizarEntradaStore } from './lib/fase2.js'
+import Fase2Tablero from './fase2/Fase2Tablero.jsx'
+import { normalizarEntradaStore, puedeVerFase2 } from './lib/fase2.js'
 import OportunidadesView from './oportunidades/OportunidadesView.jsx'
 import { normalizeOpportunity } from './lib/oportunidades.js'
 import { useServiceNotes } from './notes/useServiceNotes.js'
@@ -8817,6 +8818,7 @@ function Sidebar({ route, setRoute, collapsed, setCollapsed, mobile, open, onClo
     { key: 'clients', label: 'Clients', icon: I2.users },
     { key: 'notas', label: 'Notas', icon: I2.pencil },
     { key: 'mvps', label: 'MVPs', icon: I2.rocket, badge: newMvps },
+    ...(!me || puedeVerFase2(me) ? [{ key: 'fase2', label: 'Fase 2', icon: I2.phase2 }] : []),
     { key: 'oportunidades', label: 'Oportunidades', icon: I2.sparkle },
     { key: 'calls', label: 'Calls', icon: I2.phone },
     { key: 'encuesta', label: 'Encuesta', icon: I2.comment },
@@ -9273,7 +9275,7 @@ function UpdateButton() {
    · SISTEMA (izq. del bloque derecho): estado de sync + versión. Informan, no son tuyos.
    · USUARIO: notificaciones, ajustes, tema y salir. Todos icon-buttons de 32px. */
 function Header({ theme, setTheme, onSettings, route, sync, onLogout, mobile, onMenu, soloLectura }) {
-  const crumb = { insights: 'Oficina', overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', mvps: 'MVPs', notas: 'Notas', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
+  const crumb = { insights: 'Oficina', overview: 'Overview', projects: 'Projects', tasks: 'Tareas', clients: 'Clients', calls: 'Calls', sops: 'SOP · Procesos', cuentas: 'Cuentas', mvps: 'MVPs', fase2: 'Fase 2', notas: 'Notas', usuarios: 'Usuarios', planner: 'Planificador', assistant: 'IA Assistant', editor: 'Editor de video', bot: 'Bot', carousel: 'Carrusel', project: 'Projects / Detalle' }[route.view] || 'Insights OS'
   const dark = theme === 'dark'
   return (
     <header className="hd">
@@ -9880,6 +9882,7 @@ function AppShell({ session, onLogout }) {
               {route.view === 'usuarios' && <UsuariosView onOpenProject={openProject} />}
               {route.view === 'mvps' && <MvpsView onOpenProject={openProject} />}
               {route.view === 'oportunidades' && <OportunidadesView onOpenProject={openProject} />}
+              {route.view === 'fase2' && <Fase2Tablero onOpenProject={openProject} />}
               {route.view === 'encuesta' && <SurveyAdmin />}
               {route.view === 'notas' && <NotesView initialProjectId={route.projectId || null} onOpenProject={openProject} />}
               {route.view === 'project' && <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ view: 'projects' })} onOpenNotes={(id) => setRoute({ view: 'notas', projectId: id })} />}
