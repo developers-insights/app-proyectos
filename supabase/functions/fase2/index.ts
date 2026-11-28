@@ -6,6 +6,9 @@
 //   Si es de Fathom y todavía no tiene texto, baja la call con las cuentas de fathom_accounts; después
 //   la analiza con Claude y guarda el resultado en la fila (fase2_guardar_call). Contesta 202 enseguida y
 //   sigue en segundo plano (EdgeRuntime.waitUntil): el resultado o el error queda en la fila.
+// POST {accion:"armar_propuesta", proyecto}         → tablero Fase 2 del menú: lo que hablaron, qué
+//   venderle y cuánto, con todas las calls del proyecto. 202 enseguida; queda en 'propuesta-<proyecto>'.
+// Una call de share de una cuenta de Fathom que no tenemos se lee del link público (reunionPublica).
 // POST {accion:"armar_plan", proyecto}              → Claude arma "Cómo llevarlo a Fase 2" con las
 //   notas y los análisis del proyecto; lo guarda en la fila 'plan-<proyecto>' (fase2_guardar_plan).
 //
@@ -26,6 +29,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
   resolverLink, mismaCall, limpiarTexto, textoDeReunion, normalizarEntrada, normalizarAnalisis, normalizarPlan,
   entradasParaPlan, ESQUEMA_CALL, ESQUEMA_PLAN, SISTEMA_CALL, SISTEMA_PLAN,
+  datosDeShare, textoDeTranscripcionCopiada, textoDeCallsParaPropuesta, propuestaDeIA, ESQUEMA_PROPUESTA, SISTEMA_PROPUESTA,
+  MAX_ESPERA_CALL_MS,
 } from '../../../src/lib/fase2.js'
 import { armarContexto, normalizeOpportunity, quedaAlRepensar, MODELO } from '../../../src/lib/oportunidades.js'
 
@@ -172,6 +177,25 @@ async function buscarReunion(link: { ok: true; clave: string; tipo: string; url:
   return null
 }
 
+/**
+ * Sin cuenta de Fathom: un link de share abre la call para cualquiera. Se lee la página y su
+ * "copiar transcripción". Devuelve lo que necesita trabajarCall, o null si no se pudo.
+ */
+async function reunionPublica(link: { ok: true; clave: string; tipo: string; url: string }) {
+  if (link.tipo !== 'share' || !CLAVE_RE.test(link.clave)) return null
+  const headers = { 'user-agent': 'Mozilla/5.0 (Insights Fase 2)', accept: 'text/html' }
+  const r = await fetch(`https://fathom.video/share/${link.clave}`, { headers, redirect: 'follow', signal: AbortSignal.timeout(30_000) })
+  if (!r.ok) return null
+  const d = datosDeShare(await r.text())
+  if (!d?.copiarUrl) return null
+  const t = await fetch(d.copiarUrl, { headers: { ...headers, accept: 'application/json' }, signal: AbortSignal.timeout(30_000) })
+  if (!t.ok) return null
+  const j = await t.json().catch(() => null)
+  const texto = textoDeTranscripcionCopiada(j?.html)
+  if (texto.length < 200) return null
+  return { texto, titulo: d.titulo, at: d.at, fathomId: d.callId }
+}
+
 /* ───────────────────────────── Acciones ───────────────────────────── */
 
 const guardarCall = async (id: string, patch: Record<string, unknown>) => {
@@ -205,19 +229,25 @@ async function trabajarCall(proyecto: string, e: Record<string, any>): Promise<v
       const link = resolverLink(e.link)
       if (!link.ok) return await falla(link.error)
       const hallada = await buscarReunion(link)
-      if (!hallada) return await falla('No encontré esa call en las cuentas de Fathom cargadas. Pegá el texto de la call para analizarla igual.')
-      const m = hallada.meeting
-      const t = textoDeReunion(m)
-      if (!t.texto) return await falla('La call no trae resumen ni transcripción todavía. Probá de nuevo en unos minutos.')
-      texto = t.texto
-      const cuando = m.recording_start_time || m.scheduled_start_time || m.created_at || null
-      Object.assign(parche, {
-        texto, titulo: String(m.title || m.meeting_title || '').slice(0, 160) || null,
-        fathomId: String(m.recording_id ?? m.id ?? '') || null,
-        ...(cuando ? { at: new Date(cuando).toISOString() } : {}),
-      })
-      if (hallada.fathomCallId && !hallada.yaTieneProyecto) {
-        await db.from('fathom_calls').update({ project_id: proyecto }).eq('id', hallada.fathomCallId).is('project_id', null)
+      if (hallada) {
+        const m = hallada.meeting
+        const t = textoDeReunion(m)
+        if (!t.texto) return await falla('La call no trae resumen ni transcripción todavía. Probá de nuevo en unos minutos.')
+        texto = t.texto
+        const cuando = m.recording_start_time || m.scheduled_start_time || m.created_at || null
+        Object.assign(parche, {
+          texto, titulo: String(m.title || m.meeting_title || '').slice(0, 160) || null,
+          fathomId: String(m.recording_id ?? m.id ?? '') || null,
+          ...(cuando ? { at: new Date(cuando).toISOString() } : {}),
+        })
+        if (hallada.fathomCallId && !hallada.yaTieneProyecto) {
+          await db.from('fathom_calls').update({ project_id: proyecto }).eq('id', hallada.fathomCallId).is('project_id', null)
+        }
+      } else {
+        const publica = await reunionPublica(link).catch((err) => { console.warn('[fase2] link público:', (err as Error).message); return null })
+        if (!publica) return await falla('No pude abrir esa call. Fijate que sea el link de compartir de Fathom (fathom.video/share/…) o pegá el texto de la call.')
+        texto = publica.texto
+        Object.assign(parche, { texto, titulo: publica.titulo, fathomId: publica.fathomId, ...(publica.at ? { at: publica.at } : {}) })
       }
     }
     await guardarCall(e.id, { ...parche, estado: 'analizando', error: null })
@@ -304,6 +334,55 @@ async function armarPlan(proyecto: string): Promise<Response> {
   return json({ ok: true, plan: guardado })
 }
 
+const guardarPropuesta = async (proyecto: string, patch: Record<string, unknown>) => {
+  const { data, error } = await db.rpc('fase2_guardar_propuesta', { p_project: proyecto, p_patch: patch })
+  if (error) console.error('[fase2] no pude guardar la propuesta:', error.message)
+  return data
+}
+
+/* La propuesta corta del tablero: lo que hablaron, qué venderle y cuánto. Lee las calls con texto del
+ * proyecto, contesta enseguida y la arma en segundo plano (con varias calls tarda más que una respuesta). */
+async function armarPropuesta(proyecto: string): Promise<Response> {
+  const { data: filas, error } = await db.from('project_fase2').select('id, data').eq('project_id', proyecto).is('deleted_at', null).limit(300)
+  if (error) return json({ error: 'No pude leer las calls.' }, 500)
+  const entradas = (filas ?? []).map((f) => normalizarEntrada({ ...f.data, id: f.id })).filter(Boolean) as Array<Record<string, any>>
+  const previa = entradas.find((x) => x.kind === 'propuesta')
+  const t = Date.parse(previa?.updatedAt || '')
+  if (previa?.estado === 'armando' && Number.isFinite(t) && Date.now() - t < MAX_ESPERA_CALL_MS) return json({ ok: true, enCurso: true }, 202)
+  const calls = entradas.filter((x) => x.kind === 'call' && x.texto && !x.deletedAt)
+  if (!calls.length) return json({ error: 'Cargá al menos una call de Fathom.' }, 422)
+  const fila = await guardarPropuesta(proyecto, { estado: 'armando', error: null, pedidoAt: new Date().toISOString() })
+  if (!fila) return json({ error: 'No pude guardar la propuesta.' }, 500)
+
+  const trabajo = (async () => {
+    try {
+      const otras = entradas.filter((x) => x.kind === 'nota' || x.kind === 'plan')
+      const contexto = await contextoDelProyecto(proyecto, otras)
+      if (contexto == null) { await guardarPropuesta(proyecto, { estado: 'error', error: 'No encontré el proyecto.' }); return }
+      let r
+      try {
+        r = await pensar(
+          SISTEMA_PROPUESTA, ESQUEMA_PROPUESTA,
+          `Este es el proyecto:\n\n${contexto}\n\n---\n\nEstas son las llamadas con el cliente:\n\n${textoDeCallsParaPropuesta(calls)}\n\nArmá la propuesta de Fase 2.`,
+          { maxTokens: 8000, timeoutMs: 240_000 },
+        )
+      } catch (err) {
+        await guardarPropuesta(proyecto, { estado: 'error', error: errorIA(err).msg })
+        return
+      }
+      const p = propuestaDeIA(r.datos, { basadoEn: calls.map((c) => c.id), now: new Date(), modelo: r.modelo })
+      if (!p) { await guardarPropuesta(proyecto, { estado: 'error', error: 'La IA no encontró nada concreto para vender en estas calls.' }); return }
+      await guardarPropuesta(proyecto, p)
+    } catch (err) {
+      console.error('[fase2] armarPropuesta falló:', (err as Error)?.message || err)
+      await guardarPropuesta(proyecto, { estado: 'error', error: 'Algo falló al armar la propuesta. Probá de nuevo.' })
+    }
+  })()
+  if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(trabajo)
+  else await trabajo
+  return json({ ok: true, enCurso: true, propuesta: fila }, 202)
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
@@ -319,6 +398,7 @@ Deno.serve(async (req) => {
       return await analizarCall(proyecto, entrada)
     }
     if (b.accion === 'armar_plan') return await armarPlan(proyecto)
+    if (b.accion === 'armar_propuesta') return await armarPropuesta(proyecto)
     return json({ error: 'Acción desconocida.' }, 400)
   } catch (e) {
     console.error('[fase2]', (e as Error).message)
