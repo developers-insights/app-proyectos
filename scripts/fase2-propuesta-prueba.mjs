@@ -19,7 +19,8 @@ async function q(sql) {
 
 const [p] = await q(`select id, data from projects where id = '${proyecto}'`)
 const filas = await q(`select id, data from project_fase2 where project_id = '${proyecto}' and deleted_at is null`)
-const cli = p.data.clientId ? (await q(`select id, data from clients where id = '${p.data.clientId}'`))[0] : null
+const idCliente = /^[A-Za-z0-9_-]{1,80}$/.test(p.data.clientId || '') ? p.data.clientId : null
+const cli = idCliente ? (await q(`select id, data from clients where id = '${idCliente}'`))[0] : null
 const calls = filas.map((f) => normalizarEntrada({ ...f.data, id: f.id })).filter((e) => e && e.kind === 'call' && e.texto && !e.deletedAt)
 console.log(`${p.data.name}: ${calls.length} calls con texto`)
 const contexto = armarContexto({ project: p, client: cli, now: new Date() })
