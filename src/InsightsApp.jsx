@@ -51,6 +51,7 @@ import {
 import { projectProgress, progressBreakdown, progressColorVar } from './lib/progress.js'
 import { portalProject, PORTAL_CACHE_KEY, PORTAL_STALE_CACHE_KEYS } from './lib/portal.js'
 import { buildContextMarkdown } from './lib/contextExport.js'
+import { conWeb } from './lib/portafolio.js'
 import PlannerView from './plan/PlannerView.jsx'
 import BotView from './bot/BotView.jsx'
 import MvpsView, { ProjectMvpModal, projectMvps } from './mvps/MvpsView.jsx'
@@ -3268,6 +3269,21 @@ function EditProjectModal({ open, project, clients = [], onClose, onSave, onDele
             <Field label="Cobrado / pagado (USD)"><input className="input mono" type="number" value={d.paidAmount} onChange={(e) => set('paidAmount', Number(e.target.value))} /></Field>
           </div>
           <Field label="Kick-off"><textarea className="input" rows={3} value={d.kickoff || ''} onChange={(e) => set('kickoff', e.target.value)} /></Field>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>Mostrar en la web de Insights</div>
+              <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.55 }}>
+                Aparece en insightsapps.tech cuando está en producción o entregado.
+              </div>
+            </div>
+            <button type="button" role="switch" className="pj-switch"
+              aria-checked={!(d.portafolio && d.portafolio.web === false)}
+              onClick={() => setD((s) => ({ ...s, portafolio: conWeb(s.portafolio, s.portafolio && s.portafolio.web === false) }))}>
+              <span className="tr" aria-hidden="true" />
+              {d.portafolio && d.portafolio.web === false ? 'No se muestra' : 'Se muestra'}
+            </button>
+          </div>
 
           {/* CICLO DE VIDA — lo único editable a mano. La fase se mueve desde el
               detalle con confirmación, porque sella una fecha que después factura. */}
@@ -7320,6 +7336,11 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
     const lifecycle = { ...live }
     for (const k of PROJECT_FORM_LIFECYCLE_FIELDS) lifecycle[k] = edited[k]
     out.lifecycle = lifecycle
+    // Del portafolio el formulario toca sólo `web`: queEs, resumen y el inglés
+    // los escriben los scripts y se releen del proyecto actual.
+    const portafolio = conWeb(p.portafolio, !(draft.portafolio && draft.portafolio.web === false))
+    if (portafolio) out.portafolio = portafolio
+    else delete out.portafolio
     return out
   })
   /* ETAPA — mover la etapa mueve la fase del ciclo de vida y sella su fecha, que
