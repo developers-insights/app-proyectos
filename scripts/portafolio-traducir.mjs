@@ -15,10 +15,10 @@
 // en su próxima revalidación; al final se le avisa a la web para que no espere.
 import Anthropic from '@anthropic-ai/sdk'
 import { buildBridgeSnapshots } from '../src/lib/bridge.js'
-import { huellaPortafolio } from '../src/lib/portafolio.js'
+import { MODELO_TRADUCCION, SISTEMA_TRADUCCION, ESQUEMA_TRADUCCION, mensajeTraduccion, pendientesDeTraducir, limpiarTraduccion } from '../src/lib/traduccion.js'
 
 const REF = 'yzmtzyuncekspgtsetwk'
-const MODELO = 'claude-opus-5-5'
+const MODELO = MODELO_TRADUCCION
 const SECO = process.argv.includes('--seco')
 const FORZAR = process.argv.includes('--forzar')
 
@@ -45,13 +45,7 @@ const [projects, clients, plans, traducciones] = await Promise.all([
 ])
 
 const fotos = buildBridgeSnapshots({ projects, clients, plans }, new Date())
-const vigente = new Map(traducciones.map((t) => [t.project_id, t.data && t.data.fuente]))
-
-const pendientes = fotos
-  .map((f) => ({ f, es: { queEs: f.portafolio.queEs ?? null, negocio: f.portafolio.negocio ?? null, resumen: f.portafolio.resumen ?? null } }))
-  .filter(({ f, es }) => f.portafolio.mostrable && (es.queEs || es.negocio || es.resumen))
-  .map((x) => ({ ...x, fuente: huellaPortafolio(x.es) }))
-  .filter((x) => FORZAR || vigente.get(x.f.id) !== x.fuente)
+const pendientes = pendientesDeTraducir(fotos, traducciones, FORZAR)
 
 console.log(`${fotos.length} proyectos, ${pendientes.length} para traducir${SECO ? ' (seco)' : ''}`)
 if (SECO) {
@@ -59,22 +53,6 @@ if (SECO) {
   process.exit(0)
 }
 if (!pendientes.length) process.exit(0)
-
-const SISTEMA = `You translate short product descriptions from Argentine Spanish into natural US English.
-They describe software Insights built for a client and are shown to US prospects during a sales call, on a portfolio screen.
-Rules:
-- Keep the meaning exactly. Do not add features, numbers, claims or adjectives that are not in the Spanish.
-- Keep product names, company names and technology names as they are (Next.js, Supabase, Stripe, GPS...).
-- Plain, confident, concrete English. No marketing fluff, no em dashes.
-- If a Spanish field is null, return null for it.`
-
-const CAMPO = { anyOf: [{ type: 'string' }, { type: 'null' }] }
-const ESQUEMA = {
-  type: 'object',
-  properties: { queEs: CAMPO, negocio: CAMPO, resumen: CAMPO },
-  required: ['queEs', 'negocio', 'resumen'],
-  additionalProperties: false,
-}
 
 const client = new Anthropic()
 
@@ -84,19 +62,17 @@ async function traducir(es) {
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    system: SISTEMA,
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: ESQUEMA } },
+    system: SISTEMA_TRADUCCION,
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: ESQUEMA_TRADUCCION } },
     messages: [{
       role: 'user',
-      content: `queEs (one line: what the product is):\n${es.queEs ?? 'null'}\n\nnegocio (the client's business):\n${es.negocio ?? 'null'}\n\nresumen (what we built):\n${es.resumen ?? 'null'}`,
+      content: mensajeTraduccion(es),
     }],
   })
   if (r.stop_reason === 'refusal') throw new Error('Claude no lo tradujo (refusal)')
   const texto = r.content.find((b) => b.type === 'text')
   if (!texto) throw new Error(`sin texto (stop_reason ${r.stop_reason})`)
-  const out = JSON.parse(texto.text)
-  const limpio = (k) => (es[k] && typeof out[k] === 'string' && out[k].trim() ? out[k].trim() : null)
-  return { queEs: limpio('queEs'), negocio: limpio('negocio'), resumen: limpio('resumen') }
+  return limpiarTraduccion(es, JSON.parse(texto.text))
 }
 
 const filas = []

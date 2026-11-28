@@ -1,5 +1,9 @@
 # PROGRESS — app-proyectos
 
+## 2026-11-28 · El portafolio se traduce solo
+- Edge function `portafolio-traducir` (DESPLEGADA, verify_jwt off, puerta `x-catalogo-secret` contra `catalogo_web_config.secret`): traduce al inglés lo que falta de `portafolio_en` y avisa a la web. La despierta pg_cron `portafolio-traducir` todos los días a las 12:30 UTC (`docs/migrations/2026-11-28-portafolio-traducir-cron.sql`). `?seco=1` dice qué traduciría sin gastar. Comparte con `scripts/portafolio-traducir.mjs` la lógica de `src/lib/traduccion.js`: si cambia, redesplegar con `supabase functions deploy portafolio-traducir --project-ref yzmtzyuncekspgtsetwk --use-api --no-verify-jwt --yes`.
+- Editar proyecto tiene "Mostrar en la web de Insights" (`data.portafolio.web`), #76.
+
 ## 2026-11-23 · Fase 2 por proyecto: link de Fathom, análisis de la call y plan para el upsell
 - La sección "Fase 2" **reemplaza a "Oportunidades" en el detalle del proyecto y en el panel del Recorrido/Oficina** (pedido de Nacho): notas libres, link de Fathom ("Traer call") o texto pegado, análisis por call y un plan "Cómo llevarlo a Fase 2". `OportunidadesSection` ya no se monta ahí; el tablero "Oportunidades" de todos los clientes (`OportunidadesView`) sigue como estaba. Spec: `docs/superpowers/specs/2026-11-23-fathom-resumen-fase2-design.md`; plan: `docs/superpowers/plans/2026-11-23-fase2-fathom.md`.
 - Análisis por call: resumen, Cargar / Mejorar / Implementar con la cita del cliente, objeciones, señales de compra y pendientes. "Pasar a oportunidad" crea una oportunidad `mejora` (sin duplicar títulos parecidos) y deja el vínculo en el ítem; esas oportunidades se ven en el tablero de Oportunidades. El plan se marca desactualizado cuando hay calls o notas nuevas y se rehace a pedido.
